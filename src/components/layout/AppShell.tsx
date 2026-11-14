@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { BottomNav, NAV_ROUTES } from "./BottomNav";
+import { LiveNotifications } from "./LiveNotifications";
 import { cn } from "@/lib/utils";
 
 /**
@@ -35,6 +36,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         {children}
       </div>
       {withNav && <BottomNav />}
+      {!expanded && <LiveNotifications />}
       <Toaster />
     </>
   );

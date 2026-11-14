@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useMemo } from "react";
-import { ArrowRight, Check, ChevronRight, Clock3, Crown, DoorOpen, Flag, Gift, Heart, LayoutDashboard, MapPin, Martini, ShieldCheck, Ticket, Users, Zap } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { UserRound, ArrowRight, Check, ChevronRight, Clock3, Crown, DoorOpen, Flag, Gift, Heart, LayoutDashboard, MapPin, Martini, ShieldCheck, Ticket, Users, Zap } from "lucide-react";
 import { MOOD_TAGS } from "@/lib/types";
 import {
   activeEvent,
@@ -42,7 +43,7 @@ const ROADMAP = [
   { n: 1, title: "Cimientos, identidad, SQL y Mock Data", done: true },
   { n: 2, title: "Onboarding, perfil, Spotify y bloqueo por teléfono", done: true },
   { n: 3, title: "Lobby: grilla por afinidad, Ghost Mode, Rompehielos", done: true },
-  { n: 4, title: "Squads, seguridad, Pin-Drop 15m, chat y perks", done: false },
+  { n: 4, title: "Squads, seguridad, Pin-Drop 15m, chat y perks", done: true },
   { n: 5, title: "Suite B2B: CRM, Blasts, sorteos, barra y LED", done: false },
 ];
 
@@ -54,6 +55,7 @@ export default function HomePage() {
 
 function Home() {
   const { state, mode, notify } = useRouge();
+  const router = useRouter();
   const now = useNow(15_000);
   const event = activeEvent(state)!;
   const me = currentUser(state)!;
@@ -86,7 +88,12 @@ function Home() {
           <span className="font-display text-[26px] font-bold leading-none tracking-tight text-rouge text-glow-rouge">ROUGE</span>
           <Badge tone={mode === "demo" ? "vip" : "squad"}>{mode === "demo" ? "Modo Demo" : "Supabase"}</Badge>
         </div>
-        <PersonaSwitcher />
+        <div className="flex items-center gap-2">
+          <Link href="/profile" aria-label="Mi perfil" className="glass grid size-11 place-items-center rounded-full">
+            <UserRound className="size-5" />
+          </Link>
+          <PersonaSwitcher />
+        </div>
       </header>
 
       <div className="space-y-4 px-4">
@@ -151,15 +158,15 @@ function Home() {
 
         {/* Métricas personales */}
         <section className="grid grid-cols-2 gap-3">
-          <StatTile icon={<Users />} tone="rouge" value={data.grid.length} label="Asistentes visibles" hint="sin bloqueados ni ghost" />
-          <StatTile icon={<Heart />} tone="rouge" value={data.matches.length} label="Matches" hint={`${data.inbox.length} en tu bandeja`} />
-          <StatTile icon={<Gift />} tone="vip" value={data.perks.length} label="Perks & QRs" hint="listos para canjear" />
-          <StatTile icon={<Martini />} tone="squad" value={data.orders.length} label="Pedidos activos" hint="Barra Express" />
+          <StatTile href="/lobby" icon={<Users />} tone="rouge" value={data.grid.length} label="Asistentes visibles" hint="Ir a la grilla →" />
+          <StatTile href="/inbox" icon={<Heart />} tone="rouge" value={data.matches.length} label="Matches" hint={`${data.inbox.length} en tu bandeja`} />
+          <StatTile href="/perks" icon={<Gift />} tone="vip" value={data.perks.length} label="Perks & QRs" hint="listos para canjear" />
+          <StatTile href="/bar" icon={<Martini />} tone="vip" value={data.orders.length} label="Barra Express" hint="Pedí sin hacer fila →" />
         </section>
 
         {/* Squad */}
-        {data.squad && (
-          <section className="glass rounded-3xl p-4">
+        {data.squad ? (
+          <Link href="/squad" className="glass block rounded-3xl p-4 transition hover:bg-white/10">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider text-squad">Tu Squad</p>
@@ -181,7 +188,15 @@ function Home() {
                 </span>
               </p>
             )}
-          </section>
+          </Link>
+        ) : (
+          attendee && (
+            <Link href="/squad" className="flex items-center gap-3 rounded-3xl border border-squad/30 bg-squad/[0.06] p-4">
+              <Users className="size-6 text-squad" />
+              <span className="flex-1 text-sm"><b>Armá tu Squad</b> · se ven en el plano, botón de rescate y perks para el grupo.</span>
+              <ArrowRight className="size-5 text-muted" />
+            </Link>
+          )
         )}
 
         {/* Plano */}
@@ -189,7 +204,7 @@ function Home() {
           <div className="mb-2 flex items-end justify-between">
             <div>
               <h2 className="text-lg">Plano en vivo</h2>
-              <p className="text-xs text-muted">Pellizcá para hacer zoom · tocá un sector</p>
+              <Link href="/map" className="text-xs font-semibold text-squad">Abrir plano y dejar mi pin →</Link>
             </div>
             <div className="flex gap-3 text-[11px] font-semibold">
               <Legend className="bg-squad" label="Squad" />
@@ -205,7 +220,7 @@ function Home() {
                 ? { x: data.squad.squad.base_pin_x, y: data.squad.squad.base_pin_y!, label: data.squad.squad.base_pin_label ?? "Punto Base" }
                 : null
             }
-            onTap={(_x, _y, sector) => notify({ tone: "info", title: sector ? `📍 ${sector.name}` : "Fuera de los sectores", description: "El Pin-Drop de 15 min llega en la Fase 4.", duration: 2200 })}
+            onTap={() => router.push("/map")}
             onPinClick={(vp) =>
               notify({
                 tone: vp.audience === "match" ? "rouge" : vp.audience === "squad" ? "squad" : "info",
@@ -220,7 +235,7 @@ function Home() {
         <section className="glass rounded-3xl p-4">
           <div className="flex items-center justify-between">
             <h2 className="text-lg">Roadmap del MVP</h2>
-            <Badge tone="squad">Fase 3/5</Badge>
+            <Badge tone="squad">Fase 4/5</Badge>
           </div>
           <ol className="mt-3 space-y-2">
             {ROADMAP.map((f) => (
@@ -266,15 +281,15 @@ function Home() {
   );
 }
 
-function StatTile({ icon, value, label, hint, tone }: { icon: React.ReactNode; value: number; label: string; hint: string; tone: "rouge" | "squad" | "vip" }) {
+function StatTile({ href, icon, value, label, hint, tone }: { href: string; icon: React.ReactNode; value: number; label: string; hint: string; tone: "rouge" | "squad" | "vip" }) {
   const color = { rouge: "text-rouge bg-rouge/12", squad: "text-squad bg-squad/12", vip: "text-vip bg-vip/12" }[tone];
   return (
-    <div className="glass rounded-2xl p-3.5">
+    <Link href={href} className="glass block rounded-2xl p-3.5 transition hover:bg-white/10 active:scale-[0.98]">
       <span className={cn("grid size-9 place-items-center rounded-xl [&_svg]:size-[18px]", color)}>{icon}</span>
       <p className="metric mt-3 text-3xl leading-none">{value}</p>
       <p className="mt-1 text-[13px] font-semibold">{label}</p>
       <p className="text-[11px] text-muted">{hint}</p>
-    </div>
+    </Link>
   );
 }
 

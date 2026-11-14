@@ -1135,7 +1135,7 @@ export function createBarOrder(
   return ok(touch(next, eventId, userId, now), order);
 }
 
-const ORDER_FLOW: Record<BarOrder["delivery_type"], BarOrder["status"][]> = {
+export const ORDER_FLOW: Record<BarOrder["delivery_type"], BarOrder["status"][]> = {
   pin_delivery: ["pending", "preparing", "delivering", "completed"],
   fast_pickup: ["pending", "preparing", "ready_qr", "completed"],
   squad_split: ["pending", "preparing", "ready_qr", "completed"],

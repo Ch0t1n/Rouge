@@ -267,3 +267,30 @@ export const topSongs = (s: RougeState, eventId: UUID, limit = 5) =>
     .filter((r) => r.event_id === eventId)
     .sort((a, b) => b.voter_ids.length - a.voter_ids.length || +new Date(a.created_at) - +new Date(b.created_at))
     .slice(0, limit);
+
+// ── Seguridad del Squad ──────────────────────────────────────────────
+
+export interface RescueAlert {
+  profile: Profile;
+  member: SquadMember;
+  pin: MapPin | undefined;
+}
+
+/** Amigas/os de MI squad que pidieron rescate (con su pin activo si lo hay). */
+export function rescueAlertsFor(s: RougeState, eventId: UUID, userId: UUID, now = Date.now()): RescueAlert[] {
+  const mine = squadOf(s, eventId, userId);
+  if (!mine) return [];
+  return squadMembers(s, mine.squad.id)
+    .filter((m) => m.user_id !== userId && m.safety_status === "rescue_needed")
+    .map((m) => ({ member: m, profile: getProfile(s, m.user_id)!, pin: activePinOf(s, eventId, m.user_id, now) }))
+    .filter((r) => !!r.profile);
+}
+
+/** Squads con "🍾 Tenemos Mesa VIP · abiertos a sumar otro grupo" (sin el mío ni bloqueados). */
+export function openVipSquads(s: RougeState, eventId: UUID, viewerId: UUID) {
+  const mine = squadOf(s, eventId, viewerId)?.squad.id;
+  return s.squads
+    .filter((sq) => sq.event_id === eventId && sq.has_vip_table_to_share && sq.id !== mine)
+    .filter((sq) => !squadMembers(s, sq.id).some((m) => isBlockedBetween(s, viewerId, m.user_id)))
+    .map((sq) => ({ squad: sq, members: squadMembers(s, sq.id).map((m) => getProfile(s, m.user_id)!).filter(Boolean) }));
+}

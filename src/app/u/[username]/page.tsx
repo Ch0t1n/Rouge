@@ -11,6 +11,7 @@ import { useRequireProfile } from "@/lib/store/hooks";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ProfileView } from "@/components/profile/ProfileView";
 import { ConnectActions } from "@/components/lobby/ConnectActions";
+import { InviteToSquadButton } from "@/components/squad/InviteToSquadButton";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
 
@@ -72,7 +73,12 @@ export default function UserProfilePage() {
         }
       />
       <div className="px-4">
-        <ProfileView profile={other} mood={theirs && !theirs.ghost_mode ? theirs.mood_tag : null} affinity={affinity} actions={<ConnectActions target={other} />} />
+        <ProfileView profile={other} mood={theirs && !theirs.ghost_mode ? theirs.mood_tag : null} affinity={affinity} actions={
+            <div className="space-y-2">
+              <ConnectActions target={other} />
+              <InviteToSquadButton target={other} />
+            </div>
+          } />
       </div>
 
       <BottomSheet open={menu} onClose={() => setMenu(false)} title={`@${other.username}`}>

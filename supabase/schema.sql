@@ -888,6 +888,47 @@ begin
   return v_pin;
 end $$;
 
+-- Pin-Drop de 15 min: 1 activo por usuario; solo comparte con matches REALES seleccionados.
+create or replace function public.drop_pin(p_event uuid, p_x double precision, p_y double precision, p_sector text,
+                                           p_share_with_squad boolean, p_match_ids uuid[] default '{}', p_note text default null)
+returns public.map_pins language plpgsql security definer set search_path = public as $$
+declare v_matches uuid[]; v_pin public.map_pins;
+begin
+  if not public.lobby_is_open(p_event) or not public.is_event_attendee(p_event) then raise exception 'not_allowed'; end if;
+  select coalesce(array_agg(m), '{}') into v_matches from unnest(coalesce(p_match_ids, '{}')) m
+   where public.is_match(p_event, auth.uid(), m) and not public.is_blocked(auth.uid(), m);
+  p_share_with_squad := p_share_with_squad and public.user_squad(p_event, auth.uid()) is not null;
+  if not p_share_with_squad and cardinality(v_matches) = 0 then raise exception 'choose_audience'; end if;
+  delete from public.map_pins where event_id = p_event and user_id = auth.uid();
+  insert into public.map_pins (event_id, user_id, coord_x, coord_y, sector_name, note, share_with_squad, shared_match_ids)
+  values (p_event, auth.uid(), p_x, p_y, p_sector, nullif(left(trim(p_note), 60), ''), p_share_with_squad, v_matches)
+  returning * into v_pin;
+  update public.event_attendees set last_active_at = now() where event_id = p_event and user_id = auth.uid();
+  return v_pin;
+end $$;
+
+-- 🚩 Punto Base del Squad (+ aviso en el chat)
+create or replace function public.set_squad_base_pin(p_squad uuid, p_x double precision, p_y double precision, p_label text)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_event uuid; v_label text := coalesce(nullif(trim(p_label), ''), 'Nuestro Punto de Encuentro');
+begin
+  if not public.is_squad_member(p_squad) then raise exception 'not_member'; end if;
+  update public.squads set base_pin_x = p_x, base_pin_y = p_y, base_pin_label = v_label where id = p_squad returning event_id into v_event;
+  insert into public.messages (event_id, conversation_type, squad_id, sender_id, message_type, content)
+  values (v_event, 'squad', p_squad, auth.uid(), 'system_alert', '🚩 Nuevo Punto Base: ' || v_label);
+end $$;
+
+create or replace function public.announce_base_meetup(p_squad uuid, p_minutes int default 10)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_sq public.squads;
+begin
+  if not public.is_squad_member(p_squad) then raise exception 'not_member'; end if;
+  select * into v_sq from public.squads where id = p_squad;
+  if v_sq.base_pin_x is null then raise exception 'no_base_pin'; end if;
+  insert into public.messages (event_id, conversation_type, squad_id, sender_id, message_type, content)
+  values (v_sq.event_id, 'squad', p_squad, auth.uid(), 'system_alert', '🚩 ¡Nos vemos en el Punto Base en ' || greatest(1, least(p_minutes, 60)) || ' min!');
+end $$;
+
 -- 🏠 Ya llegué bien a casa / ✅ Ya estoy bien
 create or replace function public.set_safety_status(p_event uuid, p_status safety_status_t)
 returns void language plpgsql security definer set search_path = public as $$

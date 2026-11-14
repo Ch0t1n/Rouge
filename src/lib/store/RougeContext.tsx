@@ -21,6 +21,24 @@ import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { uid } from "@/lib/utils";
 
 const STORAGE_KEY = "rouge:state";
+/** Persona activa POR PESTAÑA (Modo Demo): cada pestaña simula un teléfono distinto. */
+const PERSONA_KEY = "rouge:persona";
+
+function tabPersona(): UUID | null {
+  try {
+    return sessionStorage.getItem(PERSONA_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function rememberPersona(id: UUID) {
+  try {
+    sessionStorage.setItem(PERSONA_KEY, id);
+  } catch {
+    /* ignore */
+  }
+}
 
 export type DataMode = "demo" | "supabase";
 
@@ -53,6 +71,12 @@ interface RougeContextValue {
 const Ctx = createContext<RougeContextValue | null>(null);
 
 function loadState(now: number): RougeState {
+  const s = loadStoredState(now);
+  const persona = tabPersona();
+  return persona ? { ...s, current_user_id: persona } : s;
+}
+
+function loadStoredState(now: number): RougeState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
@@ -86,6 +110,7 @@ export function RougeProvider({ children }: { children: ReactNode }) {
   // Hidratación SOLO en cliente (la semilla depende de Date.now()).
   useEffect(() => {
     const s = loadState(Date.now());
+    rememberPersona(s.current_user_id); // fija la persona de ESTA pestaña
     stateRef.current = s;
     setState(s);
   }, []);
@@ -145,7 +170,8 @@ export function RougeProvider({ children }: { children: ReactNode }) {
   const notify = useCallback(
     (t: Omit<Toast, "id">) => {
       const id = Math.random().toString(36).slice(2);
-      setToasts((ts) => [...ts.slice(-3), { ...t, id }]);
+      // Máximo 2 banners a la vista: nunca tapar acciones críticas (rescate, chat).
+      setToasts((ts) => [...ts.slice(-1), { ...t, id }]);
       const duration = t.duration ?? 4200;
       if (duration > 0) setTimeout(() => dismiss(id), duration);
     },
@@ -170,15 +196,20 @@ export function RougeProvider({ children }: { children: ReactNode }) {
     [notify],
   );
 
-  const setCurrentUser = useCallback((id: UUID) => setState((s) => (s ? { ...s, current_user_id: id } : s)), []);
+  const setCurrentUser = useCallback((id: UUID) => {
+    rememberPersona(id);
+    setState((s) => (s ? { ...s, current_user_id: id } : s));
+  }, []);
   const setActiveEvent = useCallback((id: UUID) => setState((s) => (s ? { ...s, active_event_id: id } : s)), []);
   const startNewPersona = useCallback(() => {
     const id = uid();
+    rememberPersona(id);
     setState((s) => (s ? { ...s, current_user_id: id } : s));
     return id;
   }, []);
   const resetDemo = useCallback(() => {
     const fresh = createSeedState(Date.now());
+    rememberPersona(fresh.current_user_id);
     stateRef.current = fresh;
     setState(fresh);
     saveState(fresh);

@@ -47,15 +47,23 @@ src/
     join/                 # Ingreso manual por código · join/[code]: link maestro, código único o link de Squad + Mood
     lobby/                # Grilla por afinidad, Ghost Mode, filtros, Line-up, cambio de Mood
     inbox/                # Rompehielos fijados arriba, solicitudes, enviadas y matches (de todos los eventos)
-    chat/[connectionId]/  # Chat 1:1 entre matches (persiste tras el cierre del lobby)
+    chat/[connectionId]/  # Chat 1:1 entre matches, texto + fotos (persiste tras el cierre del lobby)
+    map/                  # Plano: Pin-Drop 15 min con audiencia manual, Punto Base (?mode=base), rescate (?rescue=1), ?focus=<userId>
+    squad/                # Crear/unirse, invitar (link, @username), Rescate / Llegué a casa, Punto Base, Mesa VIP, perk grupal
+    squad/chat/           # Chat grupal (texto + fotos + alertas del sistema)
+    perks/                # Billetera de QRs (perks, pedidos) + avisos del organizador (Text Blasts)
+    bar/                  # Barra Express: delivery a pin/Mesa VIP, Fast-Pickup QR, Vaquita de Squad
     admin/                # Suite del organizador (vista EXPANDIDA en desktop)
     offline/              # Fallback del Service Worker
   components/
     ui/                   # Primitivas: Button, Badge, Switch, BottomSheet, Avatar, Toaster, field (TextField, Segmented)
     media/                # MediaImage (placeholder color), LoopVideo (GIF-like), SpotifyEmbed (lazy)
     profile/              # ProfileView, PhotoSlots, LoopVideoField, GenrePicker, SpotifyField, PhoneField, BlacklistManager
-    layout/               # AppShell (contenedor móvil vs. admin), BottomNav, PageHeader, PersonaSwitcher, SW register
+    layout/               # AppShell, BottomNav (5 tabs), PageHeader, PersonaSwitcher, LiveNotifications, SW register
     lobby/                # GridCard, ConnectActions, IcebreakerComposer, MatchCelebration, useConnect
+    chat/                 # MessageList (texto, fotos, system_alert), Composer (foto comprimida)
+    squad/                # InviteToSquadButton ("Invitar a mi Squad" desde cualquier perfil)
+    perks/                # QrBlock (QR alto contraste)
     venue/VenueMap.tsx    # Plano interactivo (zoom/paneo, sectores, pines)
     event/                # LineupBanner, MoodPicker
   lib/
@@ -65,6 +73,7 @@ src/
       actions.ts          # Reglas de NEGOCIO puras (state, input, now) → Result
       affinity.ts         # Algoritmo de afinidad
       grid.ts             # lobbyGrid(): visibles + afinidad + estado de conexión + filtros
+      bar.ts              # Metadatos de presentación de Barra Express (labels, QR de retiro)
       profile.ts          # Validaciones de perfil, parser de Spotify, máscara de teléfono, completitud
       analytics.ts        # Métricas B2B, CRM, Smart Tags
       engine.test.ts      # Tests de invariantes de negocio
@@ -105,6 +114,12 @@ public/                   # manifest.json, sw.js, íconos, avatares demo
    `uploadMedia()` devuelve una URL de Storage o una ref `idb:` que se resuelve con
    `useMediaUrl()` (ya integrado en `Avatar`, `MediaImage`, `LoopVideo`). Toda imagen de perfil
    se renderiza con esos componentes.
+9. **Notificaciones en vivo.** `LiveNotifications` deriva novedades del estado (blasts, rescates,
+   pedidos listos, QRs, invitaciones, solicitudes, matches) y muestra solo las no vistas por persona.
+   Con Supabase, las filas llegan por Realtime y el componente no cambia. Máximo 2 banners a la vista:
+   **nunca** tapar acciones críticas (el rescate se confirma en línea, no con banner persistente).
+10. **Persona por pestaña (demo).** La persona activa se guarda en `sessionStorage`: cada pestaña
+    simula un teléfono distinto aunque compartan el estado.
 8. **Guardado sincrónico.** `run()` persiste en el acto (y hay flush en `pagehide`): una acción
    nunca se pierde por cerrar la PWA o navegar inmediatamente.
 
@@ -139,12 +154,16 @@ public/                   # manifest.json, sw.js, íconos, avatares demo
   sin grilla, plano, squads ni conexiones nuevas; **matches y chats 1:1 quedan para siempre**.
 - **Pines:** 1 activo por usuario, expiran a los **15 min**. Audiencia elegida manualmente:
   Squad (cian) y/o matches seleccionados (rouge). **Nunca** se comparte con matches no seleccionados.
-- **Rescate 🚨:** clava pin rojo compartido con el Squad + `safety_status = rescue_needed` +
+- **Rescate 🚨:** 1 toque. Usa el pin activo, si no el Punto Base; se puede precisar tocando el plano
+  (`/map?rescue=1`). Clava pin rojo compartido con el Squad + `safety_status = rescue_needed` +
   alerta `system_alert` en el chat del Squad. **🏠 Llegué a casa:** borra pines y avisa.
 - **QR Drops:** reglas `perk_rules` (ej. Squad de 4 antes de la 01:00) otorgan 1 QR por integrante,
   idempotente (`source_ref_id`).
 - **Barra Express:** precios siempre del menú del servidor; la Vaquita reparte `total_spent`
-  entre miembros del Squad.
+  entre miembros del Squad. Delivery exige pin activo o Mesa VIP con Punto Base. Flujos de estado en
+  `ORDER_FLOW` (pickup: pending→preparing→ready_qr→completed; delivery: …→delivering→completed).
+- **Pin-Drop (SQL):** usar la RPC `drop_pin` (reemplaza el pin anterior y descarta ids que no son
+  matches reales). Punto Base y su aviso: `set_squad_base_pin`, `announce_base_meetup`.
 
 ## Sistema de diseño — "Velvet & Laser" Dark UI
 
@@ -172,7 +191,7 @@ public/                   # manifest.json, sw.js, íconos, avatares demo
 - [x] **Fase 1** — Cimientos, identidad, esquema SQL, motor de reglas y Mock Data.
 - [x] **Fase 2** — Onboarding/perfil (4 fotos comprimidas, loop 5s, géneros, Spotify), privacidad y bloqueos.
 - [x] **Fase 3** — Ingreso `/join/[code]` + Mood, Line-up, grilla por afinidad, Ghost Mode, conexiones y Rompehielos.
-- [ ] **Fase 4** — Squads y seguridad, Pin-Drop 15 min, Punto Base, chat realtime (texto + fotos), Perks/QRs y Barra Express.
+- [x] **Fase 4** — Squads y seguridad, Pin-Drop 15 min, Punto Base, chat realtime (texto + fotos), Perks/QRs y Barra Express.
 - [ ] **Fase 5** — `/admin`: eventos y códigos, CRM + CSV, Text Blasts, perks y sorteos, Kanban de barra, Pantalla LED.
 
 ## Convenciones
