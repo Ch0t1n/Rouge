@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { X } from "lucide-react";
 import { useRouge } from "@/lib/store/RougeContext";
 import { cn } from "@/lib/utils";
@@ -18,8 +19,16 @@ const BAR = { info: "bg-muted", success: "bg-squad", error: "bg-rouge", rouge: "
 /** Banners Toast superiores (errores, Text Blasts, alertas de rescate). */
 export function Toaster() {
   const { toasts, dismiss } = useRouge();
+  // En el panel del organizador (vista expandida) los avisos van arriba a la derecha, sin tapar títulos.
+  const admin = (usePathname() ?? "").startsWith("/admin");
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-0 z-[60] mx-auto flex max-w-md flex-col gap-2 px-3 pt-[max(0.75rem,var(--safe-top))]" aria-live="polite">
+    <div
+      className={cn(
+        "pointer-events-none fixed top-0 z-[60] flex flex-col gap-2 px-3 pt-[max(0.75rem,var(--safe-top))]",
+        admin ? "right-0 w-full max-w-sm" : "inset-x-0 mx-auto max-w-md",
+      )}
+      aria-live="polite"
+    >
       {toasts.map((t) => (
         <div
           key={t.id}

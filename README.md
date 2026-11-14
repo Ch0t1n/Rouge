@@ -18,7 +18,11 @@ pines en el plano, QRs y pedidos de barra precargados. Todo persiste en `localSt
 
 - Tocá tu avatar arriba a la derecha para **actuar como** otra persona.
 - Abrí una **segunda pestaña** para simular otro teléfono: los cambios se sincronizan.
-- `/admin` abre el panel del organizador en vista expandida.
+- `/admin` abre el panel del organizador (vista expandida): resumen con ROI, eventos y códigos de
+  1 uso, CRM exportable, Text Blasts, perks y sorteo en vivo, comandas de barra y la Pantalla LED
+  (`/admin/live-wall`, para conectar por HDMI).
+- Probá el circuito completo con dos pestañas: el panel del organizador en una y la app en la otra
+  (un Flash Promo o un pedido "listo" aparecen en vivo en el teléfono).
 
 ## Conectar Supabase
 

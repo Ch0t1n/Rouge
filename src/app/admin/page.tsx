@@ -2,59 +2,83 @@
 
 import Link from "next/link";
 import { useMemo } from "react";
-import { Heart, Martini, MapPin, Siren, Ticket, TrendingUp, Users, UsersRound } from "lucide-react";
+import { ArrowRight, CalendarCog, Gift, Heart, MapPin, Martini, Megaphone, Siren, Ticket, Timer, TrendingUp, Tv, Users, UsersRound } from "lucide-react";
 import { crmRows, eventMetrics, SMART_TAG_META } from "@/lib/engine/analytics";
-import { activeEvent, lobbyPhase } from "@/lib/engine/selectors";
+import { activeEvent, lobbyPhase, squadOf } from "@/lib/engine/selectors";
 import { useNow, useRouge } from "@/lib/store/RougeContext";
-import { Badge, LiveDot } from "@/components/ui/badge";
 import { cn, formatMoney, whatsappLink } from "@/lib/utils";
+import { AdminHeader, Panel } from "@/components/admin/AdminChrome";
+import { Badge, LiveDot } from "@/components/ui/badge";
+
+/** Minutos de fila que se estima ahorra cada pedido por Barra Express (supuesto comercial). */
+const QUEUE_MINUTES_SAVED = 12;
 
 export default function AdminOverviewPage() {
   const { state } = useRouge();
   const now = useNow(15_000);
   const event = activeEvent(state)!;
   const m = useMemo(() => eventMetrics(state, event.id, now), [state, event.id, now]);
-  const rows = useMemo(() => crmRows(state, event.id).slice(0, 6), [state, event.id]);
+  const rows = useMemo(() => crmRows(state, event.id), [state, event.id]);
   const codes = state.event_invite_codes.filter((c) => c.event_id === event.id);
-  const live = lobbyPhase(event, now) === "live";
+  const orders = state.bar_orders.filter((o) => o.event_id === event.id);
+  const phase = lobbyPhase(event, now);
+  const live = phase === "live";
+
+  const buyers = new Set(orders.flatMap((o) => [o.user_id, ...o.split_user_ids])).size;
+  const withMatch = new Set(state.connections.filter((c) => c.event_id === event.id && c.status === "accepted").flatMap((c) => [c.sender_id, c.receiver_id])).size;
+  const inSquad = state.event_attendees.filter((a) => a.event_id === event.id && squadOf(state, event.id, a.user_id)).length;
+  const avgTicket = orders.length ? m.barRevenue / orders.length : 0;
+  const funnel = [
+    { label: "Entraron a la app", value: m.attendees, color: "bg-rouge" },
+    { label: "Armaron o se sumaron a un Squad", value: inSquad, color: "bg-squad" },
+    { label: "Hicieron al menos un Match", value: withMatch, color: "bg-rouge" },
+    { label: "Compraron por Barra Express", value: buyers, color: "bg-vip" },
+  ];
 
   const kpis = [
-    { label: "Asistentes en la app", value: m.attendees, sub: `${Math.round(m.femaleShare * 100)}% público femenino`, icon: Users, tone: "rouge" },
-    { label: "Matches de la noche", value: m.matches, sub: `${m.icebreakersSent} rompehielos · ${m.pendingConnections} pendientes`, icon: Heart, tone: "rouge" },
-    { label: "Squads activos", value: m.squads, sub: `${m.usersInSquads} personas · mayor: ${m.biggestSquad?.size ?? 0}`, icon: UsersRound, tone: "squad" },
-    { label: "Pines activos", value: m.activePins, sub: m.rescueAlerts ? `${m.rescueAlerts} alerta(s) de rescate` : "Sin alertas de rescate", icon: MapPin, tone: "squad" },
-    { label: "Ventas Barra Express", value: formatMoney(m.barRevenue), sub: `${m.openOrders} pedidos abiertos`, icon: Martini, tone: "vip" },
-    { label: "Perks canjeados", value: `${m.perksRedeemed}/${m.perksIssued}`, sub: "QR Drops + sorteos", icon: TrendingUp, tone: "vip" },
+    { label: "Ventas por la app", value: formatMoney(m.barRevenue), sub: `Ticket promedio ${formatMoney(avgTicket)} · ${orders.length} pedidos`, icon: TrendingUp, tone: "vip" },
+    { label: "Asistentes en la app", value: m.attendees, sub: `${Math.round((m.attendees / event.max_capacity) * 100)}% del cupo · ${Math.round(m.femaleShare * 100)}% público femenino`, icon: Users, tone: "rouge" },
+    { label: "Matches de la noche", value: m.matches, sub: `${m.icebreakersSent} rompehielos · ${m.pendingConnections} solicitudes pendientes`, icon: Heart, tone: "rouge" },
+    { label: "Squads activos", value: m.squads, sub: `${m.usersInSquads} personas · el más grande: ${m.biggestSquad?.size ?? 0}`, icon: UsersRound, tone: "squad" },
+    { label: "Filas evitadas", value: `${Math.round((orders.length * QUEUE_MINUTES_SAVED) / 60)} h`, sub: `≈${QUEUE_MINUTES_SAVED} min por pedido · ${m.openOrders} pedidos abiertos`, icon: Timer, tone: "squad" },
+    { label: "Perks canjeados", value: `${m.perksRedeemed}/${m.perksIssued}`, sub: `${m.activePins} pines activos en el plano`, icon: Gift, tone: "vip" },
   ] as const;
 
+  const modules = [
+    { href: "/admin/events", label: "Eventos y accesos", sub: `${codes.filter((c) => !c.is_used).length} códigos libres`, icon: CalendarCog },
+    { href: "/admin/blasts", label: "Text Blast / Flash Promo", sub: "Avisos push segmentados", icon: Megaphone },
+    { href: "/admin/perks", label: "Perks y sorteo en vivo", sub: `${state.raffles.filter((r) => r.event_id === event.id && !r.winner_user_id).length} sorteos pendientes`, icon: Gift },
+    { href: "/admin/bar-pos", label: "Comandas de barra", sub: `${m.openOrders} pedidos abiertos`, icon: Martini },
+    { href: "/admin/live-wall", label: "Pantalla gigante LED", sub: "Para conectar por HDMI", icon: Tv },
+  ];
+
   return (
-    <main className="mx-auto max-w-7xl px-5 py-6 lg:px-10 lg:py-10">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
+    <main className="mx-auto max-w-7xl space-y-8 px-5 py-6 lg:px-10 lg:py-10">
+      <AdminHeader
+        title={event.name}
+        subtitle={
+          <span className="flex flex-wrap items-center gap-2">
             <Badge tone={live ? "live" : "neutral"} size="md">
-              {live && <LiveDot />} {live ? "En vivo" : lobbyPhase(event, now)}
+              {live && <LiveDot />} {live ? "En vivo" : phase === "upcoming" ? "Próximo" : phase === "expired" ? "Finalizado" : "Lobby abierto"}
             </Badge>
-            <span className="text-sm text-muted">{event.venue_name}</span>
-          </div>
-          <h1 className="mt-2 text-3xl lg:text-4xl">{event.name}</h1>
-        </div>
-        <div className="glass flex items-center gap-3 rounded-2xl px-4 py-3 text-sm">
-          <Ticket className="size-4 text-vip" />
-          <span className="text-muted">Link maestro</span>
-          <code className="font-display font-semibold text-primary">/join/{event.slug}</code>
-          <span className="text-muted">·</span>
-          <span className="text-muted">{codes.filter((c) => c.is_used).length}/{codes.length} códigos únicos usados</span>
-        </div>
-      </div>
+            {event.venue_name}
+          </span>
+        }
+        actions={
+          <Link href="/admin/events" className="glass flex min-h-touch items-center gap-2 rounded-2xl px-4 text-sm">
+            <Ticket className="size-4 text-vip" /> <code className="font-display font-semibold">/join/{event.slug}</code>
+            <span className="text-muted">· {codes.filter((c) => c.is_used).length}/{codes.length} códigos usados</span>
+          </Link>
+        }
+      />
 
       {m.rescueAlerts > 0 && (
-        <div role="alert" className="mt-6 flex items-center gap-3 rounded-2xl border border-rouge/50 bg-rouge/10 p-4 text-rouge shadow-glow-rouge">
+        <div role="alert" className="flex items-center gap-3 rounded-2xl border border-rouge/50 bg-rouge/10 p-4 text-rouge shadow-glow-rouge">
           <Siren className="size-5" /> {m.rescueAlerts} asistente(s) activaron el Botón de Rescate. Avisá a seguridad.
         </div>
       )}
 
-      <section className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {kpis.map(({ label, value, sub, icon: Icon, tone }) => (
           <div key={label} className="glass rounded-3xl p-5">
             <div className="flex items-center justify-between">
@@ -69,25 +93,50 @@ export default function AdminOverviewPage() {
         ))}
       </section>
 
-      <section className="mt-8 grid gap-6 xl:grid-cols-3">
-        <div className="glass overflow-hidden rounded-3xl xl:col-span-2">
-          <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
-            <h2 className="text-lg">Ranking de consumo</h2>
-            <span className="text-xs text-muted">CRM completo + CSV en Fase 5</span>
-          </div>
+      <section className="grid gap-6 xl:grid-cols-3">
+        <Panel title="Embudo de la noche" className="xl:col-span-2">
+          <ul className="space-y-3">
+            {funnel.map((f) => (
+              <li key={f.label}>
+                <div className="flex justify-between text-sm">
+                  <span>{f.label}</span>
+                  <span className="metric">
+                    {f.value} <span className="text-xs font-normal text-muted">({m.attendees ? Math.round((f.value / m.attendees) * 100) : 0}%)</span>
+                  </span>
+                </div>
+                <div className="mt-1.5 h-2.5 overflow-hidden rounded-full bg-white/[0.06]">
+                  <div className={cn("h-full rounded-full", f.color)} style={{ width: `${m.attendees ? (f.value / m.attendees) * 100 : 0}%` }} />
+                </div>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-4 text-xs text-muted">Cada paso es una persona que conectó, no se perdió o consumió sin fila: lo que hace que vuelvan a comprar entrada.</p>
+        </Panel>
+
+        <Panel title="Módulos">
+          <ul className="space-y-1">
+            {modules.map(({ href, label, sub, icon: Icon }) => (
+              <li key={href}>
+                <Link href={href} className="flex min-h-touch items-center gap-3 rounded-xl px-2 py-1.5 hover:bg-white/5">
+                  <Icon className="size-5 text-vip" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold">{label}</span>
+                    <span className="block truncate text-xs text-muted">{sub}</span>
+                  </span>
+                  <ArrowRight className="size-4 text-muted" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Panel>
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-3">
+        <Panel title="Top consumo" action={<Link href="/admin/crm" className="text-xs font-semibold text-vip">CRM completo →</Link>} className="overflow-hidden p-0 xl:col-span-2 [&>div:first-child]:px-5 [&>div:first-child]:pt-5">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-sm">
-              <thead className="text-left text-xs uppercase tracking-wider text-muted">
-                <tr>
-                  <th className="px-5 py-3 font-semibold">Asistente</th>
-                  <th className="px-3 py-3 font-semibold">Edad</th>
-                  <th className="px-3 py-3 font-semibold">Squad</th>
-                  <th className="px-3 py-3 font-semibold">Tags</th>
-                  <th className="px-5 py-3 text-right font-semibold">Gasto</th>
-                </tr>
-              </thead>
+            <table className="w-full min-w-[620px] text-sm">
               <tbody>
-                {rows.map((r) => (
+                {rows.slice(0, 5).map((r) => (
                   <tr key={r.user_id} className="border-t border-white/5">
                     <td className="px-5 py-3">
                       <p className="font-semibold">{r.full_name}</p>
@@ -96,21 +145,15 @@ export default function AdminOverviewPage() {
                         {r.phone && (
                           <>
                             {" · "}
-                            <a href={whatsappLink(r.phone)} target="_blank" rel="noreferrer" className="text-squad hover:underline">
-                              WhatsApp
-                            </a>
+                            <a href={whatsappLink(r.phone)} target="_blank" rel="noreferrer" className="text-squad hover:underline">WhatsApp</a>
                           </>
                         )}
                       </p>
                     </td>
-                    <td className="px-3 py-3 tabular-nums text-muted">{r.age}</td>
-                    <td className="px-3 py-3 tabular-nums text-muted">{r.squad_size || "—"}</td>
                     <td className="px-3 py-3">
                       <div className="flex flex-wrap gap-1">
                         {r.tags.map((t) => (
-                          <Badge key={t} tone={SMART_TAG_META[t].color}>
-                            {SMART_TAG_META[t].emoji} {SMART_TAG_META[t].label}
-                          </Badge>
+                          <Badge key={t} tone={SMART_TAG_META[t].color}>{SMART_TAG_META[t].emoji} {SMART_TAG_META[t].label}</Badge>
                         ))}
                       </div>
                     </td>
@@ -120,11 +163,10 @@ export default function AdminOverviewPage() {
               </tbody>
             </table>
           </div>
-        </div>
+        </Panel>
 
-        <div className="glass rounded-3xl p-5">
-          <h2 className="text-lg">Temas más votados</h2>
-          <ol className="mt-4 space-y-3">
+        <Panel title="Temas más votados">
+          <ol className="space-y-3">
             {m.topSongs.map((sng, i) => (
               <li key={sng.id} className="flex items-center gap-3">
                 <span className="metric w-6 text-xl text-rouge">{i + 1}</span>
@@ -136,10 +178,8 @@ export default function AdminOverviewPage() {
               </li>
             ))}
           </ol>
-          <Link href="/" className="mt-6 block text-xs text-muted hover:text-primary lg:hidden">
-            ← Volver a la app
-          </Link>
-        </div>
+          <p className="mt-4 flex items-center gap-1.5 text-xs text-muted"><MapPin className="size-3.5" /> {m.activePins} pines activos ahora</p>
+        </Panel>
       </section>
     </main>
   );

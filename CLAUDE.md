@@ -53,7 +53,14 @@ src/
     squad/chat/           # Chat grupal (texto + fotos + alertas del sistema)
     perks/                # Billetera de QRs (perks, pedidos) + avisos del organizador (Text Blasts)
     bar/                  # Barra Express: delivery a pin/Mesa VIP, Fast-Pickup QR, Vaquita de Squad
-    admin/                # Suite del organizador (vista EXPANDIDA en desktop)
+    admin/                # Suite del organizador (vista EXPANDIDA en desktop, pestañas en mobile)
+      page.tsx            # Resumen: ROI (ventas por app, ticket promedio, filas evitadas), embudo, top consumo
+      events/             # Crear/editar evento, lobby (horas antes/después), plano subido, line-up, link maestro + QR, códigos 1 uso + CSV
+      crm/                # Tabla completa: búsqueda, Smart Tags, orden, WhatsApp, export CSV
+      blasts/             # Text Blast / Flash Promo segmentado con alcance en vivo y vista previa
+      perks/              # Reglas de QR Drop, ruleta de sorteo en vivo, validación de QR
+      bar-pos/            # Kanban de comandas (minimapa de entrega) + entrega por código de retiro
+      live-wall/          # Pantalla gigante LED a pantalla completa (sin chrome)
     offline/              # Fallback del Service Worker
   components/
     ui/                   # Primitivas: Button, Badge, Switch, BottomSheet, Avatar, Toaster, field (TextField, Segmented)
@@ -64,6 +71,7 @@ src/
     chat/                 # MessageList (texto, fotos, system_alert), Composer (foto comprimida)
     squad/                # InviteToSquadButton ("Invitar a mi Squad" desde cualquier perfil)
     perks/                # QrBlock (QR alto contraste)
+    admin/                # AdminChrome (sidebar/pestañas, selector de evento), AdminHeader, Panel, downloadCSV
     venue/VenueMap.tsx    # Plano interactivo (zoom/paneo, sectores, pines)
     event/                # LineupBanner, MoodPicker
   lib/
@@ -75,7 +83,7 @@ src/
       grid.ts             # lobbyGrid(): visibles + afinidad + estado de conexión + filtros
       bar.ts              # Metadatos de presentación de Barra Express (labels, QR de retiro)
       profile.ts          # Validaciones de perfil, parser de Spotify, máscara de teléfono, completitud
-      analytics.ts        # Métricas B2B, CRM, Smart Tags
+      analytics.ts        # Métricas B2B, CRM, Smart Tags, liveWallData()
       engine.test.ts      # Tests de invariantes de negocio
     mock/seed.ts          # Motor de Mock Data (fechas relativas a "ahora")
     store/RougeContext.tsx# Estado global + persistencia localStorage + sync entre pestañas
@@ -120,6 +128,11 @@ public/                   # manifest.json, sw.js, íconos, avatares demo
    **nunca** tapar acciones críticas (el rescate se confirma en línea, no con banner persistente).
 10. **Persona por pestaña (demo).** La persona activa se guarda en `sessionStorage`: cada pestaña
     simula un teléfono distinto aunque compartan el estado.
+11. **Admin.** Las páginas `page.tsx` solo exportan el componente por defecto (Next lo exige): helpers
+    a `components/admin` o `lib`. Los avisos en `/admin` van arriba a la derecha. La Pantalla LED se
+    dimensiona con `min(vw, vh)` para entrar en cualquier proyector (probado 1920×1080, 1280×720, 1024×768).
+12. **RPCs que devuelven filas:** llamar `select * from fn(...)`, nunca `select (fn(...)).*` (Postgres
+    re-ejecuta la función una vez por columna). `supabase.rpc()` ya lo hace bien.
 8. **Guardado sincrónico.** `run()` persiste en el acto (y hay flush en `pagehide`): una acción
    nunca se pierde por cerrar la PWA o navegar inmediatamente.
 
@@ -162,6 +175,13 @@ public/                   # manifest.json, sw.js, íconos, avatares demo
 - **Barra Express:** precios siempre del menú del servidor; la Vaquita reparte `total_spent`
   entre miembros del Squad. Delivery exige pin activo o Mesa VIP con Punto Base. Flujos de estado en
   `ORDER_FLOW` (pickup: pending→preparing→ready_qr→completed; delivery: …→delivering→completed).
+- **Eventos (admin):** `upsertEvent` valida lo mismo que `events_time_chk` (apertura ≤ inicio < fin ≤
+  cierre), cupo > 0, slug ≥ 3 único y sets del line-up con artista y horario válido.
+- **Comandas:** el Kanban avanza solo por `ORDER_FLOW` (`advance_bar_order` en SQL). La ventanilla
+  rápida entrega con `redeemPickupCode` / `redeem_pickup_code`: solo si el pedido está `ready_qr`;
+  acepta el código corto o el QR completo `ROUGE:ORDER:<id>:<código>`.
+- **Sorteos:** la ruleta es visual; el ganador real lo define `drawRaffle` sobre `raffleEligible`
+  (en SQL `draw_raffle` con `random()`), y recibe un QR `raffle_prize`.
 - **Pin-Drop (SQL):** usar la RPC `drop_pin` (reemplaza el pin anterior y descarta ids que no son
   matches reales). Punto Base y su aviso: `set_squad_base_pin`, `announce_base_meetup`.
 
@@ -192,7 +212,7 @@ public/                   # manifest.json, sw.js, íconos, avatares demo
 - [x] **Fase 2** — Onboarding/perfil (4 fotos comprimidas, loop 5s, géneros, Spotify), privacidad y bloqueos.
 - [x] **Fase 3** — Ingreso `/join/[code]` + Mood, Line-up, grilla por afinidad, Ghost Mode, conexiones y Rompehielos.
 - [x] **Fase 4** — Squads y seguridad, Pin-Drop 15 min, Punto Base, chat realtime (texto + fotos), Perks/QRs y Barra Express.
-- [ ] **Fase 5** — `/admin`: eventos y códigos, CRM + CSV, Text Blasts, perks y sorteos, Kanban de barra, Pantalla LED.
+- [x] **Fase 5** — `/admin`: eventos y códigos, CRM + CSV, Text Blasts, perks y sorteos, Kanban de barra, Pantalla LED.
 
 ## Convenciones
 

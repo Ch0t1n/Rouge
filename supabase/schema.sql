@@ -1082,6 +1082,37 @@ returns trigger language plpgsql as $$ begin new.updated_at := now(); return new
 drop trigger if exists bar_orders_touch on public.bar_orders;
 create trigger bar_orders_touch before update on public.bar_orders for each row execute function public.tg_touch_updated_at();
 
+-- Kanban de barra: avanza un pedido al siguiente estado de SU flujo (solo staff).
+create or replace function public.advance_bar_order(p_order uuid)
+returns public.bar_orders language plpgsql security definer set search_path = public as $$
+declare v_o public.bar_orders; v_flow bar_order_status_t[]; v_i int;
+begin
+  select * into v_o from public.bar_orders where id = p_order for update;
+  if not found then raise exception 'not_found'; end if;
+  if not public.is_event_staff(v_o.event_id) then raise exception 'forbidden'; end if;
+  v_flow := case when v_o.delivery_type = 'pin_delivery'
+                 then array['pending','preparing','delivering','completed']::bar_order_status_t[]
+                 else array['pending','preparing','ready_qr','completed']::bar_order_status_t[] end;
+  v_i := array_position(v_flow, v_o.status);
+  if v_i is null or v_i = cardinality(v_flow) then raise exception 'final_status'; end if;
+  update public.bar_orders set status = v_flow[v_i + 1] where id = p_order returning * into v_o;
+  return v_o;
+end $$;
+
+-- Ventanilla rápida: entrega el pedido solo si está "Listo para retiro".
+create or replace function public.redeem_pickup_code(p_event uuid, p_code text)
+returns public.bar_orders language plpgsql security definer set search_path = public as $$
+declare v_o public.bar_orders; v_code text := upper(regexp_replace(trim(p_code), '^ROUGE:ORDER:[^:]+:', '', 'i'));
+begin
+  if not public.is_event_staff(p_event) then raise exception 'forbidden'; end if;
+  select * into v_o from public.bar_orders where event_id = p_event and upper(pickup_code) = v_code for update;
+  if not found then raise exception 'not_found'; end if;
+  if v_o.status = 'completed' then raise exception 'already_delivered'; end if;
+  if v_o.status <> 'ready_qr' then raise exception 'not_ready'; end if;
+  update public.bar_orders set status = 'completed' where id = v_o.id returning * into v_o;
+  return v_o;
+end $$;
+
 -- Votar / pedir tema
 create or replace function public.vote_song(p_event uuid, p_title text, p_artist text default '')
 returns public.song_requests language plpgsql security definer set search_path = public as $$

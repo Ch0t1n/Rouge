@@ -3,7 +3,7 @@
  */
 import type { Gender, RougeState, UUID } from "@/lib/types";
 import { ageFrom } from "@/lib/utils";
-import { activePinOf, getProfile, squadMembers, squadOf, topSongs } from "./selectors";
+import { activePinOf, getEvent, getProfile, lineupNow, squadMembers, squadOf, topSongs } from "./selectors";
 
 export type SmartTag = "top_spender" | "squad_leader" | "power_matcher";
 
@@ -98,5 +98,26 @@ export function eventMetrics(s: RougeState, eventId: UUID, now = Date.now()) {
     perksIssued: s.user_perks_qrs.filter((p) => p.event_id === eventId).length,
     perksRedeemed: s.user_perks_qrs.filter((p) => p.event_id === eventId && p.status === "redeemed").length,
     topSongs: topSongs(s, eventId, 5),
+  };
+}
+
+/** Datos para la Pantalla Gigante LED (`/admin/live-wall`). */
+export function liveWallData(s: RougeState, eventId: UUID, now = Date.now()) {
+  const event = getEvent(s, eventId)!;
+  const m = eventMetrics(s, eventId, now);
+  const lastHour = s.connections.filter((c) => c.event_id === eventId && c.status === "accepted" && c.responded_at && now - +new Date(c.responded_at) < 3_600_000).length;
+  const flash = s.event_blasts
+    .filter((b) => b.event_id === eventId && b.is_flash_promo && b.expires_at && +new Date(b.expires_at) > now)
+    .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))[0];
+  const lastRaffle = s.raffles
+    .filter((r) => r.event_id === eventId && r.winner_user_id && r.drawn_at)
+    .sort((a, b) => +new Date(b.drawn_at!) - +new Date(a.drawn_at!))[0];
+  return {
+    event,
+    metrics: m,
+    matchesLastHour: lastHour,
+    lineup: lineupNow(event, now),
+    flash,
+    lastRaffle: lastRaffle ? { raffle: lastRaffle, winner: getProfile(s, lastRaffle.winner_user_id) } : null,
   };
 }

@@ -44,7 +44,7 @@ const ROADMAP = [
   { n: 2, title: "Onboarding, perfil, Spotify y bloqueo por teléfono", done: true },
   { n: 3, title: "Lobby: grilla por afinidad, Ghost Mode, Rompehielos", done: true },
   { n: 4, title: "Squads, seguridad, Pin-Drop 15m, chat y perks", done: true },
-  { n: 5, title: "Suite B2B: CRM, Blasts, sorteos, barra y LED", done: false },
+  { n: 5, title: "Suite B2B: CRM, Blasts, sorteos, barra y LED", done: true },
 ];
 
 export default function HomePage() {
@@ -235,7 +235,7 @@ function Home() {
         <section className="glass rounded-3xl p-4">
           <div className="flex items-center justify-between">
             <h2 className="text-lg">Roadmap del MVP</h2>
-            <Badge tone="squad">Fase 4/5</Badge>
+            <Badge tone="squad">MVP completo</Badge>
           </div>
           <ol className="mt-3 space-y-2">
             {ROADMAP.map((f) => (

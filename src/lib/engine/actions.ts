@@ -1184,13 +1184,22 @@ export function toggleSongVote(state: RougeState, requestId: UUID, userId: UUID,
 // ═════════════════════════════════════════════════════════════════════
 
 export function upsertEvent(state: RougeState, input: Partial<RougeEvent> & Pick<RougeEvent, "name" | "starts_at" | "ends_at">, now = Date.now()): Result<RougeEvent> {
-  if (+new Date(input.ends_at) <= +new Date(input.starts_at)) return fail("La fiesta debe terminar después de empezar.");
+  const t = (iso?: string) => (iso ? +new Date(iso) : NaN);
+  if (!input.name.trim()) return fail("El evento necesita un nombre.");
+  if (Number.isNaN(t(input.starts_at)) || Number.isNaN(t(input.ends_at))) return fail("Revisá las fechas del evento.");
+  if (t(input.ends_at) <= t(input.starts_at)) return fail("La fiesta debe terminar después de empezar.");
+  // Mismo check que events_time_chk en SQL: apertura ≤ inicio < fin ≤ cierre del lobby
+  if (input.lobby_opens_at && t(input.lobby_opens_at) > t(input.starts_at)) return fail("El lobby tiene que abrir antes de que empiece la fiesta.");
+  if (input.lobby_expires_at && t(input.lobby_expires_at) < t(input.ends_at)) return fail("El lobby tiene que cerrar después de que termine la fiesta.");
+  if (input.max_capacity !== undefined && (!Number.isInteger(input.max_capacity) || input.max_capacity < 1)) return fail("El cupo tiene que ser un número mayor a 0.");
+  if (input.lineup_json?.some((sl) => !sl.artist.trim() || t(sl.ends_at) <= t(sl.starts_at))) return fail("Cada set del line-up necesita artista y horario válido.");
   const slug = (input.slug ?? input.name)
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
+  if (slug.length < 3) return fail("El link del evento necesita al menos 3 caracteres.");
   if (state.events.some((e) => e.slug === slug && e.id !== input.id)) return fail("Ya existe un evento con ese link.");
   const existing = input.id ? getEvent(state, input.id) : undefined;
   const base: RougeEvent = existing ?? {
@@ -1228,4 +1237,21 @@ export function generateInviteCodes(state: RougeState, eventId: UUID, count: num
     codes.push({ id: uid(), event_id: eventId, code, is_used: false, used_by_user_id: null, used_at: null, created_at: iso(now) });
   }
   return ok({ ...state, event_invite_codes: [...state.event_invite_codes, ...codes] }, codes);
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// ADMIN: VALIDACIÓN EN BARRA
+// ═════════════════════════════════════════════════════════════════════
+
+/**
+ * El bartender escanea o tipea el código de retiro. Solo se entrega si el
+ * pedido está "Listo para retiro"; si no, explica en qué estado está.
+ */
+export function redeemPickupCode(state: RougeState, eventId: UUID, rawCode: string, now = Date.now()): Result<BarOrder> {
+  const code = rawCode.trim().toUpperCase().replace(/^ROUGE:ORDER:[^:]+:/, "");
+  const order = state.bar_orders.find((o) => o.event_id === eventId && o.pickup_code?.toUpperCase() === code);
+  if (!order) return fail("No existe un pedido con ese código.");
+  if (order.status === "completed") return fail("Ese pedido ya fue entregado.");
+  if (order.status !== "ready_qr") return fail("El pedido todavía no está listo para retirar.");
+  return setOrderStatus(state, order.id, "completed", now);
 }
