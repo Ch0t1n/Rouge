@@ -28,12 +28,14 @@ import type {
   RaffleFilter,
   RougeEvent,
   RougeState,
+  SongRequest,
   Squad,
   SquadMember,
   UserPerkQR,
   UUID,
 } from "@/lib/types";
 import { addMs, minutes, normalizePhone, shortCode, uid } from "@/lib/utils";
+import { VENUE_LAYOUT } from "@/lib/mock/seed";
 import {
   activePinOf,
   connectionBetween,
@@ -1160,7 +1162,7 @@ export function setOrderStatus(state: RougeState, orderId: UUID, status: BarOrde
 // LINE-UP: PEDIDOS DE TEMAS
 // ═════════════════════════════════════════════════════════════════════
 
-export function requestSong(state: RougeState, eventId: UUID, userId: UUID, title: string, artist: string, now = Date.now()) {
+export function requestSong(state: RougeState, eventId: UUID, userId: UUID, title: string, artist: string, now = Date.now()): Result<SongRequest> {
   const t = title.trim();
   if (!t) return fail("¿Qué tema querés pedir?");
   const key = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
@@ -1170,7 +1172,7 @@ export function requestSong(state: RougeState, eventId: UUID, userId: UUID, titl
   return ok({ ...state, song_requests: [...state.song_requests, req] }, req);
 }
 
-export function toggleSongVote(state: RougeState, requestId: UUID, userId: UUID, forceOn = false) {
+export function toggleSongVote(state: RougeState, requestId: UUID, userId: UUID, forceOn = false): Result<SongRequest> {
   const r = state.song_requests.find((x) => x.id === requestId);
   if (!r) return fail("Pedido inexistente.");
   const has = r.voter_ids.includes(userId);
@@ -1209,7 +1211,7 @@ export function upsertEvent(state: RougeState, input: Partial<RougeEvent> & Pick
     description: "",
     venue_name: "",
     venue_map_url: null,
-    venue_layout_json: state.events[0]?.venue_layout_json ?? { aspect: 0.75, sectors: [] },
+    venue_layout_json: state.events[0]?.venue_layout_json ?? VENUE_LAYOUT,
     lineup_json: [],
     cover_url: null,
     starts_at: input.starts_at,

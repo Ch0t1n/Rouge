@@ -20,7 +20,7 @@ export const ADMIN_NAV = [
 /** Estructura del panel: sidebar en desktop, pestañas horizontales en pantallas chicas. */
 export function AdminChrome({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? "/admin";
-  const { state, mode, setActiveEvent } = useRouge();
+  const { state, mode, setActiveEvent, signedIn, isStaff } = useRouge();
 
   // La Pantalla LED va a pantalla completa (HDMI), sin chrome.
   if (pathname.startsWith("/admin/live-wall")) return <>{children}</>;
@@ -95,6 +95,15 @@ export function AdminChrome({ children }: { children: ReactNode }) {
             ))}
           </nav>
         </div>
+        {mode === "supabase" && (!signedIn || !isStaff) && (
+          <div className="mx-5 mt-5 rounded-2xl border border-vip/40 bg-vip/10 p-4 text-sm lg:mx-10">
+            {!signedIn ? (
+              <>Ingresá con tu cuenta para operar el panel. <Link href="/login?next=/admin" className="font-semibold text-vip underline">Ingresar</Link></>
+            ) : (
+              <>No sos staff de este evento: las acciones del panel van a ser rechazadas por el servidor. Creá tu propio evento en <Link href="/admin/events" className="font-semibold text-vip underline">Eventos</Link> o pedile al dueño que te sume como staff.</>
+            )}
+          </div>
+        )}
         {children}
       </div>
     </div>

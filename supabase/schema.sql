@@ -598,6 +598,10 @@ create policy perks_staff_update on public.user_perks_qrs for update to authenti
 drop policy if exists perk_rules_staff on public.perk_rules;
 create policy perk_rules_staff on public.perk_rules for all to authenticated
   using (public.is_event_staff(event_id)) with check (public.is_event_staff(event_id));
+-- Los asistentes ven las reglas activas de su evento (progreso "Squad de 4 → trago").
+drop policy if exists perk_rules_attendees on public.perk_rules;
+create policy perk_rules_attendees on public.perk_rules for select to authenticated
+  using (is_active and public.is_event_attendee(event_id));
 
 drop policy if exists raffles_select on public.raffles;
 create policy raffles_select on public.raffles for select to authenticated
@@ -866,6 +870,22 @@ begin
   if new.status = 'joined' then perform public.apply_squad_perk_rules(new.squad_id); end if;
   return new;
 end $$;
+-- Una regla nueva o reactivada aplica retroactivamente a los squads que ya cumplen (idéntico al motor).
+create or replace function public.tg_perk_rule_apply()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare v_sq uuid;
+begin
+  if new.is_active then
+    for v_sq in select id from public.squads where event_id = new.event_id loop
+      perform public.apply_squad_perk_rules(v_sq);
+    end loop;
+  end if;
+  return new;
+end $$;
+drop trigger if exists perk_rule_apply on public.perk_rules;
+create trigger perk_rule_apply after insert or update of is_active, trigger on public.perk_rules
+  for each row execute function public.tg_perk_rule_apply();
+
 drop trigger if exists squad_member_joined on public.squad_members;
 create trigger squad_member_joined after insert or update of status on public.squad_members
   for each row execute function public.tg_squad_member_joined();
@@ -1196,7 +1216,7 @@ do $$
 declare t text;
 begin
   foreach t in array array['messages','map_pins','connections','squad_members','squads','blast_deliveries',
-                           'user_perks_qrs','bar_orders','song_requests','raffles'] loop
+                           'user_perks_qrs','bar_orders','song_requests','raffles','event_attendees'] loop
     begin
       execute format('alter publication supabase_realtime add table public.%I', t);
     exception when duplicate_object then null; when undefined_object then null;

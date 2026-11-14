@@ -1,5 +1,6 @@
 "use client";
 
+import * as C from "@/lib/store/commands";
 import Link from "next/link";
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -18,7 +19,7 @@ export default function JoinPage() {
   const { code: rawCode } = useParams<{ code: string }>();
   const code = decodeURIComponent(rawCode ?? "");
   const router = useRouter();
-  const { state, run, notify, setActiveEvent } = useRouge();
+  const { state, exec, notify, setActiveEvent, mode, signedIn } = useRouge();
   const now = useNow(30_000);
   const me = getProfile(state, state.current_user_id);
   const resolved = resolveAccessCode(state, code);
@@ -61,9 +62,9 @@ export default function JoinPage() {
             ? "El evento alcanzó su cupo máximo en la app."
             : null;
 
-  const enter = () => {
+  const enter = async () => {
     if (!mood) return;
-    const r = run((s) => joinEvent(s, state.current_user_id, code, mood));
+    const r = await exec(C.joinEvent(state.current_user_id, code, mood));
     if (!r.ok) return;
     setActiveEvent(r.data.eventId);
     notify({
@@ -128,6 +129,13 @@ export default function JoinPage() {
         <div className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm">
           <Lock className="size-5 shrink-0 text-muted" />
           <p>{blocker}</p>
+        </div>
+      ) : mode === "supabase" && !signedIn ? (
+        <div className="space-y-3 text-center">
+          <p className="text-sm text-muted">Ingresá con tu email para entrar al lobby. Tu perfil sirve para todas tus fiestas.</p>
+          <Link href={`/login?next=${encodeURIComponent(`/join/${code}`)}`} className={buttonVariants({ size: "lg", block: true })}>
+            Ingresar y entrar
+          </Link>
         </div>
       ) : !me ? (
         <div className="space-y-3 text-center">

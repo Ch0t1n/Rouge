@@ -1,5 +1,6 @@
 "use client";
 
+import * as C from "@/lib/store/commands";
 import { useState } from "react";
 import { ChevronUp, Music2, Send } from "lucide-react";
 import type { RougeEvent } from "@/lib/types";
@@ -13,7 +14,7 @@ import { cn, formatTime } from "@/lib/utils";
 /** 🔊 En cabina: DJ (02:00 - 03:30) | Sigue: Main Set — con pedido/voto de temas. */
 export function LineupBanner({ event, className }: { event: RougeEvent; className?: string }) {
   const now = useNow(30_000);
-  const { state, run, notify } = useRouge();
+  const { state, exec, notify } = useRouge();
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [artist, setArtist] = useState("");
@@ -21,9 +22,9 @@ export function LineupBanner({ event, className }: { event: RougeEvent; classNam
   const songs = topSongs(state, event.id, 8);
   const me = state.current_user_id;
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const r = run((s) => requestSong(s, event.id, me, title, artist));
+    const r = await exec(C.requestSong(event.id, me, title, artist));
     if (r.ok) {
       setTitle("");
       setArtist("");
@@ -75,7 +76,7 @@ export function LineupBanner({ event, className }: { event: RougeEvent; classNam
                 </div>
                 <button
                   type="button"
-                  onClick={() => run((s) => toggleSongVote(s, sng.id, me))}
+                  onClick={() => void exec(C.toggleSongVote(event.id, sng.id, me, sng.title))}
                   aria-pressed={voted}
                   aria-label={voted ? `Quitar voto a ${sng.title}` : `Votar ${sng.title}`}
                   className={cn(

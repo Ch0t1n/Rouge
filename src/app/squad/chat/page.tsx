@@ -1,5 +1,6 @@
 "use client";
 
+import * as C from "@/lib/store/commands";
 import Link from "next/link";
 import { useMemo } from "react";
 import { Flag, Siren, UsersRound } from "lucide-react";
@@ -20,7 +21,7 @@ export default function SquadChatPage() {
 }
 
 function SquadChat() {
-  const { state, run } = useRouge();
+  const { state, exec } = useRouge();
   const event = activeEvent(state)!;
   const meId = state.current_user_id;
   const mine = squadOf(state, event.id, meId);
@@ -63,7 +64,7 @@ function SquadChat() {
       <div className="sticky bottom-0 z-20">
       <div className="no-scrollbar flex gap-2 overflow-x-auto bg-gradient-to-t from-background to-transparent px-3 pb-2 pt-3">
         {squad.base_pin_x != null && (
-          <button type="button" onClick={() => run((s) => announceBaseMeetup(s, squad.id, meId, 10))} className="glass-pill inline-flex min-h-[36px] shrink-0 items-center gap-1.5 text-vip">
+          <button type="button" onClick={() => exec(C.announceBaseMeetup(squad.id, meId, 10))} className="glass-pill inline-flex min-h-[36px] shrink-0 items-center gap-1.5 text-vip">
             <Flag className="size-3.5" /> Nos vemos en el Punto Base en 10′
           </button>
         )}
@@ -74,7 +75,7 @@ function SquadChat() {
           📍 Ver plano
         </Link>
       </div>
-      <Composer placeholder="Escribile al Squad…" onSend={(body) => run((s) => sendMessage(s, meId, { type: "squad", squadId: squad.id }, body)).ok} />
+      <Composer placeholder="Escribile al Squad…" onSend={async (body) => (await exec(C.sendMessage(meId, { type: "squad", squadId: squad.id }, body))).ok} />
       </div>
     </main>
   );

@@ -1,5 +1,6 @@
 "use client";
 
+import * as C from "@/lib/store/commands";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ChevronDown, Ghost, Inbox, MapPin, Moon, SlidersHorizontal, X } from "lucide-react";
@@ -28,7 +29,7 @@ export default function LobbyPage() {
 }
 
 function Lobby() {
-  const { state, run, notify } = useRouge();
+  const { state, exec, notify } = useRouge();
   const now = useNow(30_000);
   const event = activeEvent(state)!;
   const meId = state.current_user_id;
@@ -65,10 +66,10 @@ function Lobby() {
     );
   }
 
-  const setSetting = (patch: Parameters<typeof updateAttendeeSettings>[3]) => run((s) => updateAttendeeSettings(s, event.id, meId, patch));
+  const setSetting = (patch: Parameters<typeof updateAttendeeSettings>[3]) => exec(C.updateAttendeeSettings(event.id, meId, patch));
 
-  const toggleGhost = (v: boolean) => {
-    const r = setSetting({ ghost_mode: v });
+  const toggleGhost = async (v: boolean) => {
+    const r = await setSetting({ ghost_mode: v });
     if (r.ok)
       notify({
         tone: v ? "squad" : "rouge",

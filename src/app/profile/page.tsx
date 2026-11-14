@@ -12,7 +12,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export default function MyProfilePage() {
-  const { state, notify } = useRouge();
+  const { state, notify, mode, signOut } = useRouge();
   const me = useRequireProfile();
   if (!me) return null;
   const att = getAttendee(state, state.active_event_id, me.id);
@@ -83,6 +83,11 @@ export default function MyProfilePage() {
           </section>
         )}
 
+        {mode === "supabase" && (
+          <button type="button" onClick={() => void signOut()} className="w-full rounded-2xl border border-white/10 py-3 text-sm font-semibold text-muted hover:text-primary">
+            Cerrar sesión
+          </button>
+        )}
         <section className="glass flex items-center gap-3 rounded-2xl p-4 text-sm">
           <Lock className="size-5 shrink-0 text-muted" />
           <div className="min-w-0 flex-1">

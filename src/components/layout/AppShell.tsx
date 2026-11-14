@@ -1,7 +1,11 @@
 "use client";
 
-import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, type ReactNode } from "react";
+import { CalendarX2 } from "lucide-react";
+import { activeEvent } from "@/lib/engine/selectors";
+import { useRouge } from "@/lib/store/RougeContext";
 import { Toaster } from "@/components/ui/toaster";
 import { BottomNav, NAV_ROUTES } from "./BottomNav";
 import { LiveNotifications } from "./LiveNotifications";
@@ -16,6 +20,17 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? "/";
   const expanded = pathname.startsWith("/admin");
   const withNav = NAV_ROUTES.includes(pathname);
+  const { state, mode, signedIn } = useRouge();
+  const router = useRouter();
+  // Supabase: sin sesión solo se ven las rutas públicas; el resto pasa primero por el login.
+  const isPublic = ["/login", "/join", "/offline"].some((p) => pathname.startsWith(p));
+  const needsLogin = mode === "supabase" && !signedIn && !isPublic;
+  useEffect(() => {
+    if (needsLogin) router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+  }, [needsLogin, pathname, router]);
+  // Rutas que no dependen de un evento activo (perfil, ingreso, chats 1:1, alta de eventos…)
+  const eventFree = ["/login", "/onboarding", "/join", "/profile", "/settings", "/u/", "/chat", "/inbox", "/offline", "/admin/events"].some((p) => pathname.startsWith(p));
+  const missingEvent = !eventFree && !activeEvent(state);
 
   return (
     <>
@@ -33,11 +48,27 @@ export function AppShell({ children }: { children: ReactNode }) {
           withNav && "pb-[calc(64px+var(--safe-bottom))]",
         )}
       >
-        {children}
+        {needsLogin ? null : missingEvent ? <NoEvent admin={expanded} /> : children}
       </div>
-      {withNav && <BottomNav />}
+      {withNav && !missingEvent && !needsLogin && <BottomNav />}
       {!expanded && <LiveNotifications />}
       <Toaster />
     </>
+  );
+}
+
+/** Supabase recién creado o usuario sin eventos: invita a entrar con un código (o a crear uno). */
+function NoEvent({ admin }: { admin: boolean }) {
+  return (
+    <main className="safe-top flex min-h-dvh flex-col items-center justify-center gap-3 px-8 text-center">
+      <span className="grid size-16 place-items-center rounded-full bg-rouge/12 text-rouge">
+        <CalendarX2 className="size-7" />
+      </span>
+      <h1 className="text-2xl">{admin ? "Todavía no hay eventos" : "No hay ninguna fiesta activa"}</h1>
+      <p className="max-w-sm text-sm text-muted">{admin ? "Creá tu primer evento para generar el link maestro y los códigos de entrada." : "Ingresá el código o el link de tu entrada para entrar al lobby."}</p>
+      <Link href={admin ? "/admin/events" : "/join"} className="mt-2 inline-flex min-h-touch items-center rounded-2xl bg-rouge px-5 font-display font-semibold text-white shadow-glow-rouge">
+        {admin ? "Crear evento" : "Tengo un código"}
+      </Link>
+    </main>
   );
 }

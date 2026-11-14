@@ -11,15 +11,18 @@ import { Button } from "@/components/ui/button";
  * Compositor de chat: texto + foto (comprimida en el cliente antes de subir).
  * Fase 2 del producto: audios y videos cortos (el esquema ya los soporta).
  */
-export function Composer({ onSend, placeholder = "Escribí un mensaje…" }: { onSend: (body: { type: "text" | "image"; content: string; mediaUrl?: string }) => boolean; placeholder?: string }) {
+export function Composer({ onSend, placeholder = "Escribí un mensaje…" }: { onSend: (body: { type: "text" | "image"; content: string; mediaUrl?: string }) => boolean | Promise<boolean>; placeholder?: string }) {
   const { notify } = useRouge();
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const file = useRef<HTMLInputElement>(null);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (text.trim() && onSend({ type: "text", content: text })) setText("");
+    const content = text;
+    if (!content.trim()) return;
+    setText(""); // se limpia al instante (UI optimista); si falla, se restaura
+    if (!(await onSend({ type: "text", content }))) setText(content);
   };
 
   const onPhoto = async (f?: File) => {
@@ -28,7 +31,7 @@ export function Composer({ onSend, placeholder = "Escribí un mensaje…" }: { o
     try {
       const compressed = await compressImage(f, "chat");
       const url = await uploadMedia(compressed, "chat");
-      if (onSend({ type: "image", content: text.trim(), mediaUrl: url })) setText("");
+      if (await onSend({ type: "image", content: text.trim(), mediaUrl: url })) setText("");
     } catch {
       notify({ tone: "error", title: "No pudimos enviar la foto", description: "Probá con JPG o PNG." });
     } finally {

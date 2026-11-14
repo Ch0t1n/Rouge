@@ -1,5 +1,6 @@
 "use client";
 
+import * as C from "@/lib/store/commands";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -102,7 +103,7 @@ function Squad() {
 
 // ── Sin squad ─────────────────────────────────────────────────────
 function NoSquad() {
-const { state, run, notify } = useRouge();
+const { state, exec, notify } = useRouge();
 const now = useNow(15_000);
 const event = activeEvent(state)!;
 const meId = state.current_user_id;
@@ -128,14 +129,14 @@ const router = useRouter();
             <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
               <Button
                 variant="squad"
-                onClick={() => {
-                  const r = run((s) => joinSquad(s, meId, squad.id));
+                onClick={async () => {
+                  const r = await exec(C.joinSquad(meId, squad.id));
                   if (r.ok) notify({ tone: "squad", title: `👯 Te sumaste a ${squad.name}`, description: r.data.grantedPerks.length ? "🎁 ¡Desbloquearon un QR para cada una! Miralo en Perks." : undefined });
                 }}
               >
                 Unirme
               </Button>
-              <Button variant="ghost" onClick={() => run((s) => declineSquadInvite(s, meId, member.id))}>
+              <Button variant="ghost" onClick={() => exec(C.declineSquadInvite(meId, member.id))}>
                 Rechazar
               </Button>
             </div>
@@ -159,8 +160,8 @@ const router = useRouter();
             block
             size="lg"
             variant="squad"
-            onClick={() => {
-              const r = run((s) => createSquad(s, event.id, meId, name));
+            onClick={async () => {
+              const r = await exec(C.createSquad(event.id, meId, name));
               if (r.ok) notify({ tone: "squad", title: `✨ Creaste ${r.data.name}`, description: "Invitá a tu gente con el link o por @username." });
             }}
           >
@@ -191,7 +192,7 @@ const router = useRouter();
 
 // ── Con squad ─────────────────────────────────────────────────────
 function MySquad() {
-const { state, run, notify } = useRouge();
+const { state, exec, notify } = useRouge();
 const now = useNow(15_000);
 const event = activeEvent(state)!;
 const meId = state.current_user_id;
@@ -215,7 +216,7 @@ const meId = state.current_user_id;
     const pin = activePinOf(state, event.id, meId, now);
     const coords = pin ? undefined : squad.base_pin_x != null ? { x: squad.base_pin_x, y: squad.base_pin_y! } : undefined;
     // Sin banner: la confirmación se muestra en línea para no tapar "Ya estoy bien".
-    run((s) => triggerRescue(s, event.id, meId, coords));
+    exec(C.triggerRescue(event.id, meId, coords));
   };
 
   const share = async () => {
@@ -243,7 +244,7 @@ const meId = state.current_user_id;
                 Precisar mi ubicación
               </Link>
             </p>
-            <Button size="lg" variant="glass" block className="min-h-[56px] border-rouge/60 text-primary" onClick={() => run((s) => resolveRescue(s, event.id, meId))}>
+            <Button size="lg" variant="glass" block className="min-h-[56px] border-rouge/60 text-primary" onClick={() => exec(C.resolveRescue(event.id, meId))}>
               ✅ Ya estoy bien · cancelar alerta
             </Button>
           </div>
@@ -258,8 +259,8 @@ const meId = state.current_user_id;
           <button
             type="button"
             disabled={member.safety_status === "home_safe"}
-            onClick={() => {
-              const r = run((s) => markHomeSafe(s, event.id, meId));
+            onClick={async () => {
+              const r = await exec(C.markHomeSafe(event.id, meId));
               if (r.ok) notify({ tone: "squad", title: "🏠 Avisamos a tu Squad que llegaste bien", description: "Borramos tu pin del plano." });
             }}
             className="flex min-h-[96px] flex-col items-center justify-center gap-1 rounded-3xl border border-squad/40 bg-squad/10 px-3 text-center font-display font-bold text-squad transition active:scale-95 disabled:opacity-60"
@@ -342,8 +343,8 @@ const meId = state.current_user_id;
             size="sm"
             variant="vip"
             disabled={squad.base_pin_x == null}
-            onClick={() => {
-              const r = run((s) => announceBaseMeetup(s, squad.id, meId, 10));
+            onClick={async () => {
+              const r = await exec(C.announceBaseMeetup(squad.id, meId, 10));
               if (r.ok) notify({ tone: "vip", title: "🚩 Aviso enviado", description: "¡Nos vemos en el Punto Base en 10 min!" });
             }}
           >
@@ -369,8 +370,8 @@ const meId = state.current_user_id;
           tone="vip"
           id="vip-share"
           checked={squad.has_vip_table_to_share}
-          onCheckedChange={(v) => {
-            const r = run((s) => updateSquad(s, squad.id, meId, { has_vip_table_to_share: v }));
+          onCheckedChange={async (v) => {
+            const r = await exec(C.updateSquad(squad.id, meId, { has_vip_table_to_share: v }));
             if (r.ok && v) notify({ tone: "vip", title: "🍾 Mesa VIP visible", description: "Otros grupos pueden ver que tienen lugar para sumar gente y dividir gastos." });
           }}
           label="🍾 Compartimos Mesa VIP"
@@ -419,8 +420,8 @@ const meId = state.current_user_id;
                   <Button
                     size="sm"
                     variant="squad"
-                    onClick={() => {
-                      const r = run((s) => inviteToSquad(s, squad.id, meId, p.id));
+                    onClick={async () => {
+                      const r = await exec(C.inviteToSquad(squad.id, meId, p.id));
                       if (r.ok) notify({ tone: "squad", title: `Invitaste a @${p.username}`, duration: 2000 });
                     }}
                   >
@@ -447,7 +448,7 @@ const meId = state.current_user_id;
             <Button
               variant="danger"
               onClick={() => {
-                run((s) => leaveSquad(s, meId, squad.id));
+                exec(C.leaveSquad(meId, squad.id));
                 setLeaveOpen(false);
               }}
             >

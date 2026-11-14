@@ -1,5 +1,6 @@
 "use client";
 
+import * as C from "@/lib/store/commands";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Ban, EyeOff, MoreHorizontal, UserX } from "lucide-react";
@@ -18,7 +19,7 @@ import { Button } from "@/components/ui/button";
 export default function UserProfilePage() {
   const { username } = useParams<{ username: string }>();
   const router = useRouter();
-  const { state, run, notify } = useRouge();
+  const { state, exec, notify } = useRouge();
   const me = useRequireProfile();
   const [menu, setMenu] = useState(false);
   const [confirm, setConfirm] = useState(false);
@@ -52,8 +53,8 @@ export default function UserProfilePage() {
   const mine = getAttendee(state, eventId, me.id);
   const affinity = theirs ? computeAffinity(me, mine, other, theirs) : null;
 
-  const doBlock = () => {
-    const r = run((s) => blockUser(s, me.id, other.id));
+  const doBlock = async () => {
+    const r = await exec(C.blockUser(me.id, other.id));
     if (r.ok) {
       setConfirm(false);
       notify({ tone: "info", title: "Usuario bloqueado", description: "Ya no se van a ver en ningún evento. Podés deshacerlo en Privacidad." });

@@ -1,5 +1,6 @@
 "use client";
 
+import * as C from "@/lib/store/commands";
 import { useMemo, useRef, useState } from "react";
 import { Copy, Download, ImagePlus, Link2, Plus, QrCode, Save, Trash2 } from "lucide-react";
 import type { LineupSlot, RougeEvent } from "@/lib/types";
@@ -12,6 +13,7 @@ import { cn, formatDateTime, toCSV, uid } from "@/lib/utils";
 import { AdminHeader, downloadCSV, Panel } from "@/components/admin/AdminChrome";
 import { QrBlock } from "@/components/perks/QrCard";
 import { VenueMap } from "@/components/venue/VenueMap";
+import { VENUE_LAYOUT } from "@/lib/mock/seed";
 import { Badge } from "@/components/ui/badge";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
@@ -64,7 +66,7 @@ export default function AdminEventsPage() {
 }
 
 function EventEditor({ event, onSaved }: { event: RougeEvent | null; onSaved: (id: string) => void }) {
-  const { state, run, notify } = useRouge();
+  const { state, exec, notify } = useRouge();
   const defaults = useMemo(() => {
     const start = new Date();
     start.setDate(start.getDate() + ((6 - start.getDay() + 7) % 7 || 7)); // próximo sábado
@@ -84,13 +86,13 @@ function EventEditor({ event, onSaved }: { event: RougeEvent | null; onSaved: (i
   const [lineup, setLineup] = useState<LineupSlot[]>(event?.lineup_json ?? []);
   const [uploading, setUploading] = useState(false);
   const file = useRef<HTMLInputElement>(null);
-  const layout = event?.venue_layout_json ?? state.events[0]?.venue_layout_json;
+  const layout = event?.venue_layout_json ?? state.events[0]?.venue_layout_json ?? VENUE_LAYOUT;
 
-  const save = () => {
+  const save = async () => {
     const s = fromLocal(starts);
     const e = fromLocal(ends);
-    const r = run((st) =>
-      upsertEvent(st, {
+    const r = await exec(
+      C.upsertEvent({
         ...(event ? { id: event.id } : {}),
         name,
         slug: slug || undefined,
@@ -200,7 +202,7 @@ function EventEditor({ event, onSaved }: { event: RougeEvent | null; onSaved: (i
 }
 
 function AccessPanel({ event }: { event: RougeEvent }) {
-  const { state, run, notify } = useRouge();
+  const { state, exec, notify } = useRouge();
   const [count, setCount] = useState(50);
   const [qr, setQr] = useState(false);
   const [filter, setFilter] = useState<"all" | "free" | "used">("all");
@@ -262,8 +264,8 @@ function AccessPanel({ event }: { event: RougeEvent }) {
           </div>
           <Button
             variant="vip"
-            onClick={() => {
-              const r = run((s) => generateInviteCodes(s, event.id, count));
+            onClick={async () => {
+              const r = await exec(C.generateInviteCodes(event.id, count));
               if (r.ok) notify({ tone: "vip", title: `🎟️ ${r.data.length} códigos generados`, description: "Entregalos con cada entrada (email, ticketera o impresos)." });
             }}
           >

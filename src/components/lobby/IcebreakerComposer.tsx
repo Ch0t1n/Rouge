@@ -1,5 +1,6 @@
 "use client";
 
+import * as C from "@/lib/store/commands";
 import { useState } from "react";
 import { Send, Zap } from "lucide-react";
 import type { Profile } from "@/lib/types";
@@ -15,15 +16,15 @@ const OPENERS = ["Te vi en la pista y tenía que decirte algo 🔥", "¿Qué tem
 
 /** La bala única de la noche: mensaje directo sin match previo (+ trago QR opcional). */
 export function IcebreakerComposer({ open, onClose, target, eventId }: { open: boolean; onClose: () => void; target: Profile; eventId: string }) {
-  const { state, run, notify } = useRouge();
+  const { state, exec, notify } = useRouge();
   const [text, setText] = useState("");
   const [gift, setGift] = useState(false);
   const [drink, setDrink] = useState<string | null>(null);
   const drinks = state.bar_menu.filter((i) => GIFTABLE_CATEGORIES.includes(i.category));
   const first = target.full_name.split(" ")[0];
 
-  const send = () => {
-    const r = run((s) => sendIcebreaker(s, eventId, state.current_user_id, target.id, { message: text, giftDrinkItemId: gift && drink ? drink : undefined }));
+  const send = async () => {
+    const r = await exec(C.sendIcebreaker(eventId, state.current_user_id, target.id, { message: text, giftDrinkItemId: gift && drink ? drink : undefined }));
     if (r.ok) {
       onClose();
       setText("");

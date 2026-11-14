@@ -40,6 +40,7 @@ src/
   app/                    # Rutas (App Router)
     layout.tsx            # Fuentes, metadata PWA, RougeProvider, AppShell
     page.tsx              # Home del evento (Modo Demo hub)
+    login/                # Magic link por email (Modo Supabase; en demo redirige)
     onboarding/           # Alta del perfil persistente en 4 pasos (guarda progresivamente)
     profile/              # "Así te ven" + completitud · profile/edit (editor completo)
     settings/privacy/     # Lista negra por teléfono + perfiles bloqueados
@@ -86,13 +87,18 @@ src/
       analytics.ts        # Métricas B2B, CRM, Smart Tags, liveWallData()
       engine.test.ts      # Tests de invariantes de negocio
     mock/seed.ts          # Motor de Mock Data (fechas relativas a "ahora")
-    store/RougeContext.tsx# Estado global + persistencia localStorage + sync entre pestañas
-    store/hooks.ts        # useRequireProfile() → redirige a /onboarding si no hay perfil
+    store/RougeContext.tsx# Estado global: Modo Demo (localStorage) o Supabase (sesión + carga + Realtime); exec()
+    store/commands.ts     # Comandos: regla local del motor + contraparte remota (RPC/tabla) de CADA acción
+    store/commands.test.ts# Contrato cliente ↔ schema.sql (RPCs, parámetros, tablas, columnas, cargador)
+    store/hooks.ts        # useRequireProfile() → /login (Supabase sin sesión) o /onboarding (sin perfil)
+    supabase/sync.ts      # fetchRemoteState() (RLS) + subscribeRealtime()
+    supabase/errors.ts    # friendlyError(): excepciones de RPC/RLS → mensajes en español
     supabase/client.ts    # Cliente Supabase (null si no hay credenciales)
     media/compress.ts     # Compresión WebP, color dominante, transcodificación del loop (sin audio)
     media/mediaStore.ts   # Blobs en IndexedDB (`idb:<uuid>`) para el Modo Demo
     media/upload.ts       # uploadMedia(): Supabase Storage si hay sesión, si no IndexedDB
 supabase/schema.sql       # Tablas, índices, RLS, RPCs, triggers, realtime, storage
+supabase/seed.sql         # Opcional: evento de prueba, menú y regla de QR (fechas relativas a now())
 public/                   # manifest.json, sw.js, íconos, avatares demo
 ```
 
@@ -100,11 +106,25 @@ public/                   # manifest.json, sw.js, íconos, avatares demo
 
 1. **Motor puro primero.** Toda regla de negocio vive en `src/lib/engine/*` como funciones
    puras `(state, input, now) → { ok, state, data } | { ok: false, error }`. La UI nunca
-   implementa reglas: llama `run((s) => A.accion(s, ...))` del `RougeContext`.
+   implementa reglas ni llama al motor directo: usa `await exec(C.accion(...))` del `RougeContext`
+   (`import * as C from "@/lib/store/commands"`).
+1b. **Comandos.** Cada acción nueva se agrega en `commands.ts` con `local` (el motor) y `remote`
+   (RPC/tabla). `exec` aplica `local` al instante (optimista, mismos mensajes de error) y, en
+   Supabase, llama a `remote`; si el servidor rechaza, recarga el estado real y muestra
+   `friendlyError`. Si el servidor genera datos (ids, códigos de retiro, ganador del sorteo, alcance),
+   `remote` los devuelve y la UI usa `r.data` (nunca el dato local). Inserts directos usan el mismo
+   id que el optimista (ej. mensajes) para no duplicar. Todo comando nuevo se agrega a
+   `commands.test.ts` (verifica nombres de RPC, parámetros y columnas contra `schema.sql`).
 2. **Misma semántica en demo y en Supabase.** Cada acción del motor tiene su contraparte
    RLS/RPC en `schema.sql` (`join_event`, `send_connection`, `send_icebreaker`,
    `trigger_rescue`, `send_blast`, `draw_raffle`, `create_bar_order`, `event_crm`…).
    Si cambiás una regla, cambiala en **ambos** lados y en los tests.
+3b. **Modo Supabase.** Sesión con magic link (`/login`); `current_user_id = auth.uid()`. El estado se
+   arma con `fetchRemoteState` (selects con RLS; el teléfono solo vía `my_profile()` y, para staff,
+   `event_crm()`), se re-sincroniza por Realtime (debounce), al enfocar la ventana y cada 45 s.
+   Rutas públicas sin sesión: `/login`, `/join/*`, `/offline`; el resto pasa por el login (AppShell).
+   Sin evento activo se muestra la pantalla "No hay ninguna fiesta activa" (o "Crear evento" en admin).
+   Botones "Simular…" solo existen en Modo Demo.
 3. **Modo Demo automático.** Sin `NEXT_PUBLIC_SUPABASE_URL`/`ANON_KEY` en `.env.local`,
    la app usa el estado local sembrado por `createSeedState(now)` y persistido en
    `localStorage` (`rouge:state`). Dos pestañas se sincronizan por el evento `storage`

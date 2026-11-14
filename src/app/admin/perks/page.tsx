@@ -1,5 +1,6 @@
 "use client";
 
+import * as C from "@/lib/store/commands";
 import { useEffect, useRef, useState } from "react";
 import { Dices, Gift, Plus, ScanLine, Trophy } from "lucide-react";
 import type { PerkType, Raffle, RaffleFilter, UUID } from "@/lib/types";
@@ -49,7 +50,7 @@ export default function AdminPerksPage() {
 
 // ── Reglas automáticas ──────────────────────────────────────────────
 function RulesPanel({ eventId, defaultBefore }: { eventId: UUID; defaultBefore: string }) {
-  const { state, run, notify } = useRouge();
+  const { state, exec, notify } = useRouge();
   const rules = state.perk_rules.filter((r) => r.event_id === eventId);
   const [title, setTitle] = useState("🍹 Trago de Bienvenida — Squad de 4+");
   const [type, setType] = useState<PerkType>("free_drink");
@@ -57,8 +58,8 @@ function RulesPanel({ eventId, defaultBefore }: { eventId: UUID; defaultBefore: 
   const [before, setBefore] = useState(toLocal(new Date(+new Date(defaultBefore) + 90 * 60_000).toISOString()));
   const [useBefore, setUseBefore] = useState(true);
 
-  const create = () => {
-    const r = run((s) => upsertPerkRule(s, { event_id: eventId, title, perk_type: type, trigger: { kind: "squad_size", min_members: min, before: useBefore ? new Date(before).toISOString() : null }, is_active: true }));
+  const create = async () => {
+    const r = await exec(C.upsertPerkRule({ event_id: eventId, title, perk_type: type, trigger: { kind: "squad_size", min_members: min, before: useBefore ? new Date(before).toISOString() : null }, is_active: true }));
     if (r.ok) notify({ tone: "vip", title: "Regla activada ✓", description: "Los Squads que ya cumplen reciben su QR al instante." });
   };
 
@@ -73,7 +74,7 @@ function RulesPanel({ eventId, defaultBefore }: { eventId: UUID; defaultBefore: 
                 tone="vip"
                 id={`rule-${r.id}`}
                 checked={r.is_active}
-                onCheckedChange={(v) => run((s) => upsertPerkRule(s, { ...r, is_active: v }))}
+                onCheckedChange={(v) => exec(C.upsertPerkRule({ ...r, is_active: v }))}
                 label={r.title}
                 description={`Squad de ${r.trigger.min_members}+${r.trigger.before ? ` antes de las ${formatTime(r.trigger.before)}` : ""} · ${issued} QRs entregados`}
               />
@@ -110,7 +111,7 @@ function RulesPanel({ eventId, defaultBefore }: { eventId: UUID; defaultBefore: 
 
 // ── Ruleta de sorteo en vivo ────────────────────────────────────────
 function RafflePanel({ eventId }: { eventId: UUID }) {
-  const { state, run, notify } = useRouge();
+  const { state, exec, notify } = useRouge();
   const [prize, setPrize] = useState("Botella de Champagne en el VIP");
   const [filter, setFilter] = useState<RaffleFilter>("active_pin");
   const [spinning, setSpinning] = useState<{ raffleId: UUID; pool: UUID[]; index: number } | null>(null);
@@ -123,21 +124,30 @@ function RafflePanel({ eventId }: { eventId: UUID }) {
     if (timer.current) clearTimeout(timer.current);
   }, []);
 
-  const spin = (raffle: Raffle) => {
+  const spin = async (raffle: Raffle) => {
     const pool = raffleEligible(state, eventId, raffle.filter);
     if (!pool.length) {
       notify({ tone: "error", title: "No hay participantes que cumplan el filtro." });
       return;
     }
-    const winnerIdx = Math.floor(Math.random() * pool.length);
-    // Ruleta: ~26 pasos que desaceleran y terminan en el ganador
-    const steps = 26 + ((winnerIdx - 26) % pool.length + pool.length) % pool.length;
+    // 1) Primero se sortea (en Supabase decide el servidor con random()); 2) la ruleta anima HACIA ese ganador.
+    setSpinning({ raffleId: raffle.id, pool, index: 0 });
+    const localIdx = Math.floor(Math.random() * pool.length);
+    const r = await exec(C.drawRaffle(raffle.id, () => (localIdx + 0.5) / pool.length));
+    if (!r.ok || !r.data.raffle.winner_user_id) {
+      setSpinning(null);
+      return;
+    }
+    const winnerId = r.data.raffle.winner_user_id;
+    const wheel = pool.includes(winnerId) ? pool : [...pool, winnerId];
+    const winnerIdx = wheel.indexOf(winnerId);
+    // ~26 pasos que desaceleran y terminan en el ganador
+    const steps = 26 + ((winnerIdx - 26) % wheel.length + wheel.length) % wheel.length;
     let i = 0;
     const tick = () => {
-      setSpinning({ raffleId: raffle.id, pool, index: i % pool.length });
+      setSpinning({ raffleId: raffle.id, pool: wheel, index: i % wheel.length });
       if (i >= steps) {
-        const r = run((s) => drawRaffle(s, raffle.id, () => (winnerIdx + 0.5) / pool.length));
-        if (r.ok) notify({ tone: "vip", title: `🏆 Ganó ${getProfile(state, r.data.raffle.winner_user_id)?.full_name}`, description: "El QR del premio ya está en su billetera." });
+        notify({ tone: "vip", title: `🏆 Ganó ${getProfile(state, winnerId)?.full_name ?? "un asistente"}`, description: "El QR del premio ya está en su billetera." });
         timer.current = setTimeout(() => setSpinning(null), 2500);
         return;
       }
@@ -188,7 +198,7 @@ function RafflePanel({ eventId }: { eventId: UUID }) {
             </button>
           ))}
         </div>
-        <Button variant="glass" onClick={() => run((s) => createRaffle(s, eventId, prize, filter))} disabled={!prize.trim()}>
+        <Button variant="glass" onClick={() => exec(C.createRaffle(eventId, prize, filter))} disabled={!prize.trim()}>
           <Plus /> Crear sorteo
         </Button>
       </div>
@@ -231,15 +241,15 @@ function WinnerCard({ raffle }: { raffle: Raffle }) {
 
 // ── Canje de QR ─────────────────────────────────────────────────────
 function RedeemPanel() {
-  const { state, run, notify } = useRouge();
+  const { state, exec, notify } = useRouge();
   const [code, setCode] = useState("");
   return (
     <Panel title={<span className="flex items-center gap-2"><ScanLine className="size-5 text-squad" /> Validar QR de perk</span>}>
       <form
         className="flex items-end gap-2"
-        onSubmit={(e) => {
+        onSubmit={async (e) => {
           e.preventDefault();
-          const r = run((s) => redeemPerk(s, code.trim()));
+          const r = await exec(C.redeemPerk(code.trim()));
           if (r.ok) {
             const owner = getProfile(state, r.data.user_id);
             notify({ tone: "squad", title: `✅ Canjeado: ${r.data.title}`, description: owner ? `De ${owner.full_name}` : undefined });

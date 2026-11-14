@@ -1,5 +1,6 @@
 "use client";
 
+import * as C from "@/lib/store/commands";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Bell, Megaphone, QrCode, Ticket, Zap } from "lucide-react";
@@ -29,7 +30,7 @@ export default function PerksPage() {
 }
 
 function Wallet() {
-  const { state, run, mode, notify } = useRouge();
+  const { state, exec, mode, notify } = useRouge();
   const now = useNow(15_000);
   const event = activeEvent(state)!;
   const meId = state.current_user_id;
@@ -154,8 +155,8 @@ function Wallet() {
               <Button
                 block
                 variant="glass"
-                onClick={() => {
-                  const r = run((s) => redeemPerk(s, live.id));
+                onClick={async () => {
+                  const r = await exec(C.redeemPerk(live.id));
                   if (r.ok) notify({ tone: "vip", title: "✅ Canjeado en barra", description: "Simulación del escaneo del staff (Modo Demo)." });
                 }}
               >

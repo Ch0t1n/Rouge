@@ -14,9 +14,9 @@ export default function JoinCodePage() {
   const { state, mode } = useRouge();
   const router = useRouter();
   const [code, setCode] = useState("");
-  const event = state.events.find((e) => e.id === state.active_event_id)!;
-  const freeCode = state.event_invite_codes.find((c) => c.event_id === event.id && !c.is_used);
-  const squad = state.squads.find((s) => s.event_id === event.id);
+  const event = state.events.find((e) => e.id === state.active_event_id);
+  const freeCode = event && state.event_invite_codes.find((c) => c.event_id === event.id && !c.is_used);
+  const squad = event && state.squads.find((s) => s.event_id === event.id);
 
   return (
     <main>
@@ -34,7 +34,7 @@ export default function JoinCodePage() {
         </Button>
       </form>
 
-      {mode === "demo" && (
+      {mode === "demo" && event && (
         <section className="mx-5 mt-8 space-y-2 rounded-3xl border border-vip/25 bg-vip/[0.05] p-4">
           <h2 className="flex items-center gap-2 text-sm text-vip">
             <Ticket className="size-4" /> Links de prueba (Modo Demo)

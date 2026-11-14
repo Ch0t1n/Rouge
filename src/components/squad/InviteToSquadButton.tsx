@@ -1,5 +1,6 @@
 "use client";
 
+import * as C from "@/lib/store/commands";
 import { Check, UserPlus } from "lucide-react";
 import type { Profile } from "@/lib/types";
 import { createSquad, inviteToSquad } from "@/lib/engine/actions";
@@ -9,7 +10,7 @@ import { Button } from "@/components/ui/button";
 
 /** "Invitar a mi Squad" desde el perfil de cualquier asistente o match. */
 export function InviteToSquadButton({ target }: { target: Profile }) {
-  const { state, run, notify } = useRouge();
+  const { state, exec, notify } = useRouge();
   const meId = state.current_user_id;
   const eventId = state.active_event_id;
   const event = getEvent(state, eventId);
@@ -31,15 +32,15 @@ export function InviteToSquadButton({ target }: { target: Profile }) {
     return <p className="text-center text-xs text-muted">{first} ya está en otro Squad esta noche.</p>;
   }
 
-  const invite = () => {
+  const invite = async () => {
     let squadId = mine?.squad.id;
     if (!squadId) {
       const me = getProfile(state, meId)!;
-      const created = run((s) => createSquad(s, eventId, meId, `Squad de ${me.full_name.split(" ")[0]}`));
+      const created = await exec(C.createSquad(eventId, meId, `Squad de ${me.full_name.split(" ")[0]}`));
       if (!created.ok) return;
       squadId = created.data.id;
     }
-    const r = run((s) => inviteToSquad(s, squadId!, meId, target.id));
+    const r = await exec(C.inviteToSquad(squadId!, meId, target.id));
     if (r.ok) notify({ tone: "squad", title: `👯 Invitaste a ${first} a tu Squad`, description: mine ? "Le llega la invitación al instante." : "Creamos tu Squad y le mandamos la invitación." });
   };
 

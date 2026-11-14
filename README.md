@@ -26,9 +26,22 @@ pines en el plano, QRs y pedidos de barra precargados. Todo persiste en `localSt
 
 ## Conectar Supabase
 
-1. Creá un proyecto en Supabase y ejecutá `supabase/schema.sql` en el SQL Editor.
-2. `cp .env.example .env.local` y completá `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
-3. (Opcional) Programá `select public.purge_expired_pins()` con pg_cron cada 5 min.
+Con credenciales en `.env.local` la app deja el Modo Demo y usa Supabase: login por email
+(magic link), datos con RLS, Realtime y Storage.
+
+1. Creá un proyecto en [Supabase](https://supabase.com) y ejecutá en el **SQL Editor**:
+   - `supabase/schema.sql` (tablas, RLS, RPCs, triggers, realtime, storage);
+   - opcional: `supabase/seed.sql` (evento de prueba `/join/bresh-sabado`, menú y regla de QR).
+2. `cp .env.example .env.local` y completá `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   (Project Settings → API).
+3. **Authentication → URL Configuration**: Site URL = tu dominio (o `http://localhost:3000`) y agregá
+   `http://localhost:3000/**` a Redirect URLs. El proveedor Email viene habilitado por defecto.
+4. Ingresá en `/login`, completá el onboarding y entrá con `/join/bresh-sabado` (o creá tu propio evento
+   en `/admin/events`: quien crea un evento queda como staff). Para operar el evento del seed con tu
+   cuenta, ver el comentario al inicio de `supabase/seed.sql`.
+5. (Opcional) Programá `select public.purge_expired_pins()` con pg_cron cada 5 min.
+
+> En producción: configurá un SMTP propio en Supabase (el de prueba tiene un límite bajo de emails por hora).
 
 ## Scripts
 
@@ -37,6 +50,6 @@ pines en el plano, QRs y pedidos de barra precargados. Todo persiste en `localSt
 | `npm run dev` | Servidor de desarrollo |
 | `npm run build` / `npm start` | Build y servidor de producción (activa el Service Worker) |
 | `npm run typecheck` | Verificación de tipos |
-| `npm test` | Tests del motor de reglas de negocio |
+| `npm test` | Tests del motor de reglas y del contrato cliente ↔ `schema.sql` |
 
 Arquitectura, reglas de negocio y sistema de diseño: ver [`CLAUDE.md`](./CLAUDE.md).

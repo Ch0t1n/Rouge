@@ -1,5 +1,6 @@
 "use client";
 
+import * as C from "@/lib/store/commands";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Check, ChefHat, Minus, Plus, ShoppingBag } from "lucide-react";
@@ -32,7 +33,7 @@ export default function BarPage() {
 }
 
 function Bar() {
-  const { state, run, notify, mode } = useRouge();
+  const { state, exec, notify, mode } = useRouge();
   const now = useNow(15_000);
   const event = activeEvent(state)!;
   const meId = state.current_user_id;
@@ -81,9 +82,9 @@ function Bar() {
     return next;
   });
 
-  const pay = () => {
-    const r = run((s) =>
-      createBarOrder(s, event.id, meId, Object.entries(cart).map(([itemId, qty]) => ({ itemId, qty })), delivery),
+  const pay = async () => {
+    const r = await exec(
+      C.createBarOrder(event.id, meId, Object.entries(cart).map(([itemId, qty]) => ({ itemId, qty })), delivery),
     );
     if (!r.ok) return;
     setCart({});
@@ -99,7 +100,7 @@ function Bar() {
         {active.map((o) => (
           <OrderCard key={o.id} order={o} meId={meId} onQr={() => setQrOrder(o)} onSimulate={mode === "demo" ? () => {
             const next = nextOrderStatus(o);
-            if (next) run((s) => setOrderStatus(s, o.id, next));
+            if (next) void exec(C.advanceOrder(o));
           } : undefined} />
         ))}
 

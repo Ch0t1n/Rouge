@@ -1,5 +1,6 @@
 "use client";
 
+import * as C from "@/lib/store/commands";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -22,7 +23,7 @@ export default function InboxPage() {
 }
 
 function Inbox() {
-  const { state, run, notify } = useRouge();
+  const { state, exec, notify } = useRouge();
   const router = useRouter();
   const meId = state.current_user_id;
   const eventId = state.active_event_id;
@@ -45,8 +46,8 @@ function Inbox() {
   );
   const sent = state.connections.filter((c) => c.event_id === eventId && c.sender_id === meId && c.status === "pending");
 
-  const respond = (c: Connection, other: Profile, accept: boolean, thenChat = false) => {
-    const r = run((s) => respondConnection(s, c.id, meId, accept));
+  const respond = async (c: Connection, other: Profile, accept: boolean, thenChat = false) => {
+    const r = await exec(C.respondConnection(c.id, meId, accept));
     if (!r.ok) return;
     if (!accept) {
       notify({ tone: "info", title: c.type === "icebreaker" ? "Rompehielos ignorado" : "Solicitud rechazada", description: "No le avisamos.", duration: 2200 });

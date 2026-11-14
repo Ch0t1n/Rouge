@@ -1,5 +1,6 @@
 "use client";
 
+import * as C from "@/lib/store/commands";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, ChevronLeft, PartyPopper, ShieldCheck } from "lucide-react";
@@ -34,12 +35,17 @@ export default function OnboardingPage() {
 }
 
 function Onboarding() {
-  const { state, run, notify } = useRouge();
+  const { state, exec, notify, mode, signedIn } = useRouge();
   const router = useRouter();
   const params = useSearchParams();
   const next = params.get("next") || "/";
   const meId = state.current_user_id;
   const existing = getProfile(state, meId);
+
+  // Supabase: el perfil se crea con el id de la sesión (auth.uid()).
+  useEffect(() => {
+    if (mode === "supabase" && !signedIn) router.replace(`/login?next=${encodeURIComponent(`/onboarding${next !== "/" ? `?next=${next}` : ""}`)}`);
+  }, [mode, signedIn, router, next]);
 
   // Si ya tenía perfil al entrar, no repetimos el onboarding.
   const hadProfileOnMount = useRef(!!existing);
@@ -73,7 +79,7 @@ function Onboarding() {
     true,
   ][step];
 
-  const save = () => {
+  const save = async () => {
     setTouched(true);
     if (!stepValid) return false;
     const input =
@@ -84,12 +90,12 @@ function Onboarding() {
           : step === 2
             ? { music_genres: genres, spotify_embed_url: spotify.trim() || null }
             : {};
-    const r = run((s) => upsertProfile(s, meId, input));
+    const r = await exec(C.upsertProfile(meId, input));
     return r.ok;
   };
 
-  const advance = () => {
-    if (!save()) return;
+  const advance = async () => {
+    if (!(await save())) return;
     setTouched(false);
     if (step < STEPS.length - 1) {
       setStep(step + 1);

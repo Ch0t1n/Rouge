@@ -1,5 +1,6 @@
 "use client";
 
+import * as C from "@/lib/store/commands";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Save } from "lucide-react";
@@ -26,7 +27,7 @@ export default function EditProfilePage() {
 }
 
 function EditForm() {
-  const { state, run, notify } = useRouge();
+  const { state, exec, notify } = useRouge();
   const router = useRouter();
   const me = state.profiles.find((p) => p.id === state.current_user_id)!;
 
@@ -62,9 +63,9 @@ function EditForm() {
 
   const valid = fullName.trim() && usernameCheck.ok && !birthError && !!phoneNorm && photos.length >= 1 && genres.length >= 1 && bio.length <= BIO_MAX;
 
-  const save = () => {
-    const r = run((s) =>
-      upsertProfile(s, me.id, {
+  const save = async () => {
+    const r = await exec(
+      C.upsertProfile(me.id, {
         full_name: fullName,
         username,
         birth_date: birthDate,

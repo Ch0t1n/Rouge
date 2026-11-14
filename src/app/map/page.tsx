@@ -1,5 +1,6 @@
 "use client";
 
+import * as C from "@/lib/store/commands";
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -30,7 +31,7 @@ export default function MapPage() {
 type Mode = "pin" | "base" | "rescue";
 
 function LiveMap() {
-  const { state, run, notify } = useRouge();
+  const { state, exec, notify } = useRouge();
   const router = useRouter();
   const params = useSearchParams();
   const now = useNow(10_000);
@@ -76,9 +77,9 @@ function LiveMap() {
 
   const audienceOk = (shareSquad && !!mine) || (shareMatches && selected.length > 0);
 
-  const confirmPin = () => {
+  const confirmPin = async () => {
     if (!draft) return;
-    const r = run((s) => dropPin(s, event.id, meId, { x: draft.x, y: draft.y, shareWithSquad: shareSquad && !!mine, matchIds: shareMatches ? selected : [], note }));
+    const r = await exec(C.dropPin(event.id, meId, { x: draft.x, y: draft.y, shareWithSquad: shareSquad && !!mine, matchIds: shareMatches ? selected : [], note }));
     if (!r.ok) return;
     setDraft(null);
     setNote("");
@@ -86,9 +87,9 @@ function LiveMap() {
     notify({ tone: r.data.share_with_squad ? "squad" : "rouge", title: `📍 Pin en ${r.data.sector_name ?? "el plano"}`, description: `Lo ve ${who} durante 15 min.` });
   };
 
-  const onTap = (x: number, y: number, sector?: VenueSector) => {
+  const onTap = async (x: number, y: number, sector?: VenueSector) => {
     if (mode === "rescue") {
-      const r = run((s) => triggerRescue(s, event.id, meId, { x, y }));
+      const r = await exec(C.triggerRescue(event.id, meId, { x, y }));
       if (r.ok) {
         notify({ tone: "rouge", title: `🚨 Rescate en ${r.data.sector_name ?? "tu ubicación"}`, description: "Tu Squad recibió la alerta y tu pin rojo." });
         setMode("pin");
@@ -98,9 +99,9 @@ function LiveMap() {
     setDraft({ x, y, sector });
   };
 
-  const renew = () => {
+  const renew = async () => {
     if (!myPin) return;
-    const r = run((s) => dropPin(s, event.id, meId, { x: myPin.coord_x, y: myPin.coord_y, shareWithSquad: myPin.share_with_squad, matchIds: myPin.shared_match_ids, note: myPin.note ?? undefined }));
+    const r = await exec(C.dropPin(event.id, meId, { x: myPin.coord_x, y: myPin.coord_y, shareWithSquad: myPin.share_with_squad, matchIds: myPin.shared_match_ids, note: myPin.note ?? undefined }));
     if (r.ok) notify({ tone: "squad", title: "⏱️ Pin renovado por 15 min", duration: 1800 });
   };
 
@@ -149,7 +150,7 @@ function LiveMap() {
             <button type="button" onClick={renew} aria-label="Renovar 15 min" className="grid size-11 place-items-center rounded-full bg-white/[0.06]">
               <RefreshCw className="size-4" />
             </button>
-            <button type="button" onClick={() => run((s) => removePin(s, myPin.id, meId))} aria-label="Quitar mi pin" className="grid size-11 place-items-center rounded-full bg-white/[0.06] text-muted hover:text-rouge">
+            <button type="button" onClick={() => void exec(C.removePin(myPin.id, meId, event.id))} aria-label="Quitar mi pin" className="grid size-11 place-items-center rounded-full bg-white/[0.06] text-muted hover:text-rouge">
               <Trash2 className="size-4" />
             </button>
           </div>
@@ -232,10 +233,10 @@ function LiveMap() {
             block
             size="lg"
             variant="vip"
-            onClick={() => {
+            onClick={async () => {
               if (!draft || !mine) return;
               const label = baseLabel.trim() || draft.sector?.name || "Nuestro Punto de Encuentro";
-              const r = run((s) => setSquadBasePin(s, mine.squad.id, meId, draft.x, draft.y, label));
+              const r = await exec(C.setSquadBasePin(mine.squad.id, meId, draft.x, draft.y, label));
               if (r.ok) {
                 setDraft(null);
                 setMode("pin");

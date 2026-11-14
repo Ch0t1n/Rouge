@@ -1,5 +1,6 @@
 "use client";
 
+import * as C from "@/lib/store/commands";
 import { useState } from "react";
 import { BookUser, PhoneOff, Plus, UserX } from "lucide-react";
 import { blockPhone, unblock } from "@/lib/engine/actions";
@@ -20,20 +21,20 @@ interface ContactsManagerLike {
  * número tiene cuenta en ROUGE.
  */
 export function BlacklistManager({ compact = false }: { compact?: boolean }) {
-  const { state, run, notify } = useRouge();
+  const { state, exec, notify } = useRouge();
   const me = state.current_user_id;
   const [phone, setPhone] = useState("");
   const list = blockListOf(state, me);
   const contacts = typeof navigator !== "undefined" ? (navigator as Navigator & { contacts?: ContactsManagerLike }).contacts : undefined;
 
-  const add = (raw: string, silent = false) => {
-    const r = run((s) => blockPhone(s, me, raw), { silent });
+  const add = async (raw: string, silent = false) => {
+    const r = await exec(C.blockPhone(me, raw), { silent });
     return r.ok;
   };
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (add(phone)) {
+    if (await add(phone)) {
       setPhone("");
       notify({ tone: "squad", title: "🔒 Número agregado a tu lista negra", description: "Si tiene cuenta, desde ahora son invisibles entre sí." });
     }
@@ -43,7 +44,8 @@ export function BlacklistManager({ compact = false }: { compact?: boolean }) {
     if (!contacts) return;
     try {
       const picked = await contacts.select(["tel", "name"], { multiple: true });
-      const n = picked.flatMap((c) => c.tel ?? []).filter((t) => add(t, true)).length;
+      let n = 0;
+      for (const t of picked.flatMap((c) => c.tel ?? [])) if (await add(t, true)) n++;
       notify({ tone: "squad", title: n ? `🔒 ${n} contacto(s) bloqueado(s)` : "No se agregaron números válidos" });
     } catch {
       /* cancelado */
@@ -78,7 +80,7 @@ export function BlacklistManager({ compact = false }: { compact?: boolean }) {
               <li key={p.id} className="glass flex min-h-touch items-center gap-3 rounded-2xl py-2 pl-4 pr-2">
                 <span className="flex-1 font-display text-sm font-semibold tabular-nums tracking-wide">{p.masked}</span>
                 <span className="text-xs text-muted">{timeAgo(p.created_at)}</span>
-                <Button size="sm" variant="ghost" onClick={() => run((s) => unblock(s, me, p.id))} aria-label={`Desbloquear ${p.masked}`}>
+                <Button size="sm" variant="ghost" onClick={() => exec(C.unblock(me, p.id))} aria-label={`Desbloquear ${p.masked}`}>
                   Quitar
                 </Button>
               </li>
@@ -109,7 +111,7 @@ export function BlacklistManager({ compact = false }: { compact?: boolean }) {
                     size="sm"
                     variant="ghost"
                     onClick={() => {
-                      run((s) => unblock(s, me, u.id));
+                      exec(C.unblock(me, u.id));
                       notify({ tone: "info", title: `Desbloqueaste a @${u.profile.username}`, description: "Vuelven a poder verse en los eventos que compartan." });
                     }}
                   >

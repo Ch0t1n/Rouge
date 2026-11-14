@@ -1,5 +1,6 @@
 "use client";
 
+import * as C from "@/lib/store/commands";
 import { useMemo, useState } from "react";
 import { ArrowRight, Clock, PackageCheck, ScanLine } from "lucide-react";
 import type { BarOrder, BarOrderStatus } from "@/lib/types";
@@ -28,7 +29,7 @@ const NEXT_LABEL: Partial<Record<BarOrderStatus, string>> = {
 };
 
 export default function AdminBarPosPage() {
-  const { state, run, notify } = useRouge();
+  const { state, exec, notify } = useRouge();
   const now = useNow(10_000);
   const event = activeEvent(state)!;
   const [code, setCode] = useState("");
@@ -36,10 +37,10 @@ export default function AdminBarPosPage() {
   const completed = orders.filter((o) => o.status === "completed").reverse();
   const revenue = orders.reduce((a, o) => a + o.total_amount, 0);
 
-  const advance = (o: BarOrder) => {
+  const advance = async (o: BarOrder) => {
     const next = nextOrderStatus(o);
     if (!next) return;
-    const r = run((s) => setOrderStatus(s, o.id, next));
+    const r = await exec(C.advanceOrder(o));
     if (r.ok && next === "ready_qr") notify({ tone: "squad", title: `🔔 Avisamos a ${getProfile(state, o.user_id)?.full_name.split(" ")[0]}`, description: `Código ${o.pickup_code} listo para retirar.`, duration: 2500 });
   };
 
@@ -51,9 +52,9 @@ export default function AdminBarPosPage() {
         actions={
           <form
             className="flex items-center gap-2"
-            onSubmit={(e) => {
+            onSubmit={async (e) => {
               e.preventDefault();
-              const r = run((s) => redeemPickupCode(s, event.id, code));
+              const r = await exec(C.redeemPickupCode(event.id, code));
               if (r.ok) {
                 notify({ tone: "squad", title: `✅ Pedido ${r.data.pickup_code} entregado`, description: r.data.items_json.map((i) => `${i.qty}× ${i.name}`).join(", ") });
                 setCode("");

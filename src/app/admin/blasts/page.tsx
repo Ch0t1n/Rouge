@@ -1,5 +1,6 @@
 "use client";
 
+import * as C from "@/lib/store/commands";
 import { useMemo, useState } from "react";
 import { Megaphone, Send, Zap } from "lucide-react";
 import { MOOD_TAGS, type BlastSegment, type MoodTag } from "@/lib/types";
@@ -33,7 +34,7 @@ function segmentLabel(s: BlastSegment) {
 }
 
 export default function AdminBlastsPage() {
-  const { state, run, notify } = useRouge();
+  const { state, exec, notify } = useRouge();
   const now = useNow(15_000);
   const event = activeEvent(state)!;
   const [title, setTitle] = useState("");
@@ -53,8 +54,8 @@ export default function AdminBlastsPage() {
   const reach = useMemo(() => blastAudience(state, event.id, segment, now).length, [state, event.id, segment, now]);
   const history = state.event_blasts.filter((b) => b.event_id === event.id).sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
 
-  const send = () => {
-    const r = run((s) => sendBlast(s, event.id, { title, message, segment, ctaLabel: cta, ctaLink: link, flashMinutes: flash ? flashMin : undefined }));
+  const send = async () => {
+    const r = await exec(C.sendBlast(event.id, { title, message, segment, ctaLabel: cta, ctaLink: link, flashMinutes: flash ? flashMin : undefined }));
     if (r.ok) {
       notify({ tone: "vip", title: `📣 Enviado a ${r.data.reach} asistentes`, description: "Les aparece como banner arriba de la pantalla." });
       setTitle("");

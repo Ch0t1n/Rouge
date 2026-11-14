@@ -1,5 +1,6 @@
 "use client";
 
+import * as C from "@/lib/store/commands";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { UserX } from "lucide-react";
@@ -21,7 +22,7 @@ export default function ChatPage() {
 
 function Chat() {
   const { connectionId } = useParams<{ connectionId: string }>();
-  const { state, run } = useRouge();
+  const { state, exec } = useRouge();
   const meId = state.current_user_id;
   const conn = state.connections.find((c) => c.id === connectionId);
   const otherId = conn ? (conn.sender_id === meId ? conn.receiver_id : conn.sender_id) : null;
@@ -58,7 +59,7 @@ function Chat() {
         </p>
         <MessageList messages={msgs} meId={meId} profiles={new Map([[other.id, other]])} />
       </div>
-      <Composer onSend={(body) => run((s) => sendMessage(s, meId, { type: "direct", connectionId: conn.id }, body)).ok} />
+      <Composer onSend={async (body) => (await exec(C.sendMessage(meId, { type: "direct", connectionId: conn.id }, body))).ok} />
     </main>
   );
 }
