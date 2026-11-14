@@ -1,0 +1,269 @@
+/**
+ * Selectores puros sobre RougeState.
+ * Toda regla de visibilidad (bloqueos, ghost mode, privacidad de pines)
+ * vive acá para que UI, tests y el futuro adaptador de Supabase
+ * (donde se replica vía RLS) compartan la misma semántica.
+ */
+import type {
+  Connection,
+  EventAttendee,
+  LineupSlot,
+  MapPin,
+  Profile,
+  RougeEvent,
+  RougeState,
+  Squad,
+  SquadMember,
+  UUID,
+  VenueSector,
+} from "@/lib/types";
+
+// ── Lookups ──────────────────────────────────────────────────────────
+
+export const getProfile = (s: RougeState, id: UUID | null | undefined) =>
+  id ? s.profiles.find((p) => p.id === id) : undefined;
+
+export const getEvent = (s: RougeState, id: UUID | null | undefined) =>
+  id ? s.events.find((e) => e.id === id) : undefined;
+
+export const getAttendee = (s: RougeState, eventId: UUID, userId: UUID) =>
+  s.event_attendees.find((a) => a.event_id === eventId && a.user_id === userId);
+
+export const currentUser = (s: RougeState) => getProfile(s, s.current_user_id);
+export const activeEvent = (s: RougeState) => getEvent(s, s.active_event_id);
+
+// ── Bloqueos: invisibilidad mutua ────────────────────────────────────
+
+/**
+ * true si A bloqueó a B o B bloqueó a A, ya sea por id de usuario
+ * o por coincidencia de teléfono normalizado (lista negra preventiva).
+ */
+export function isBlockedBetween(s: RougeState, a: UUID, b: UUID): boolean {
+  if (a === b) return false;
+  const pa = getProfile(s, a);
+  const pb = getProfile(s, b);
+  return s.user_blocks.some((blk) => {
+    if (blk.blocker_id === a) {
+      return blk.blocked_user_id === b || (!!pb?.phone_normalized && blk.blocked_phone_normalized === pb.phone_normalized);
+    }
+    if (blk.blocker_id === b) {
+      return blk.blocked_user_id === a || (!!pa?.phone_normalized && blk.blocked_phone_normalized === pa.phone_normalized);
+    }
+    return false;
+  });
+}
+
+// ── Ciclo de vida del lobby (Efecto Cenicienta) ──────────────────────
+
+export type LobbyPhase = "upcoming" | "open" | "live" | "afterglow" | "expired";
+
+export function lobbyPhase(e: RougeEvent, now = Date.now()): LobbyPhase {
+  const t = (iso: string) => new Date(iso).getTime();
+  if (now < t(e.lobby_opens_at)) return "upcoming";
+  if (now >= t(e.lobby_expires_at)) return "expired";
+  if (now < t(e.starts_at)) return "open";
+  if (now < t(e.ends_at)) return "live";
+  return "afterglow";
+}
+
+/** La grilla, el plano y los squads solo funcionan con el lobby abierto. */
+export const isLobbyInteractive = (e: RougeEvent, now = Date.now()) => {
+  const p = lobbyPhase(e, now);
+  return p === "open" || p === "live" || p === "afterglow";
+};
+
+export function lineupNow(e: RougeEvent, now = Date.now()): { current?: LineupSlot; next?: LineupSlot } {
+  const slots = [...e.lineup_json].sort((a, b) => +new Date(a.starts_at) - +new Date(b.starts_at));
+  const idx = slots.findIndex((sl) => now >= +new Date(sl.starts_at) && now < +new Date(sl.ends_at));
+  if (idx >= 0) return { current: slots[idx], next: slots[idx + 1] };
+  return { next: slots.find((sl) => +new Date(sl.starts_at) > now) };
+}
+
+// ── Asistentes visibles en la grilla ─────────────────────────────────
+
+export interface GridEntry {
+  attendee: EventAttendee;
+  profile: Profile;
+}
+
+/** Asistentes que el viewer puede ver: sin bloqueos, sin ghost mode, sin sí mismo. */
+export function visibleAttendees(s: RougeState, eventId: UUID, viewerId: UUID): GridEntry[] {
+  const out: GridEntry[] = [];
+  for (const a of s.event_attendees) {
+    if (a.event_id !== eventId || a.user_id === viewerId || a.ghost_mode) continue;
+    if (isBlockedBetween(s, viewerId, a.user_id)) continue;
+    const profile = getProfile(s, a.user_id);
+    if (profile) out.push({ attendee: a, profile });
+  }
+  return out;
+}
+
+/** Búsqueda por @username (para invitar al squad). Respeta bloqueos; no respeta ghost (es para amigos). */
+export function searchAttendeesByUsername(s: RougeState, eventId: UUID, viewerId: UUID, q: string): Profile[] {
+  const needle = q.trim().replace(/^@/, "").toLowerCase();
+  if (!needle) return [];
+  return s.event_attendees
+    .filter((a) => a.event_id === eventId && a.user_id !== viewerId && !isBlockedBetween(s, viewerId, a.user_id))
+    .map((a) => getProfile(s, a.user_id))
+    .filter((p): p is Profile => !!p && p.username.toLowerCase().includes(needle));
+}
+
+// ── Conexiones y matches ─────────────────────────────────────────────
+
+export function connectionBetween(s: RougeState, eventId: UUID, a: UUID, b: UUID): Connection[] {
+  return s.connections.filter(
+    (c) =>
+      c.event_id === eventId &&
+      ((c.sender_id === a && c.receiver_id === b) || (c.sender_id === b && c.receiver_id === a)),
+  );
+}
+
+export function isMatch(s: RougeState, eventId: UUID, a: UUID, b: UUID) {
+  return connectionBetween(s, eventId, a, b).some((c) => c.status === "accepted");
+}
+
+export type ConnectionState = "none" | "sent" | "received" | "matched" | "rejected";
+
+export function connectionStateFor(s: RougeState, eventId: UUID, viewer: UUID, other: UUID): ConnectionState {
+  const cs = connectionBetween(s, eventId, viewer, other);
+  if (cs.some((c) => c.status === "accepted")) return "matched";
+  if (cs.some((c) => c.status === "pending" && c.receiver_id === viewer)) return "received";
+  if (cs.some((c) => c.status === "pending" && c.sender_id === viewer)) return "sent";
+  if (cs.some((c) => c.status === "rejected")) return "rejected";
+  return "none";
+}
+
+/**
+ * Matches de un usuario. Si se pasa eventId filtra por evento; si no,
+ * devuelve todos (los matches sobreviven a la caducidad del lobby).
+ */
+export function matchesOf(s: RougeState, userId: UUID, eventId?: UUID) {
+  return s.connections
+    .filter(
+      (c) =>
+        c.status === "accepted" &&
+        (c.sender_id === userId || c.receiver_id === userId) &&
+        (!eventId || c.event_id === eventId),
+    )
+    .map((c) => ({ connection: c, otherId: c.sender_id === userId ? c.receiver_id : c.sender_id }))
+    .filter(({ otherId }) => !isBlockedBetween(s, userId, otherId))
+    .map(({ connection, otherId }) => ({ connection, profile: getProfile(s, otherId)! }))
+    .filter((m) => !!m.profile);
+}
+
+/** Bandeja de entrada: solicitudes pendientes (rompehielos fijados arriba). */
+export function inboxOf(s: RougeState, userId: UUID, eventId: UUID) {
+  return s.connections
+    .filter((c) => c.event_id === eventId && c.receiver_id === userId && c.status === "pending")
+    .filter((c) => !isBlockedBetween(s, userId, c.sender_id))
+    .sort((a, b) => {
+      if (a.type !== b.type) return a.type === "icebreaker" ? -1 : 1;
+      return +new Date(b.created_at) - +new Date(a.created_at);
+    })
+    .map((c) => ({ connection: c, profile: getProfile(s, c.sender_id)! }))
+    .filter((x) => !!x.profile);
+}
+
+// ── Squads ───────────────────────────────────────────────────────────
+
+export function squadOf(s: RougeState, eventId: UUID, userId: UUID): { squad: Squad; member: SquadMember } | undefined {
+  for (const m of s.squad_members) {
+    if (m.user_id !== userId || m.status !== "joined") continue;
+    const squad = s.squads.find((sq) => sq.id === m.squad_id && sq.event_id === eventId);
+    if (squad) return { squad, member: m };
+  }
+  return undefined;
+}
+
+export const squadMembers = (s: RougeState, squadId: UUID, status: "joined" | "invited" | "any" = "joined") =>
+  s.squad_members.filter((m) => m.squad_id === squadId && (status === "any" || m.status === status));
+
+export const squadSize = (s: RougeState, squadId: UUID) => squadMembers(s, squadId).length;
+
+export function pendingSquadInvites(s: RougeState, eventId: UUID, userId: UUID) {
+  return s.squad_members
+    .filter((m) => m.user_id === userId && m.status === "invited")
+    .map((m) => ({ member: m, squad: s.squads.find((sq) => sq.id === m.squad_id && sq.event_id === eventId)! }))
+    .filter((x) => !!x.squad);
+}
+
+export function areSquadmates(s: RougeState, eventId: UUID, a: UUID, b: UUID) {
+  const sa = squadOf(s, eventId, a);
+  const sb = squadOf(s, eventId, b);
+  return !!sa && !!sb && sa.squad.id === sb.squad.id;
+}
+
+// ── Plano: pines visibles ────────────────────────────────────────────
+
+export type PinAudience = "self" | "squad" | "match";
+
+export interface VisiblePin {
+  pin: MapPin;
+  profile: Profile;
+  audience: PinAudience;
+  minutesLeft: number;
+}
+
+export const isPinActive = (p: MapPin, now = Date.now()) => +new Date(p.expires_at) > now;
+
+/**
+ * Un pin es visible si: no expiró, no hay bloqueo, y el viewer es el dueño,
+ * o comparte squad (y el pin se compartió con el squad), o es un match
+ * seleccionado MANUALMENTE en shared_match_ids. Nunca hay difusión implícita.
+ */
+export function visiblePins(s: RougeState, eventId: UUID, viewerId: UUID, now = Date.now()): VisiblePin[] {
+  const out: VisiblePin[] = [];
+  for (const pin of s.map_pins) {
+    if (pin.event_id !== eventId || !isPinActive(pin, now)) continue;
+    const profile = getProfile(s, pin.user_id);
+    if (!profile) continue;
+    let audience: PinAudience | null = null;
+    if (pin.user_id === viewerId) audience = "self";
+    else if (isBlockedBetween(s, viewerId, pin.user_id)) continue;
+    else if (pin.share_with_squad && areSquadmates(s, eventId, viewerId, pin.user_id)) audience = "squad";
+    else if (pin.shared_match_ids.includes(viewerId) && isMatch(s, eventId, viewerId, pin.user_id)) audience = "match";
+    if (!audience) continue;
+    out.push({ pin, profile, audience, minutesLeft: Math.max(0, Math.ceil((+new Date(pin.expires_at) - now) / 60_000)) });
+  }
+  return out;
+}
+
+export const activePinOf = (s: RougeState, eventId: UUID, userId: UUID, now = Date.now()) =>
+  s.map_pins.find((p) => p.event_id === eventId && p.user_id === userId && isPinActive(p, now));
+
+export function sectorAt(sectors: VenueSector[], x: number, y: number): VenueSector | undefined {
+  // El sector más chico que contiene el punto (para sectores anidados, ej. Barra dentro de Terraza)
+  return sectors
+    .filter((sc) => x >= sc.x && x <= sc.x + sc.w && y >= sc.y && y <= sc.y + sc.h)
+    .sort((a, b) => a.w * a.h - b.w * b.h)[0];
+}
+
+// ── Conversaciones ───────────────────────────────────────────────────
+
+export const directMessages = (s: RougeState, connectionId: UUID) =>
+  s.messages
+    .filter((m) => m.conversation_type === "direct" && m.connection_id === connectionId)
+    .sort((a, b) => +new Date(a.created_at) - +new Date(b.created_at));
+
+export const squadMessages = (s: RougeState, squadId: UUID) =>
+  s.messages
+    .filter((m) => m.conversation_type === "squad" && m.squad_id === squadId)
+    .sort((a, b) => +new Date(a.created_at) - +new Date(b.created_at));
+
+// ── Perks / Barra ────────────────────────────────────────────────────
+
+export const perksOf = (s: RougeState, userId: UUID, eventId?: UUID) =>
+  s.user_perks_qrs
+    .filter((p) => p.user_id === userId && (!eventId || p.event_id === eventId))
+    .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
+
+export const ordersOf = (s: RougeState, userId: UUID, eventId: UUID) =>
+  s.bar_orders
+    .filter((o) => o.event_id === eventId && (o.user_id === userId || o.split_user_ids.includes(userId)))
+    .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
+
+export const topSongs = (s: RougeState, eventId: UUID, limit = 5) =>
+  s.song_requests
+    .filter((r) => r.event_id === eventId)
+    .sort((a, b) => b.voter_ids.length - a.voter_ids.length || +new Date(a.created_at) - +new Date(b.created_at))
+    .slice(0, limit);

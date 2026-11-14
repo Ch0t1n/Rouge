@@ -1,0 +1,126 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─────────────────────────────────────────────────────────────
+   ROUGE — Velvet & Laser Dark UI
+   Tokens espejados de tailwind.config.ts para uso en CSS puro / SVG.
+   ───────────────────────────────────────────────────────────── */
+:root {
+  --rouge-bg: #070709;
+  --rouge-surface: #121216;
+  --rouge-primary: #ff1e56;
+  --rouge-primary-hover: #e01145;
+  --rouge-squad: #00f0ff;
+  --rouge-vip: #ffb800;
+  --rouge-text: #f8fafc;
+  --rouge-muted: #94a3b8;
+  --rouge-border: rgba(255, 255, 255, 0.1);
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  color-scheme: dark;
+}
+
+@layer base {
+  html {
+    background: var(--rouge-bg);
+    -webkit-tap-highlight-color: transparent;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background font-sans text-primary antialiased;
+    min-height: 100dvh;
+    overscroll-behavior-y: none;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-display font-bold tracking-tight;
+  }
+
+  ::selection {
+    background: rgba(255, 30, 86, 0.35);
+    color: var(--rouge-text);
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-rouge/70 ring-offset-2 ring-offset-background;
+  }
+
+  /* Scrollbars discretas para desktop */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+  }
+}
+
+@layer components {
+  /* Superficie "Charcoal Glass" */
+  .glass {
+    @apply border border-white/10 bg-surface/85 backdrop-blur-xl;
+  }
+
+  /* Píldora glassmorphism (Mood de la noche, chips) */
+  .glass-pill {
+    @apply rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-[11px] font-medium text-primary backdrop-blur-md;
+  }
+
+  /* Etiqueta métrica / badge en Space Grotesk */
+  .metric {
+    @apply font-display font-bold tabular-nums tracking-tight;
+  }
+
+  /* Degradado inferior de las tarjetas de la grilla */
+  .card-fade {
+    @apply bg-gradient-to-t from-black/95 via-black/40 to-transparent;
+  }
+
+  .text-glow-rouge {
+    text-shadow: 0 0 18px rgba(255, 30, 86, 0.55);
+  }
+
+  .text-glow-squad {
+    text-shadow: 0 0 14px rgba(0, 240, 255, 0.5);
+  }
+
+  .text-glow-vip {
+    text-shadow: 0 0 14px rgba(255, 184, 0, 0.5);
+  }
+
+  .safe-top {
+    padding-top: var(--safe-top);
+  }
+
+  .safe-bottom {
+    padding-bottom: var(--safe-bottom);
+  }
+}
+
+@layer utilities {
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .touch-none-select {
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,102 @@
+/**
+ * Métricas B2B para el panel del organizador, CRM y Pantalla LED.
+ */
+import type { Gender, RougeState, UUID } from "@/lib/types";
+import { ageFrom } from "@/lib/utils";
+import { activePinOf, getProfile, squadMembers, squadOf, topSongs } from "./selectors";
+
+export type SmartTag = "top_spender" | "squad_leader" | "power_matcher";
+
+export const SMART_TAG_META: Record<SmartTag, { label: string; emoji: string; color: "vip" | "squad" | "rouge" }> = {
+  top_spender: { label: "Top Spender", emoji: "🏆", color: "vip" },
+  squad_leader: { label: "Squad Leader", emoji: "👑", color: "squad" },
+  power_matcher: { label: "Power Matcher", emoji: "🔥", color: "rouge" },
+};
+
+export const POWER_MATCHER_MIN = 3;
+export const SQUAD_LEADER_MIN = 4;
+
+export interface CrmRow {
+  user_id: UUID;
+  full_name: string;
+  username: string;
+  phone: string | null;
+  age: number;
+  gender: Gender;
+  music_genres: string[];
+  mood: string | null;
+  squad_size: number;
+  matches: number;
+  total_spent: number;
+  joined_at: string;
+  tags: SmartTag[];
+}
+
+export function crmRows(s: RougeState, eventId: UUID): CrmRow[] {
+  const attendees = s.event_attendees.filter((a) => a.event_id === eventId);
+  const spends = attendees.map((a) => a.total_spent).filter((n) => n > 0).sort((a, b) => b - a);
+  // Top 10% de gasto (mínimo 1 persona) con gasto > 0
+  const topThreshold = spends.length ? spends[Math.max(0, Math.ceil(spends.length * 0.1) - 1)] : Infinity;
+
+  return attendees
+    .map((a): CrmRow | null => {
+      const p = getProfile(s, a.user_id);
+      if (!p) return null;
+      const sq = squadOf(s, eventId, a.user_id);
+      const size = sq ? squadMembers(s, sq.squad.id).length : 0;
+      const matches = s.connections.filter(
+        (c) => c.event_id === eventId && c.status === "accepted" && (c.sender_id === a.user_id || c.receiver_id === a.user_id),
+      ).length;
+      const brought = s.squad_members.filter((m) => m.invited_by === a.user_id && m.status === "joined").length;
+      const tags: SmartTag[] = [];
+      if (a.total_spent > 0 && a.total_spent >= topThreshold) tags.push("top_spender");
+      if ((sq?.squad.created_by === a.user_id && size >= SQUAD_LEADER_MIN) || brought >= SQUAD_LEADER_MIN) tags.push("squad_leader");
+      if (matches >= POWER_MATCHER_MIN) tags.push("power_matcher");
+      return {
+        user_id: a.user_id,
+        full_name: p.full_name,
+        username: p.username,
+        phone: p.phone_normalized,
+        age: ageFrom(p.birth_date),
+        gender: p.gender,
+        music_genres: p.music_genres,
+        mood: a.mood_tag,
+        squad_size: size,
+        matches,
+        total_spent: a.total_spent,
+        joined_at: a.joined_at,
+        tags,
+      } satisfies CrmRow;
+    })
+    .filter((r): r is CrmRow => !!r)
+    .sort((a, b) => b.total_spent - a.total_spent);
+}
+
+export function eventMetrics(s: RougeState, eventId: UUID, now = Date.now()) {
+  const attendees = s.event_attendees.filter((a) => a.event_id === eventId);
+  const conns = s.connections.filter((c) => c.event_id === eventId);
+  const squads = s.squads.filter((sq) => sq.event_id === eventId);
+  const sizes = squads.map((sq) => ({ squad: sq, size: squadMembers(s, sq.id).length }));
+  const orders = s.bar_orders.filter((o) => o.event_id === eventId);
+  const female = attendees.filter((a) => getProfile(s, a.user_id)?.gender === "female").length;
+  const biggest = sizes.sort((a, b) => b.size - a.size)[0];
+
+  return {
+    attendees: attendees.length,
+    femaleShare: attendees.length ? female / attendees.length : 0,
+    ghostMode: attendees.filter((a) => a.ghost_mode).length,
+    matches: conns.filter((c) => c.status === "accepted").length,
+    pendingConnections: conns.filter((c) => c.status === "pending").length,
+    icebreakersSent: conns.filter((c) => c.type === "icebreaker").length,
+    squads: squads.length,
+    usersInSquads: attendees.filter((a) => squadOf(s, eventId, a.user_id)).length,
+    biggestSquad: biggest ? { name: biggest.squad.name, size: biggest.size } : null,
+    activePins: attendees.filter((a) => activePinOf(s, eventId, a.user_id, now)).length,
+    rescueAlerts: s.squad_members.filter((m) => m.safety_status === "rescue_needed" && squads.some((sq) => sq.id === m.squad_id)).length,
+    barRevenue: orders.reduce((acc, o) => acc + o.total_amount, 0),
+    openOrders: orders.filter((o) => o.status !== "completed").length,
+    perksIssued: s.user_perks_qrs.filter((p) => p.event_id === eventId).length,
+    perksRedeemed: s.user_perks_qrs.filter((p) => p.event_id === eventId && p.status === "redeemed").length,
+    topSongs: topSongs(s, eventId, 5),
+  };
+}
