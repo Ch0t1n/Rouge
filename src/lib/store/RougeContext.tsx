@@ -18,6 +18,7 @@ import * as A from "@/lib/engine/actions";
 import { lobbyPhase } from "@/lib/engine/selectors";
 import { createSeedState, STATE_VERSION } from "@/lib/mock/seed";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { uid } from "@/lib/utils";
 
 const STORAGE_KEY = "rouge:state";
 
@@ -41,6 +42,8 @@ interface RougeContextValue {
   run: <T>(fn: (s: RougeState) => Result<T>, opts?: { silent?: boolean }) => Result<T>;
   setCurrentUser: (id: UUID) => void;
   setActiveEvent: (id: UUID) => void;
+  /** Modo Demo: arranca una persona sin perfil para probar el onboarding desde cero. */
+  startNewPersona: () => UUID;
   resetDemo: () => void;
   toasts: Toast[];
   notify: (t: Omit<Toast, "id">) => void;
@@ -99,6 +102,18 @@ export function RougeProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(t);
   }, [state]);
 
+  // Flush al ocultar/cerrar la app (iOS/Android matan la PWA en background sin aviso)
+  useEffect(() => {
+    const flush = () => stateRef.current && saveState(stateRef.current);
+    const onVisibility = () => document.visibilityState === "hidden" && flush();
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
+
   // "Realtime" entre pestañas en Modo Demo
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
@@ -144,6 +159,8 @@ export function RougeProvider({ children }: { children: ReactNode }) {
       const result = fn(current);
       if (result.ok) {
         stateRef.current = result.state;
+        // Guardado sincrónico: una acción del usuario nunca se pierde por navegar o cerrar al instante.
+        saveState(result.state);
         setState(result.state);
       } else if (!opts?.silent) {
         notify({ tone: "error", title: result.error });
@@ -155,6 +172,11 @@ export function RougeProvider({ children }: { children: ReactNode }) {
 
   const setCurrentUser = useCallback((id: UUID) => setState((s) => (s ? { ...s, current_user_id: id } : s)), []);
   const setActiveEvent = useCallback((id: UUID) => setState((s) => (s ? { ...s, active_event_id: id } : s)), []);
+  const startNewPersona = useCallback(() => {
+    const id = uid();
+    setState((s) => (s ? { ...s, current_user_id: id } : s));
+    return id;
+  }, []);
   const resetDemo = useCallback(() => {
     const fresh = createSeedState(Date.now());
     stateRef.current = fresh;
@@ -172,13 +194,14 @@ export function RougeProvider({ children }: { children: ReactNode }) {
             run,
             setCurrentUser,
             setActiveEvent,
+            startNewPersona,
             resetDemo,
             toasts,
             notify,
             dismiss,
           }
         : null,
-    [state, run, setCurrentUser, setActiveEvent, resetDemo, toasts, notify, dismiss],
+    [state, run, setCurrentUser, setActiveEvent, startNewPersona, resetDemo, toasts, notify, dismiss],
   );
 
   if (!value) return <BootScreen />;

@@ -7,7 +7,6 @@
  * (localStorage); el adaptador de Supabase replica las mismas validaciones
  * con RLS + funciones RPC (ver supabase/schema.sql).
  */
-import { MUSIC_GENRES } from "@/lib/types";
 import type {
   BarOrder,
   BarOrderItem,
@@ -49,6 +48,7 @@ import {
   squadMembers,
   squadOf,
 } from "./selectors";
+import { BIO_MAX, MAX_PHOTOS, NAME_MAX, checkBirthDate, checkGenres, checkUsername, parseSpotify } from "./profile";
 
 export type Result<T = undefined> = { ok: true; state: RougeState; data: T } | { ok: false; error: string };
 
@@ -57,7 +57,7 @@ const fail = (error: string): { ok: false; error: string } => ({ ok: false, erro
 const iso = (now: number) => new Date(now).toISOString();
 
 export const PIN_TTL_MS = minutes(15);
-export const MAX_PHOTOS = 4;
+export { MAX_PHOTOS };
 export const MAX_SQUAD_SIZE = 12;
 
 // Mensaje genérico para no filtrar la existencia de un bloqueo.
@@ -108,19 +108,43 @@ export function upsertProfile(state: RougeState, userId: UUID, input: ProfileInp
   const existing = getProfile(state, userId);
 
   if (input.username !== undefined) {
-    const u = input.username.trim().replace(/^@/, "").toLowerCase();
-    if (!/^[a-z0-9._]{3,20}$/.test(u)) return fail("El @username debe tener 3-20 caracteres: letras, números, punto o guion bajo.");
-    if (state.profiles.some((p) => p.id !== userId && p.username === u)) return fail("Ese @username ya está en uso.");
-    input = { ...input, username: u };
+    const u = checkUsername(state, input.username, userId);
+    if (!u.ok) return fail(u.error);
+    input = { ...input, username: u.value };
+  }
+  if (input.full_name !== undefined) {
+    const name = input.full_name.trim().replace(/\s+/g, " ");
+    if (!name) return fail("Ingresá tu nombre.");
+    if (name.length > NAME_MAX) return fail(`El nombre tiene un máximo de ${NAME_MAX} caracteres.`);
+    input = { ...input, full_name: name };
+  }
+  if (input.birth_date !== undefined) {
+    const err = checkBirthDate(input.birth_date, new Date(now));
+    if (err) return fail(err);
   }
   if (input.photos && input.photos.length > MAX_PHOTOS) return fail(`Máximo ${MAX_PHOTOS} fotos.`);
-  if (input.music_genres && input.music_genres.some((g) => !MUSIC_GENRES.includes(g))) return fail("Género musical inválido.");
-  if (input.bio && input.bio.length > 160) return fail("La bio tiene un máximo de 160 caracteres.");
+  if (input.music_genres) {
+    const err = checkGenres(input.music_genres);
+    if (err) return fail(err);
+  }
+  if (input.bio !== undefined) {
+    if (input.bio.length > BIO_MAX) return fail(`La bio tiene un máximo de ${BIO_MAX} caracteres.`);
+    input = { ...input, bio: input.bio.trim() };
+  }
+  if (input.spotify_embed_url) {
+    // Acepta el link "compartir" de Spotify y lo guarda como URL de embed limpia.
+    const ref = parseSpotify(input.spotify_embed_url);
+    if (!ref) return fail("Link de Spotify inválido.");
+    input = { ...input, spotify_embed_url: ref.embedUrl };
+  }
 
   let phone_normalized = existing?.phone_normalized ?? null;
   if (input.phone !== undefined) {
     phone_normalized = input.phone ? normalizePhone(input.phone) : null;
     if (input.phone && !phone_normalized) return fail("Número de teléfono inválido.");
+    if (phone_normalized && state.profiles.some((p) => p.id !== userId && p.phone_normalized === phone_normalized)) {
+      return fail("Ese teléfono ya está asociado a otra cuenta.");
+    }
   }
   const { phone: _phone, ...rest } = input;
 

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { RotateCcw, UserRoundCog } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { RotateCcw, UserRoundCog, UserRoundPlus } from "lucide-react";
 import { MOOD_TAGS } from "@/lib/types";
 import { getAttendee } from "@/lib/engine/selectors";
 import { useRouge } from "@/lib/store/RougeContext";
@@ -17,11 +18,13 @@ import { cn } from "@/lib/utils";
  * dos pestañas abiertas simula el realtime entre teléfonos.
  */
 export function PersonaSwitcher() {
-  const { state, mode, setCurrentUser, resetDemo, notify } = useRouge();
+  const { state, mode, setCurrentUser, startNewPersona, resetDemo, notify } = useRouge();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   if (mode !== "demo") return null;
   const me = state.profiles.find((p) => p.id === state.current_user_id);
-  const people = state.profiles.filter((p) => getAttendee(state, state.active_event_id, p.id));
+  // Asistentes del evento + personas creadas en el demo (sin el staff)
+  const people = state.profiles.filter((p) => p.username !== "rouge.staff");
 
   return (
     <>
@@ -41,17 +44,28 @@ export function PersonaSwitcher() {
         title="Actuar como…"
         description="Modo Demo: cambiá de persona para probar cada lado de los flujos. Abrí otra pestaña para simular un segundo teléfono."
         footer={
+          <div className="grid grid-cols-2 gap-2">
+          <Button
+            variant="glass"
+            onClick={() => {
+              startNewPersona();
+              setOpen(false);
+              router.push("/onboarding");
+            }}
+          >
+            <UserRoundPlus /> Persona nueva
+          </Button>
           <Button
             variant="outline"
-            block
             onClick={() => {
               resetDemo();
               setOpen(false);
               notify({ tone: "info", title: "Demo reiniciado", description: "Datos precargados restaurados." });
             }}
           >
-            <RotateCcw /> Reiniciar datos demo
+            <RotateCcw /> Reiniciar demo
           </Button>
+          </div>
         }
       >
         <ul className="space-y-1.5">
@@ -78,7 +92,7 @@ export function PersonaSwitcher() {
                       {p.full_name} <span className="font-normal text-muted">@{p.username}</span>
                     </p>
                     <p className="truncate text-xs text-muted">
-                      {mood ? `${mood.emoji} ${mood.label}` : "Sin mood"} · {p.music_genres.join(", ")}
+                      {att ? (mood ? `${mood.emoji} ${mood.label}` : "Sin mood") : "Fuera del evento"} · {p.music_genres.join(", ") || "sin géneros"}
                     </p>
                   </div>
                   {att?.ghost_mode && <Badge>Ghost</Badge>}

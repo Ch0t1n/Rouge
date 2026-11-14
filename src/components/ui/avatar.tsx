@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { Profile } from "@/lib/types";
+import { useMediaUrl } from "@/lib/media/useMediaUrl";
 import { cn } from "@/lib/utils";
 
 const RING = { none: "", squad: "ring-2 ring-squad shadow-glow-squad", rouge: "ring-2 ring-rouge shadow-glow-rouge", vip: "ring-2 ring-vip shadow-glow-vip" };
@@ -19,7 +20,7 @@ export function Avatar({
   className?: string;
 }) {
   const [failed, setFailed] = useState(false);
-  const src = profile.photos[0]?.url;
+  const { src, missing } = useMediaUrl(profile.photos[0]?.url);
   const initials = profile.full_name
     .split(" ")
     .map((w) => w[0])
@@ -29,9 +30,9 @@ export function Avatar({
   return (
     <span
       className={cn("relative inline-grid shrink-0 place-items-center overflow-hidden rounded-full bg-surface-raised font-display font-bold text-muted", RING[ring], className)}
-      style={{ width: size, height: size, fontSize: size * 0.36 }}
+      style={{ width: size, height: size, fontSize: size * 0.36, backgroundColor: profile.photos[0]?.blur_color }}
     >
-      {src && !failed ? (
+      {src && !failed && !missing ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={src} alt="" loading="lazy" decoding="async" className="size-full object-cover" onError={() => setFailed(true)} />
       ) : (

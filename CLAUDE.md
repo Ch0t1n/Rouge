@@ -40,25 +40,35 @@ src/
   app/                    # Rutas (App Router)
     layout.tsx            # Fuentes, metadata PWA, RougeProvider, AppShell
     page.tsx              # Home del evento (Modo Demo hub)
+    onboarding/           # Alta del perfil persistente en 4 pasos (guarda progresivamente)
+    profile/              # "Así te ven" + completitud · profile/edit (editor completo)
+    settings/privacy/     # Lista negra por teléfono + perfiles bloqueados
+    u/[username]/         # Perfil de otro asistente (afinidad, bloquear)
     admin/                # Suite del organizador (vista EXPANDIDA en desktop)
     offline/              # Fallback del Service Worker
   components/
-    ui/                   # Primitivas: Button, Badge, Switch, BottomSheet, Avatar, Toaster
+    ui/                   # Primitivas: Button, Badge, Switch, BottomSheet, Avatar, Toaster, field (TextField, Segmented)
+    media/                # MediaImage (placeholder color), LoopVideo (GIF-like), SpotifyEmbed (lazy)
+    profile/              # ProfileView, PhotoSlots, LoopVideoField, GenrePicker, SpotifyField, PhoneField, BlacklistManager
     layout/               # AppShell (contenedor móvil vs. admin), PersonaSwitcher, SW register
     venue/VenueMap.tsx    # Plano interactivo (zoom/paneo, sectores, pines)
-    event/                # LineupBanner, etc.
+    event/                # LineupBanner, MoodPicker
   lib/
     types.ts              # Tipos de dominio — ESPEJO 1:1 de supabase/schema.sql
     engine/
       selectors.ts        # Reglas de VISIBILIDAD (bloqueos, ghost, pines, lobby)
       actions.ts          # Reglas de NEGOCIO puras (state, input, now) → Result
       affinity.ts         # Algoritmo de afinidad
+      profile.ts          # Validaciones de perfil, parser de Spotify, máscara de teléfono, completitud
       analytics.ts        # Métricas B2B, CRM, Smart Tags
       engine.test.ts      # Tests de invariantes de negocio
     mock/seed.ts          # Motor de Mock Data (fechas relativas a "ahora")
     store/RougeContext.tsx# Estado global + persistencia localStorage + sync entre pestañas
+    store/hooks.ts        # useRequireProfile() → redirige a /onboarding si no hay perfil
     supabase/client.ts    # Cliente Supabase (null si no hay credenciales)
-    media/compress.ts     # Compresión de imágenes / validación de video loop
+    media/compress.ts     # Compresión WebP, color dominante, transcodificación del loop (sin audio)
+    media/mediaStore.ts   # Blobs en IndexedDB (`idb:<uuid>`) para el Modo Demo
+    media/upload.ts       # uploadMedia(): Supabase Storage si hay sesión, si no IndexedDB
 supabase/schema.sql       # Tablas, índices, RLS, RPCs, triggers, realtime, storage
 public/                   # manifest.json, sw.js, íconos, avatares demo
 ```
@@ -83,7 +93,14 @@ public/                   # manifest.json, sw.js, íconos, avatares demo
    `max-w-md mx-auto min-h-screen border-x border-white/10 shadow-2xl relative` salvo
    `/admin/*` (vista expandida). Overlays (`BottomSheet`, `Toaster`) son `fixed` + `max-w-md mx-auto`.
 6. **Baja señal.** Comprimir toda imagen con `compressImage()` antes de subir; avatares con
-   fallback de iniciales; Service Worker cache-first para estáticos.
+   fallback de iniciales y color dominante (`blur_color`); Service Worker cache-first para estáticos;
+   el iframe de Spotify NO se carga hasta que el usuario toca "Escuchar".
+7. **Media fuera del localStorage.** Fotos y videos nunca se guardan como data URL en el estado:
+   `uploadMedia()` devuelve una URL de Storage o una ref `idb:` que se resuelve con
+   `useMediaUrl()` (ya integrado en `Avatar`, `MediaImage`, `LoopVideo`). Toda imagen de perfil
+   se renderiza con esos componentes.
+8. **Guardado sincrónico.** `run()` persiste en el acto (y hay flush en `pagehide`): una acción
+   nunca se pierde por cerrar la PWA o navegar inmediatamente.
 
 ## Reglas de negocio (no negociables)
 
@@ -91,6 +108,11 @@ public/                   # manifest.json, sw.js, íconos, avatares demo
   E.164 vía `normalizePhone`), ninguno ve al otro en grilla, búsquedas, squads, plano ni chat.
   Usar siempre `isBlockedBetween()` / `public.is_blocked()`. Los errores no revelan el bloqueo
   (mensaje genérico "Este perfil no está disponible").
+- **Perfil:** +18 (`checkBirthDate`), `@username` único `[a-z0-9._]{3,20}`, máx 4 fotos, bio ≤160,
+  ≤5 géneros, teléfono único normalizado E.164, Spotify guardado como URL de embed limpia
+  (`parseSpotify`). Loop ≤5 s, re-codificado sin audio vía canvas + MediaRecorder.
+- **Lista negra:** nunca revelar si un teléfono bloqueado tiene cuenta; mostrar números enmascarados
+  (`maskPhone`). Un perfil bloqueado o inexistente muestra el mismo estado "no disponible".
 - **Teléfono privado:** nunca se expone a otros usuarios (column privileges en `profiles`);
   solo el CRM del staff (`event_crm`) lo ve.
 - **Ghost Mode:** oculta al usuario de la grilla de conexiones; sigue visible para su Squad y matches.
@@ -133,7 +155,7 @@ public/                   # manifest.json, sw.js, íconos, avatares demo
 ## Roadmap
 
 - [x] **Fase 1** — Cimientos, identidad, esquema SQL, motor de reglas y Mock Data.
-- [ ] **Fase 2** — Onboarding/perfil (4 fotos comprimidas, loop 5s, géneros, Spotify), privacidad y bloqueos.
+- [x] **Fase 2** — Onboarding/perfil (4 fotos comprimidas, loop 5s, géneros, Spotify), privacidad y bloqueos.
 - [ ] **Fase 3** — Ingreso `/join/[code]` + Mood, Line-up, grilla por afinidad, Ghost Mode, conexiones y Rompehielos.
 - [ ] **Fase 4** — Squads y seguridad, Pin-Drop 15 min, Punto Base, chat realtime (texto + fotos), Perks/QRs y Barra Express.
 - [ ] **Fase 5** — `/admin`: eventos y códigos, CRM + CSV, Text Blasts, perks y sorteos, Kanban de barra, Pantalla LED.

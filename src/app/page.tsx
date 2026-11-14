@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
-import { ArrowRight, Check, Clock3, Crown, Flag, Gift, Heart, LayoutDashboard, MapPin, Martini, Ticket, Users, Zap } from "lucide-react";
-import { MOOD_TAGS } from "@/lib/types";
+import { useMemo, useState } from "react";
+import { ArrowRight, Check, ChevronRight, Clock3, Crown, DoorOpen, Flag, Gift, Heart, LayoutDashboard, MapPin, Martini, ShieldCheck, Ticket, Users, Zap } from "lucide-react";
+import { MOOD_TAGS, type MoodTag } from "@/lib/types";
 import {
   activeEvent,
   currentUser,
@@ -19,7 +19,11 @@ import {
   visiblePins,
   type LobbyPhase,
 } from "@/lib/engine/selectors";
-import { blastsFor } from "@/lib/engine/actions";
+import { blastsFor, joinEvent } from "@/lib/engine/actions";
+import { useRequireProfile } from "@/lib/store/hooks";
+import { MoodPicker } from "@/components/event/MoodPicker";
+import { BottomSheet } from "@/components/ui/bottom-sheet";
+import { Button } from "@/components/ui/button";
 import { useNow, useRouge } from "@/lib/store/RougeContext";
 import { LineupBanner } from "@/components/event/LineupBanner";
 import { PersonaSwitcher } from "@/components/layout/PersonaSwitcher";
@@ -38,14 +42,22 @@ const PHASE_LABEL: Record<LobbyPhase, string> = {
 
 const ROADMAP = [
   { n: 1, title: "Cimientos, identidad, SQL y Mock Data", done: true },
-  { n: 2, title: "Onboarding, perfil, Spotify y bloqueo por teléfono", done: false },
+  { n: 2, title: "Onboarding, perfil, Spotify y bloqueo por teléfono", done: true },
   { n: 3, title: "Lobby: grilla por afinidad, Ghost Mode, Rompehielos", done: false },
   { n: 4, title: "Squads, seguridad, Pin-Drop 15m, chat y perks", done: false },
   { n: 5, title: "Suite B2B: CRM, Blasts, sorteos, barra y LED", done: false },
 ];
 
 export default function HomePage() {
-  const { state, mode, notify } = useRouge();
+  const me = useRequireProfile();
+  if (!me) return null;
+  return <Home />;
+}
+
+function Home() {
+  const { state, mode, run, notify } = useRouge();
+  const [joinOpen, setJoinOpen] = useState(false);
+  const [joinMood, setJoinMood] = useState<MoodTag | null>(null);
   const now = useNow(15_000);
   const event = activeEvent(state)!;
   const me = currentUser(state)!;
@@ -105,16 +117,23 @@ export default function HomePage() {
               </span>
               <span className="glass-pill inline-flex items-center gap-1 text-vip">⏳ Lobby cierra en {hoursToClose} h</span>
             </div>
-            <div className="mt-4 flex items-center justify-between rounded-2xl bg-black/30 p-3">
-              <div className="flex items-center gap-3">
+            <Link href="/profile" className="mt-4 flex min-h-touch items-center justify-between gap-3 rounded-2xl bg-black/30 p-3 transition hover:bg-black/40">
+              <div className="flex min-w-0 items-center gap-3">
                 <Avatar profile={me} size={44} ring="rouge" />
-                <div>
+                <div className="min-w-0">
                   <p className="text-sm font-semibold">Hola, {me.full_name.split(" ")[0]}</p>
-                  <p className="text-xs text-muted">{mood ? `${mood.emoji} ${mood.label}` : "Elegí tu mood de la noche"}</p>
+                  <p className="truncate text-xs text-muted">{attendee ? (mood ? `${mood.emoji} ${mood.label}` : "Elegí tu mood de la noche") : "Todavía no entraste al lobby"}</p>
                 </div>
               </div>
-              {attendee?.ghost_mode && <Badge>👻 Ghost</Badge>}
-            </div>
+              <span className="flex shrink-0 items-center gap-1 text-xs font-semibold text-muted">
+                {attendee?.ghost_mode && <Badge>👻 Ghost</Badge>} Mi perfil <ChevronRight className="size-4" />
+              </span>
+            </Link>
+            {!attendee && phase !== "expired" && phase !== "upcoming" && (
+              <Button block size="lg" className="mt-3" onClick={() => setJoinOpen(true)}>
+                <DoorOpen /> Entrar al lobby
+              </Button>
+            )}
           </div>
         </section>
 
@@ -205,7 +224,7 @@ export default function HomePage() {
         <section className="glass rounded-3xl p-4">
           <div className="flex items-center justify-between">
             <h2 className="text-lg">Roadmap del MVP</h2>
-            <Badge tone="squad">Fase 1/5</Badge>
+            <Badge tone="squad">Fase 2/5</Badge>
           </div>
           <ol className="mt-3 space-y-2">
             {ROADMAP.map((f) => (
@@ -218,6 +237,17 @@ export default function HomePage() {
             ))}
           </ol>
         </section>
+
+        <Link href="/settings/privacy" className="glass flex min-h-touch items-center gap-3 rounded-2xl p-4 transition hover:bg-white/5">
+          <span className="grid size-10 place-items-center rounded-xl bg-squad/12 text-squad">
+            <ShieldCheck className="size-5" />
+          </span>
+          <div className="flex-1">
+            <p className="font-display font-semibold">Privacidad y lista negra</p>
+            <p className="text-xs text-muted">Bloqueá números o perfiles · invisibilidad mutua</p>
+          </div>
+          <ArrowRight className="size-5 text-muted" />
+        </Link>
 
         <Link href="/admin" className="glass flex min-h-touch items-center gap-3 rounded-2xl p-4 transition hover:bg-white/5">
           <span className="grid size-10 place-items-center rounded-xl bg-vip/15 text-vip">
@@ -235,6 +265,32 @@ export default function HomePage() {
           <MapPin className="size-3" /> {data.pins.length} pines visibles para vos
         </p>
       </div>
+
+      <BottomSheet
+        open={joinOpen}
+        onClose={() => setJoinOpen(false)}
+        title="¿Cuál es tu mood de hoy?"
+        description="Tu perfil ya está listo. Solo elegí cómo venís esta noche."
+        footer={
+          <Button
+            block
+            size="lg"
+            disabled={!joinMood}
+            onClick={() => {
+              if (!joinMood) return;
+              const r = run((s) => joinEvent(s, me.id, event.master_invite_code, joinMood));
+              if (r.ok) {
+                setJoinOpen(false);
+                notify({ tone: "rouge", title: `🔥 Entraste a ${event.name}`, description: "Ya aparecés en la grilla de asistentes." });
+              }
+            }}
+          >
+            Entrar a la fiesta
+          </Button>
+        }
+      >
+        <MoodPicker value={joinMood} onChange={setJoinMood} />
+      </BottomSheet>
     </main>
   );
 }
