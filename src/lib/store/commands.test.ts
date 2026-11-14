@@ -118,6 +118,8 @@ describe("contrato comandos ↔ schema.sql", () => {
   });
 
   const s0 = () => createSeedState(NOW);
+  /** Mismo estado, actuando como la dueña del evento (acciones de staff). */
+  const st = () => ({ ...s0(), current_user_id: DEMO_IDS.organizer });
   const withPin = () => {
     const r = C.dropPin(EV, ME, { x: 40, y: 30, shareWithSquad: true, matchIds: [] }).local(s0());
     if (!r.ok) throw new Error(r.error);
@@ -127,6 +129,7 @@ describe("contrato comandos ↔ schema.sql", () => {
   const readyOrder = () => {
     let s = s0();
     const o = C.createBarOrder(EV, ME, [{ itemId: "gin", qty: 1 }], "fast_pickup").local(s);
+    if (o.ok) o.state.current_user_id = DEMO_IDS.organizer;
     if (!o.ok) throw new Error(o.error);
     s = o.state;
     for (const _ of [0, 1]) {
@@ -166,16 +169,18 @@ describe("contrato comandos ↔ schema.sql", () => {
     ["requestSong", () => runRemote(C.requestSong(EV, ME, "Nuevo tema", "Artista"), s0())],
     ["toggleSongVote", () => runRemote(C.toggleSongVote(EV, s0().song_requests[0].id, ME, s0().song_requests[0].title), s0())],
     ["createBarOrder", () => runRemote(C.createBarOrder(EV, ME, [{ itemId: "gin", qty: 2 }], "fast_pickup"), s0(), { create_bar_order: { pickup_code: "ABCD" } })],
-    ["advanceOrder", () => runRemote(C.advanceOrder(s0().bar_orders[3]), s0())],
+    ["advanceOrder", () => runRemote(C.advanceOrder(s0().bar_orders[3]), st())],
     ["redeemPickupCode", () => { const { s, code } = readyOrder(); return runRemote(C.redeemPickupCode(EV, code), s); }],
-    ["redeemPerk", () => runRemote(C.redeemPerk(s0().user_perks_qrs.find((p) => p.status === "available")!.id), s0())],
-    ["upsertPerkRule", () => runRemote(C.upsertPerkRule({ ...squadRule, is_active: false }), s0())],
-    ["createRaffle", () => runRemote(C.createRaffle(EV, "Botella", "all"), s0())],
-    ["drawRaffle", () => runRemote(C.drawRaffle(s0().raffles[0].id, () => 0), s0(), { draw_raffle: ME })],
-    ["sendBlast", () => runRemote(C.sendBlast(EV, { title: "2x1", message: "Barra", segment: { kind: "squad_min_size", min: 4 }, flashMinutes: 20 }), s0(), { send_blast: 4 })],
+    ["redeemPerk", () => runRemote(C.redeemPerk(s0().user_perks_qrs.find((p) => p.status === "available")!.id), st())],
+    ["upsertPerkRule", () => runRemote(C.upsertPerkRule({ ...squadRule, is_active: false }), st())],
+    ["createRaffle", () => runRemote(C.createRaffle(EV, "Botella", "all"), st())],
+    ["drawRaffle", () => runRemote(C.drawRaffle(s0().raffles[0].id, () => 0), st(), { draw_raffle: ME })],
+    ["sendBlast", () => runRemote(C.sendBlast(EV, { title: "2x1", message: "Barra", segment: { kind: "squad_min_size", min: 4 }, flashMinutes: 20 }), st(), { send_blast: 4 })],
     ["upsertEvent (nuevo)", () => runRemote(C.upsertEvent({ name: "Neon Sunday", starts_at: new Date(NOW + 72e5).toISOString(), ends_at: new Date(NOW + 9e6).toISOString() }), s0())],
-    ["upsertEvent (edición)", () => runRemote(C.upsertEvent({ ...s0().events[0], name: "Otro nombre" }), s0())],
-    ["generateInviteCodes", () => runRemote(C.generateInviteCodes(EV, 5), s0(), { generate_invite_codes: [] })],
+    ["upsertEvent (edición)", () => runRemote(C.upsertEvent({ ...s0().events[0], name: "Otro nombre" }), st())],
+    ["generateInviteCodes", () => runRemote(C.generateInviteCodes(EV, 5), st(), { generate_invite_codes: [] })],
+    ["setStaffRole", () => runRemote(C.setStaffRole(EV, "@" + s0().profiles.find((p) => p.id === ME)!.username, "bartender"), st(), { set_staff_role: ME })],
+    ["setStaffRole (quitar)", () => runRemote(C.setStaffRole(EV, "dani.barra", null), st(), { set_staff_role: DEMO_IDS.bartender })],
   ];
 
   it.each(cases)("%s respeta el esquema", async (_name, fn) => {
@@ -186,9 +191,9 @@ describe("contrato comandos ↔ schema.sql", () => {
   it("los comandos que el servidor resuelve devuelven los datos del servidor", async () => {
     const order = await runRemote(C.createBarOrder(EV, ME, [{ itemId: "gin", qty: 1 }], "fast_pickup"), s0(), { create_bar_order: { id: "srv", pickup_code: "SRV1" } });
     expect((order.data as { pickup_code: string }).pickup_code).toBe("SRV1");
-    const raffle = await runRemote(C.drawRaffle(s0().raffles[0].id, () => 0), s0(), { draw_raffle: id(8) });
+    const raffle = await runRemote(C.drawRaffle(s0().raffles[0].id, () => 0), st(), { draw_raffle: id(8) });
     expect((raffle.data as { raffle: { winner_user_id: string } }).raffle.winner_user_id).toBe(id(8));
-    const blast = await runRemote(C.sendBlast(EV, { title: "x", message: "y", segment: { kind: "all" } }), s0(), { send_blast: 99 });
+    const blast = await runRemote(C.sendBlast(EV, { title: "x", message: "y", segment: { kind: "all" } }), st(), { send_blast: 99 });
     expect((blast.data as { reach: number }).reach).toBe(99);
   });
 
@@ -271,10 +276,54 @@ describe("acciones con datos generados por el servidor", () => {
       C.generateInviteCodes(EV, 1),
       C.drawRaffle(s.raffles[0].id, () => 0),
       C.joinEvent(ME, "BRESH26", "open_to_meet"),
+      C.setStaffRole(EV, "dani.barra", "waiter"),
     ];
     for (const c of cmds) expect(c.optimistic, c.name).toBe(false);
     // y las de interacción inmediata sí lo son (UI instantánea con mala señal)
     for (const c of [C.sendMessage(ME, { type: "squad", squadId: DEMO_IDS.squadMain }, { content: "hola" }), C.triggerRescue(EV, ME), C.dropPin(EV, ME, { x: 1, y: 1, shareWithSquad: true, matchIds: [] })])
       expect(c.optimistic, c.name).not.toBe(false);
+  });
+});
+
+describe("permisos por rol (misma regla que has_staff_role en SQL)", () => {
+  const as = (userId: string) => ({ ...createSeedState(Date.now()), current_user_id: userId });
+  const order = () => createSeedState(Date.now()).bar_orders.find((o) => o.status === "pending")!;
+  it("barra y mozo/a operan comandas; asistente y seguridad no", () => {
+    expect(C.advanceOrder(order()).local(as(DEMO_IDS.bartender)).ok).toBe(true);
+    expect(C.advanceOrder(order()).local(as(DEMO_IDS.waiter)).ok).toBe(true);
+    expect(C.advanceOrder(order()).local(as(DEMO_IDS.security))).toMatchObject({ ok: false });
+    expect(C.advanceOrder(order()).local(as(ME))).toMatchObject({ ok: false });
+    expect(C.advanceOrder(order(), { simulate: true }).local(as(ME)).ok).toBe(true); // demo
+  });
+  it("blasts, sorteos y códigos: solo dueño/a y producción", () => {
+    const blast = () => C.sendBlast(EV, { title: "t", message: "m", segment: { kind: "all" } });
+    expect(blast().local(as(DEMO_IDS.organizer)).ok).toBe(true);
+    expect(blast().local(as(DEMO_IDS.manager)).ok).toBe(true);
+    for (const u of [DEMO_IDS.bartender, DEMO_IDS.waiter, DEMO_IDS.security, ME]) expect(blast().local(as(u)).ok, u).toBe(false);
+    expect(C.generateInviteCodes(EV, 3).local(as(DEMO_IDS.bartender)).ok).toBe(false);
+    expect(C.createRaffle(EV, "x", "all").local(as(DEMO_IDS.security)).ok).toBe(false);
+  });
+  it("la barra canjea QRs de perks; mozo/a no", () => {
+    const qr = createSeedState(Date.now()).user_perks_qrs.find((p) => p.status === "available")!.qr_code_string;
+    expect(C.redeemPerk(qr).local(as(DEMO_IDS.bartender)).ok).toBe(true);
+    expect(C.redeemPerk(qr).local(as(DEMO_IDS.waiter)).ok).toBe(false);
+  });
+  it("solo dueño/a arma el equipo; producción no puede darse más permisos", () => {
+    const r = C.setStaffRole(EV, "dani.barra", "manager").local(as(DEMO_IDS.organizer));
+    expect(r.ok && r.state.event_staff.find((x) => x.user_id === DEMO_IDS.bartender)?.role).toBe("manager");
+    expect(C.setStaffRole(EV, "lucho.produccion", "owner").local(as(DEMO_IDS.manager)).ok).toBe(false);
+    expect(C.setStaffRole(EV, "paula.owner", null).local(as(DEMO_IDS.organizer))).toMatchObject({ ok: false, error: "Quien creó el evento siempre es dueño/a." });
+    const removed = C.setStaffRole(EV, "marta.seguridad", null).local(as(DEMO_IDS.organizer));
+    expect(removed.ok && removed.state.event_staff.some((x) => x.user_id === DEMO_IDS.security)).toBe(false);
+    expect(C.setStaffRole(EV, "no.existe", "waiter").local(as(DEMO_IDS.organizer)).ok).toBe(false);
+    expect(C.setStaffRole(EV, "no.existe", "waiter", { serverLookup: true }).local(as(DEMO_IDS.organizer)).ok).toBe(true);
+  });
+  it("cualquiera crea un evento nuevo, pero solo el staff con permiso edita uno existente", () => {
+    const s = as(ME);
+    const start = new Date(Date.now() + 72e5).toISOString();
+    const end = new Date(Date.now() + 9e6).toISOString();
+    expect(C.upsertEvent({ name: "Mi fiesta", starts_at: start, ends_at: end }).local(s).ok).toBe(true);
+    expect(C.upsertEvent({ ...s.events[0], name: "Hackeado" }).local(s).ok).toBe(false);
+    expect(C.upsertEvent({ ...s.events[0], name: "Renombrado" }).local(as(DEMO_IDS.manager)).ok).toBe(true);
   });
 });

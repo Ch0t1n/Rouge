@@ -13,7 +13,7 @@ export default function OfflinePage() {
       <p className="text-sm text-muted">
         Tu Squad, tus matches y tus QRs guardados siguen en el teléfono. Acercate a la entrada o al patio para recuperar señal.
       </p>
-      <Link href="/" className="mt-2 inline-flex min-h-touch items-center rounded-2xl bg-rouge px-5 font-display font-semibold text-white shadow-glow-rouge">
+      <Link href="/app" className="mt-2 inline-flex min-h-touch items-center rounded-2xl bg-rouge px-5 font-display font-semibold text-white shadow-glow-rouge">
         Reintentar
       </Link>
     </main>

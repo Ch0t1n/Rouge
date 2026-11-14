@@ -244,6 +244,41 @@ describe.skipIf(!URL || !ANON || !SERVICE)("Supabase real: flujo completo con RL
     expect(remote.state.bar_menu.length).toBeGreaterThan(5);
   });
 
+  it("roles: barra opera comandas pero no manda blasts; seguridad ve métricas pero no teléfonos", async () => {
+    const [barra, segu] = await Promise.all(["barra", "segu"].map((n) => actor(admin, n)));
+    for (const [i, a] of [barra, segu].entries()) {
+      await act(a, C.upsertProfile(a.id, { username: `${a.name}.${RUN}`, full_name: `${a.name} Test`, birth_date: "1995-01-01", phone: phone(20 + i) }));
+    }
+    // La dueña arma el equipo por @username (el perfil no está cargado en su cliente → lo busca la RPC)
+    await act(staff, C.setStaffRole(EV, `@barra.${RUN}`, "bartender", { serverLookup: true }));
+    await act(staff, C.setStaffRole(EV, `segu.${RUN}`, "security", { serverLookup: true }));
+
+    const bs = await fetchRemoteState(barra.sb, barra.id, EV);
+    expect(bs.isStaff).toBe(true);
+    expect(bs.state.event_staff.find((r) => r.user_id === barra.id)?.role).toBe("bartender");
+    expect(bs.state.event_invite_codes).toHaveLength(0); // accesos: solo dueño/a y producción
+    expect(bs.state.admin_stats ?? null).toBeNull();
+    const order = await act(cami, C.createBarOrder(EV, cami.id, [{ itemId: "aperol", qty: 1 }], "fast_pickup"));
+    const prep = await act(barra, C.advanceOrder(order));
+    expect(prep.status).toBe("preparing");
+    const blast = C.sendBlast(EV, { title: "x", message: "y", segment: { kind: "all" } });
+    expect(await rejects(barra, blast, { blast: bs.state.event_blasts[0], reach: 0 }, bs.state)).toMatchObject({ message: "forbidden" });
+    for (const [fn, args] of [["event_crm", { p_event: EV }], ["generate_invite_codes", { p_event: EV, p_count: 1 }], ["set_staff_role", { p_event: EV, p_username: `barra.${RUN}`, p_role: "owner" }]] as const) {
+      expect((await barra.sb.rpc(fn, args)).error?.message, fn).toBe("forbidden");
+    }
+    // Tampoco puede darse permisos por la tabla (RLS)
+    await barra.sb.from("event_staff").update({ role: "owner" }).eq("user_id", barra.id);
+    expect((await fetchRemoteState(barra.sb, barra.id, EV)).state.event_staff.find((r) => r.user_id === barra.id)?.role).toBe("bartender");
+
+    const ss = await fetchRemoteState(segu.sb, segu.id, EV);
+    expect(ss.state.admin_stats?.matches).toBeGreaterThanOrEqual(1);
+    expect(ss.state.profiles.find((p) => p.id === sofi.id)?.phone_normalized ?? null).toBeNull();
+    expect((await segu.sb.rpc("advance_bar_order", { p_order: order.id })).error?.message).toBe("forbidden");
+
+    await act(staff, C.setStaffRole(EV, `segu.${RUN}`, null, { serverLookup: true }));
+    expect((await fetchRemoteState(segu.sb, segu.id, EV)).isStaff).toBe(false);
+  });
+
   it("storage: subo a mi carpeta, no a la de otra persona", async () => {
     const blob = new Blob([new Uint8Array([82, 73, 70, 70])], { type: "image/webp" });
     const ok = await sofi.sb.storage.from("profile-media").upload(`${sofi.id}/test-${RUN}.webp`, blob, { contentType: "image/webp" });

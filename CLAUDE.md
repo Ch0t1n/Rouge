@@ -32,6 +32,7 @@ npm test           # tests del motor de reglas + contrato cliente ↔ schema.sql
 npm run test:integration  # integración REAL contra un Supabase de prueba (ver más abajo)
 node scripts/generate-icons.cjs        # re-rasteriza íconos PWA desde public/icons/icon.svg
 node scripts/generate-demo-avatars.mjs # regenera avatares SVG del demo
+node scripts/capture-landing-shots.cjs # re-captura las pantallas reales de la landing (app en demo corriendo)
 ```
 
 ## Estructura
@@ -40,8 +41,9 @@ node scripts/generate-demo-avatars.mjs # regenera avatares SVG del demo
 src/
   app/                    # Rutas (App Router)
     layout.tsx            # Fuentes, metadata PWA, RougeProvider, AppShell
-    page.tsx              # Home del evento (Modo Demo hub)
-    login/                # Magic link por email (Modo Supabase; en demo redirige)
+    page.tsx              # Landing pública a ancho completo (capturas reales en public/landing)
+    app/                  # Home del asistente (hub del evento) — start_url de la PWA
+    login/                # Login por tipo de usuario: Asistente / Equipo. Supabase: magic link; demo: elegir persona/rol
     onboarding/           # Alta del perfil persistente en 4 pasos (guarda progresivamente)
     profile/              # "Así te ven" + completitud · profile/edit (editor completo)
     settings/privacy/     # Lista negra por teléfono + perfiles bloqueados
@@ -63,6 +65,7 @@ src/
       perks/              # Reglas de QR Drop, ruleta de sorteo en vivo, validación de QR
       bar-pos/            # Kanban de comandas (minimapa de entrega) + entrega por código de retiro
       live-wall/          # Pantalla gigante LED a pantalla completa (sin chrome)
+      print-codes/        # Hoja imprimible: un QR por código de 1 uso libre (?event=<id>)
     offline/              # Fallback del Service Worker
   components/
     ui/                   # Primitivas: Button, Badge, Switch, BottomSheet, Avatar, Toaster, field (TextField, Segmented)
@@ -73,12 +76,15 @@ src/
     chat/                 # MessageList (texto, fotos, system_alert), Composer (foto comprimida)
     squad/                # InviteToSquadButton ("Invitar a mi Squad" desde cualquier perfil)
     perks/                # QrBlock (QR alto contraste)
-    admin/                # AdminChrome (sidebar/pestañas, selector de evento), AdminHeader, Panel, downloadCSV
+    share/ShareSheet.tsx  # QR + compartir nativo + WhatsApp + copiar + PNG para CUALQUIER link (useShare, ShareButton)
+    landing/Landing.tsx   # Secciones de la landing
+    admin/                # AdminChrome (nav por permisos, NoAccess, badge de rol), TeamPanel, SecurityPanel, PrintCodes, AdminHeader, Panel, downloadCSV
     venue/VenueMap.tsx    # Plano interactivo (zoom/paneo, sectores, pines)
     event/                # LineupBanner, MoodPicker
   lib/
     types.ts              # Tipos de dominio — ESPEJO 1:1 de supabase/schema.sql
     engine/
+      roles.ts            # Tipos de usuario, permisos por rol, roleHome(), destinationFor() (espejo de has_staff_role)
       selectors.ts        # Reglas de VISIBILIDAD (bloqueos, ghost, pines, lobby)
       actions.ts          # Reglas de NEGOCIO puras (state, input, now) → Result
       affinity.ts         # Algoritmo de afinidad
@@ -101,7 +107,7 @@ src/
     media/upload.ts       # uploadMedia(): Supabase Storage si hay sesión, si no IndexedDB
 supabase/schema.sql       # Tablas, índices, RLS, RPCs, triggers, realtime, storage
 supabase/seed.sql         # Opcional: evento de prueba, menú y regla de QR (fechas relativas a now())
-public/                   # manifest.json, sw.js, íconos, avatares demo
+public/                   # manifest.json, sw.js, íconos, avatares demo, landing/ (capturas WebP)
 ```
 
 ## Principios de arquitectura
@@ -128,7 +134,7 @@ public/                   # manifest.json, sw.js, íconos, avatares demo
 3b. **Modo Supabase.** Sesión con magic link (`/login`); `current_user_id = auth.uid()`. El estado se
    arma con `fetchRemoteState` (selects con RLS; el teléfono solo vía `my_profile()` y, para staff,
    `event_crm()`), se re-sincroniza por Realtime (debounce), al enfocar la ventana y cada 45 s.
-   Rutas públicas sin sesión: `/login`, `/join/*`, `/offline`; el resto pasa por el login (AppShell).
+   Rutas públicas sin sesión: `/` (landing), `/login`, `/join/*`, `/offline`; el resto pasa por el login (AppShell).
    Sin evento activo se muestra la pantalla "No hay ninguna fiesta activa" (o "Crear evento" en admin).
    Botones "Simular…" solo existen en Modo Demo.
    `/join/<código>`: los códigos de 1 uso y los squads ajenos NO son legibles por RLS → la vista previa
@@ -172,6 +178,15 @@ public/                   # manifest.json, sw.js, íconos, avatares demo
     Realtime y Storage. Correrlo antes de cada cambio de `schema.sql` o `commands.ts`.
 12. **RPCs que devuelven filas:** llamar `select * from fn(...)`, nunca `select (fn(...)).*` (Postgres
     re-ejecuta la función una vez por columna). `supabase.rpc()` ya lo hace bien.
+15. **Roles.** Tipos de usuario: asistente, `owner` (quien crea el evento, aunque no tenga fila), `manager`,
+    `bartender`, `waiter`, `security` (`event_staff`). Permisos en `ROLE_PERMISSIONS` (`roles.ts`) ⇔
+    `has_staff_role` / `is_event_manager` / `can_operate_bar` en SQL. Los comandos de staff usan `guarded(perm, …)`
+    (mismo mensaje `NO_PERMISSION`); la UI usa `useRouge().can(perm)` / `role`. `AdminChrome` filtra el menú y muestra
+    `NoAccess` si el rol no tiene la sección (`ADMIN_ROUTE_PERMISSION`). Tras el login cada uno va a `destinationFor()`
+    (barra/mozo → comandas, seguridad/dueño/producción → resumen, asistente → `/app`). El equipo lo arma solo el dueño/a
+    (`setStaffRole` / RPC `set_staff_role`, por @username). Botones demo que actúan por el staff pasan `{ simulate: true }`.
+16. **Todo link se comparte con QR.** Usar `useShare()` / `ShareButton` (`components/share`) para cualquier link
+    nuevo (evento, códigos, Squad, perfil). Links relativos se completan con el dominio actual.
 8. **Guardado sincrónico.** `run()` persiste en el acto (y hay flush en `pagehide`): una acción
    nunca se pierde por cerrar la PWA o navegar inmediatamente.
 
@@ -221,6 +236,10 @@ public/                   # manifest.json, sw.js, íconos, avatares demo
   acepta el código corto o el QR completo `ROUGE:ORDER:<id>:<código>`.
 - **Sorteos:** la ruleta es visual; el ganador real lo define `drawRaffle` sobre `raffleEligible`
   (en SQL `draw_raffle` con `random()`), y recibe un QR `raffle_prize`.
+- **Roles:** dueño/a y producción operan todo (eventos, accesos, CRM, blasts, perks, sorteos, menú); solo dueño/a
+  suma/quita equipo y quien creó el evento no se puede quitar. Barra: comandas + ventanilla (canjea pickup y QRs de
+  perk) + LED. Mozo/a: comandas. Seguridad: resumen con alertas de rescate (`eventRescueAlerts`) y LED, sin ventas ni
+  teléfonos. `event_stats` solo dueño/producción/seguridad; `event_crm` y códigos solo dueño/producción.
 - **Pin-Drop (SQL):** usar la RPC `drop_pin` (reemplaza el pin anterior y descarta ids que no son
   matches reales). Punto Base y su aviso: `set_squad_base_pin`, `announce_base_meetup`.
 
@@ -252,6 +271,7 @@ public/                   # manifest.json, sw.js, íconos, avatares demo
 - [x] **Fase 3** — Ingreso `/join/[code]` + Mood, Line-up, grilla por afinidad, Ghost Mode, conexiones y Rompehielos.
 - [x] **Fase 4** — Squads y seguridad, Pin-Drop 15 min, Punto Base, chat realtime (texto + fotos), Perks/QRs y Barra Express.
 - [x] **Fase 5** — `/admin`: eventos y códigos, CRM + CSV, Text Blasts, perks y sorteos, Kanban de barra, Pantalla LED.
+- [x] **Fase 6** — Roles de equipo (login por tipo de usuario, permisos en cliente y SQL), QR para todo link, landing pública.
 
 ## Convenciones
 

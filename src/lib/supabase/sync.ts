@@ -47,12 +47,14 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
   const [events, mine, staffRows] = await Promise.all([
     q<RougeEvent>(sb.from("events").select("*").order("starts_at", { ascending: true })),
     q<{ event_id: UUID }>(sb.from("event_attendees").select("event_id").eq("user_id", userId)),
-    q<{ event_id: UUID }>(sb.from("event_staff").select("event_id").eq("user_id", userId)),
+    q<RougeState["event_staff"][number]>(sb.from("event_staff").select("*").eq("user_id", userId)),
   ]);
   const staffIds = new Set([...staffRows.map((r) => r.event_id), ...events.filter((e) => e.created_by === userId).map((e) => e.id)]);
   const event = pickEvent(events, new Set(mine.map((r) => r.event_id)), staffIds, preferredEventId, now);
   const eventId = event?.id ?? "";
   const isStaff = !!event && staffIds.has(event.id);
+  const myRole = event ? (staffRows.find((r) => r.event_id === event.id)?.role ?? (event.created_by === userId ? "owner" : null)) : null;
+  const isManager = myRole === "owner" || myRole === "manager";
 
   const byEvent = <T,>(table: string, select = "*") => (eventId ? q<T>(sb.from(table).select(select).eq("event_id", eventId)) : Promise.resolve([] as T[]));
 
@@ -71,9 +73,12 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
     byEvent<BarMenuItem & { is_available: boolean; price: number | string }>("bar_menu_items"),
     byEvent<RougeState["bar_orders"][number]>("bar_orders"),
     q<RougeState["user_blocks"][number]>(sb.from("user_blocks").select("*")),
-    isStaff ? byEvent<RougeState["event_invite_codes"][number]>("event_invite_codes") : Promise.resolve([]),
+    isManager ? byEvent<RougeState["event_invite_codes"][number]>("event_invite_codes") : Promise.resolve([]),
     q<Profile>(sb.rpc("my_profile")),
   ]);
+  // Mis roles en todos los eventos (selector del panel) + el equipo completo del evento activo si soy staff.
+  const teamRows = isStaff ? await byEvent<RougeState["event_staff"][number]>("event_staff") : [];
+  const eventStaff = [...staffRows.filter((r) => r.event_id !== eventId || !isStaff), ...teamRows];
 
   // Perfiles necesarios: asistentes, contrapartes de mis conexiones, squads y bloqueados.
   const ids = new Set<UUID>([userId]);
@@ -83,6 +88,7 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
   blocks.forEach((b) => b.blocked_user_id && ids.add(b.blocked_user_id));
   raffles.forEach((r) => r.winner_user_id && ids.add(r.winner_user_id));
   orders.forEach((o) => ids.add(o.user_id));
+  teamRows.forEach((r) => ids.add(r.user_id));
   const profiles = ids.size ? await q<Profile>(sb.from("profiles").select(PROFILE_COLUMNS).in("id", [...ids])) : [];
 
   // Mi teléfono (my_profile) y, para el staff, los de los asistentes (event_crm) → CRM y bloqueos.
@@ -90,9 +96,12 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
   if (me[0]) phones.set(userId, me[0].phone_normalized);
   let adminStats: RougeState["admin_stats"] = null;
   if (isStaff && eventId) {
-    const crm = await q<{ user_id: UUID; phone: string | null }>(sb.rpc("event_crm", { p_event: eventId })).catch(() => []);
-    crm.forEach((r) => phones.set(r.user_id, r.phone));
-    const { data: stats } = await sb.rpc("event_stats", { p_event: eventId });
+    // Teléfonos (CRM) solo para dueño/a y producción; métricas también para seguridad (resumen).
+    if (isManager) {
+      const crm = await q<{ user_id: UUID; phone: string | null }>(sb.rpc("event_crm", { p_event: eventId })).catch(() => []);
+      crm.forEach((r) => phones.set(r.user_id, r.phone));
+    }
+    const { data: stats } = myRole === "bartender" || myRole === "waiter" ? { data: null } : await sb.rpc("event_stats", { p_event: eventId });
     if (stats) adminStats = { event_id: eventId, ...(stats as Omit<NonNullable<RougeState["admin_stats"]>, "event_id">) };
   }
 
@@ -105,6 +114,7 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
     profiles: profiles.map((p) => ({ ...p, phone_normalized: phones.get(p.id) ?? null, photos: p.photos ?? [], music_genres: p.music_genres ?? [] })),
     user_blocks: blocks,
     events,
+    event_staff: eventStaff,
     event_invite_codes: codes,
     event_attendees: attendees.map((a) => ({ ...a, total_spent: Number(a.total_spent), visited_sectors: a.visited_sectors ?? [] })),
     connections,

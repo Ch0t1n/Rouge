@@ -286,6 +286,19 @@ export function rescueAlertsFor(s: RougeState, eventId: UUID, userId: UUID, now 
     .filter((r) => !!r.profile);
 }
 
+/** Para seguridad / staff: todas las alertas de rescate activas del evento, la más reciente primero. */
+export function eventRescueAlerts(s: RougeState, eventId: UUID, now = Date.now()): (RescueAlert & { squad: Squad })[] {
+  return s.squads
+    .filter((sq) => sq.event_id === eventId)
+    .flatMap((sq) =>
+      squadMembers(s, sq.id)
+        .filter((m) => m.safety_status === "rescue_needed")
+        .map((m) => ({ squad: sq, member: m, profile: getProfile(s, m.user_id)!, pin: s.map_pins.find((p) => p.event_id === eventId && p.user_id === m.user_id && p.is_rescue_alert && isPinActive(p, now)) ?? activePinOf(s, eventId, m.user_id, now) })),
+    )
+    .filter((r) => !!r.profile)
+    .sort((a, b) => +new Date(b.pin?.created_at ?? 0) - +new Date(a.pin?.created_at ?? 0));
+}
+
 /** Squads con "🍾 Tenemos Mesa VIP · abiertos a sumar otro grupo" (sin el mío ni bloqueados). */
 export function openVipSquads(s: RougeState, eventId: UUID, viewerId: UUID) {
   const mine = squadOf(s, eventId, viewerId)?.squad.id;

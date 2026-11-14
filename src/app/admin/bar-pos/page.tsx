@@ -29,7 +29,7 @@ const NEXT_LABEL: Partial<Record<BarOrderStatus, string>> = {
 };
 
 export default function AdminBarPosPage() {
-  const { state, exec, notify } = useRouge();
+  const { state, exec, notify, can } = useRouge();
   const now = useNow(10_000);
   const event = activeEvent(state)!;
   const [code, setCode] = useState("");
@@ -54,6 +54,16 @@ export default function AdminBarPosPage() {
             className="flex items-center gap-2"
             onSubmit={async (e) => {
               e.preventDefault();
+              // QR de perk (trago gratis, premio, regalo de Rompehielos): lo canjea quien tenga perks.redeem (barra).
+              const raw = code.trim();
+              if (/^ROUGE:/.test(raw) && !/^ROUGE:ORDER:/.test(raw) && can("perks.redeem")) {
+                const p = await exec(C.redeemPerk(raw));
+                if (p.ok) {
+                  notify({ tone: "vip", title: `🎁 ${p.data.title} canjeado`, description: `Para ${getProfile(state, p.data.user_id)?.full_name ?? "el asistente"}.` });
+                  setCode("");
+                }
+                return;
+              }
               const r = await exec(C.redeemPickupCode(event.id, code));
               if (r.ok) {
                 notify({ tone: "squad", title: `✅ Pedido ${r.data.pickup_code} entregado`, description: r.data.items_json.map((i) => `${i.qty}× ${i.name}`).join(", ") });
@@ -64,7 +74,7 @@ export default function AdminBarPosPage() {
             <label className="relative">
               <span className="sr-only">Código de retiro</span>
               <ScanLine className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-squad" />
-              <input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="Código o QR de retiro" className="min-h-touch w-56 rounded-2xl border border-squad/40 bg-squad/[0.06] pl-9 pr-3 font-display text-sm tracking-wider focus:outline-none focus:ring-2 focus:ring-squad/50" />
+              <input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder={can("perks.redeem") ? "Código de retiro o QR de perk" : "Código o QR de retiro"} className="min-h-touch w-56 rounded-2xl border border-squad/40 bg-squad/[0.06] pl-9 pr-3 font-display text-sm tracking-wider focus:outline-none focus:ring-2 focus:ring-squad/50" />
             </label>
             <Button type="submit" variant="squad" disabled={!code.trim()}>
               <PackageCheck /> Entregar

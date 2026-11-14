@@ -58,7 +58,7 @@ export default function UserProfilePage() {
     if (r.ok) {
       setConfirm(false);
       notify({ tone: "info", title: "Usuario bloqueado", description: "Ya no se van a ver en ningún evento. Podés deshacerlo en Privacidad." });
-      router.replace("/");
+      router.replace("/app");
     }
   };
 

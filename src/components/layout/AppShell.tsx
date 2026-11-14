@@ -15,21 +15,23 @@ import { cn } from "@/lib/utils";
  * Una sola interfaz para móvil y desktop:
  * - Rutas de usuario → contenedor móvil centrado (max-w-md) también en desktop.
  * - Rutas /admin/* → vista expandida (el organizador opera desde una laptop).
+ * - "/" → landing pública a ancho completo (sin sesión ni evento).
  */
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? "/";
-  const expanded = pathname.startsWith("/admin");
+  const landing = pathname === "/";
+  const expanded = landing || pathname.startsWith("/admin");
   const withNav = NAV_ROUTES.includes(pathname);
   const { state, mode, signedIn } = useRouge();
   const router = useRouter();
   // Supabase: sin sesión solo se ven las rutas públicas; el resto pasa primero por el login.
-  const isPublic = ["/login", "/join", "/offline"].some((p) => pathname.startsWith(p));
+  const isPublic = landing || ["/login", "/join", "/offline"].some((p) => pathname.startsWith(p));
   const needsLogin = mode === "supabase" && !signedIn && !isPublic;
   useEffect(() => {
     if (needsLogin) router.replace(`/login?next=${encodeURIComponent(pathname)}`);
   }, [needsLogin, pathname, router]);
   // Rutas que no dependen de un evento activo (perfil, ingreso, chats 1:1, alta de eventos…)
-  const eventFree = ["/login", "/onboarding", "/join", "/profile", "/settings", "/u/", "/chat", "/inbox", "/offline", "/admin/events"].some((p) => pathname.startsWith(p));
+  const eventFree = landing || ["/login", "/onboarding", "/join", "/profile", "/settings", "/u/", "/chat", "/inbox", "/offline", "/admin/events"].some((p) => pathname.startsWith(p));
   const missingEvent = !eventFree && !activeEvent(state);
 
   return (

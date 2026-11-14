@@ -19,7 +19,7 @@ export function useRequireProfile() {
   const needsLogin = mode === "supabase" && !signedIn;
   useEffect(() => {
     if (needsLogin) router.replace(`/login?next=${encodeURIComponent(pathname)}`);
-    else if (!me) router.replace(pathname === "/" ? "/onboarding" : `/onboarding?next=${encodeURIComponent(pathname)}`);
+    else if (!me) router.replace(pathname === "/app" ? "/onboarding" : `/onboarding?next=${encodeURIComponent(pathname)}`);
   }, [needsLogin, me, router, pathname]);
   return needsLogin ? undefined : me;
 }

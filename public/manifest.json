@@ -3,7 +3,7 @@
   "short_name": "ROUGE",
   "description": "Lobby privado de tu fiesta: conectá, armá tu Squad, encontrá a tus amigas en el plano y pedí en la barra sin filas.",
   "id": "/",
-  "start_url": "/?source=pwa",
+  "start_url": "/app?source=pwa",
   "scope": "/",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui"],

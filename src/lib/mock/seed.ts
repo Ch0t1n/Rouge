@@ -7,6 +7,8 @@
  */
 import type {
   BarMenuItem,
+  EventStaff,
+  StaffRole,
   BarOrder,
   Connection,
   EventAttendee,
@@ -30,7 +32,7 @@ import type {
   VenueLayout,
 } from "@/lib/types";
 
-export const STATE_VERSION = 2;
+export const STATE_VERSION = 3;
 
 // IDs estables → los links de demo (/join/..., /u/...) no cambian entre re-siembras.
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -38,6 +40,10 @@ const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")
 export const DEMO_IDS = {
   event: id(1000),
   organizer: id(999),
+  manager: id(990),
+  bartender: id(991),
+  waiter: id(992),
+  security: id(993),
   me: id(1),
   squadMain: id(2001),
   squadVip: id(2002),
@@ -89,6 +95,14 @@ interface Persona {
   spotify?: string;
   verified?: boolean;
 }
+
+/** Equipo del evento (además de la dueña, que es quien creó el evento). */
+const STAFF: { id: string; role: StaffRole; username: string; full_name: string; phone: string; bio: string }[] = [
+  { id: id(990), role: "manager", username: "lucho.produccion", full_name: "Luciano Paz", phone: "+5491150000990", bio: "Producción de la noche." },
+  { id: id(991), role: "bartender", username: "dani.barra", full_name: "Daniela Ortiz", phone: "+5491150000991", bio: "Jefa de barra." },
+  { id: id(992), role: "waiter", username: "tomas.mozo", full_name: "Tomás Rey", phone: "+5491150000992", bio: "Delivery a Mesas VIP." },
+  { id: id(993), role: "security", username: "marta.seguridad", full_name: "Marta Gómez", phone: "+5491150000993", bio: "Coordinación de seguridad." },
+];
 
 const PERSONAS: Persona[] = [
   { n: 1, username: "sofi.noche", full_name: "Sofía Benítez", age: 26, gender: "female", phone: "+5491150001001", bio: "Diseñadora de día, raver de noche. Si suena Peggy Gou, estoy en primera fila.", genres: ["House", "Techno", "Pop"], mood: "with_friends", spent: 14500, activeMinAgo: 1, spotify: "https://open.spotify.com/embed/track/4cOdK2wGLETKBW3PvgPWqT", verified: true },
@@ -142,12 +156,12 @@ export function createSeedState(now = Date.now()): RougeState {
   const profiles: Profile[] = [
     {
       id: DEMO_IDS.organizer,
-      username: "rouge.staff",
-      full_name: "Staff ROUGE",
+      username: "paula.owner",
+      full_name: "Paula Ferrari",
       birth_date: birth(32, 0),
       gender: "undisclosed",
       phone_normalized: "+5491150000000",
-      bio: "Organización del evento.",
+      bio: "Dueña de la productora. Organiza ROUGE Night.",
       photos: [],
       loop_video_url: null,
       music_genres: [],
@@ -155,6 +169,21 @@ export function createSeedState(now = Date.now()): RougeState {
       is_verified: true,
       created_at: t(-60 * 24 * 30),
     },
+    ...STAFF.map<Profile>((m) => ({
+      id: m.id,
+      username: m.username,
+      full_name: m.full_name,
+      birth_date: birth(30, 0),
+      gender: "undisclosed",
+      phone_normalized: m.phone,
+      bio: m.bio,
+      photos: [],
+      loop_video_url: null,
+      music_genres: [],
+      spotify_embed_url: null,
+      is_verified: true,
+      created_at: t(-60 * 24 * 20),
+    })),
     ...PERSONAS.map<Profile>((p) => ({
       id: id(p.n),
       username: p.username,
@@ -466,6 +495,7 @@ export function createSeedState(now = Date.now()): RougeState {
     profiles,
     user_blocks,
     events: [event],
+    event_staff: STAFF.map<EventStaff>((m) => ({ event_id: event.id, user_id: m.id, role: m.role, created_at: t(-60 * 24 * 5) })),
     event_invite_codes: invite_codes,
     event_attendees: attendees,
     connections,

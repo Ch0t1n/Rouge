@@ -117,6 +117,16 @@ export interface RougeEvent {
   created_at: ISODate;
 }
 
+/** Equipo del evento (tabla `event_staff`). Quien crea el evento es "owner" aunque no tenga fila. */
+export type StaffRole = "owner" | "manager" | "bartender" | "waiter" | "security";
+
+export interface EventStaff {
+  event_id: UUID;
+  user_id: UUID;
+  role: StaffRole;
+  created_at: ISODate;
+}
+
 export interface EventInviteCode {
   id: UUID;
   event_id: UUID;
@@ -359,6 +369,7 @@ export interface RougeState {
   profiles: Profile[];
   user_blocks: UserBlock[];
   events: RougeEvent[];
+  event_staff: EventStaff[];
   event_invite_codes: EventInviteCode[];
   event_attendees: EventAttendee[];
   connections: Connection[];

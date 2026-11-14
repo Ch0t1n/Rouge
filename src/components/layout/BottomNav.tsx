@@ -8,7 +8,7 @@ import { useRouge } from "@/lib/store/RougeContext";
 import { cn } from "@/lib/utils";
 
 const ITEMS = [
-  { href: "/", label: "Inicio", icon: House },
+  { href: "/app", label: "Inicio", icon: House },
   { href: "/lobby", label: "Lobby", icon: LayoutGrid },
   { href: "/map", label: "Plano", icon: MapIcon },
   { href: "/squad", label: "Squad", icon: UsersRound },
@@ -32,7 +32,7 @@ export function BottomNav() {
     >
       <ul className="grid grid-cols-5">
         {ITEMS.map(({ href, label, icon: Icon }) => {
-          const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
+          const active = href === "/app" ? pathname === "/app" : pathname.startsWith(href);
           return (
             <li key={href}>
               <Link

@@ -3,6 +3,7 @@
 import * as C from "@/lib/store/commands";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { safeNext } from "@/lib/engine/roles";
 import { ArrowRight, ChevronLeft, PartyPopper, ShieldCheck } from "lucide-react";
 import type { Gender, MusicGenre, ProfilePhoto } from "@/lib/types";
 import { upsertProfile } from "@/lib/engine/actions";
@@ -38,13 +39,13 @@ function Onboarding() {
   const { state, exec, notify, mode, signedIn } = useRouge();
   const router = useRouter();
   const params = useSearchParams();
-  const next = params.get("next") || "/";
+  const next = safeNext(params.get("next")) ?? "/app";
   const meId = state.current_user_id;
   const existing = getProfile(state, meId);
 
   // Supabase: el perfil se crea con el id de la sesión (auth.uid()).
   useEffect(() => {
-    if (mode === "supabase" && !signedIn) router.replace(`/login?next=${encodeURIComponent(`/onboarding${next !== "/" ? `?next=${next}` : ""}`)}`);
+    if (mode === "supabase" && !signedIn) router.replace(`/login?next=${encodeURIComponent(`/onboarding${next !== "/app" ? `?next=${next}` : ""}`)}`);
   }, [mode, signedIn, router, next]);
 
   // Si ya tenía perfil al entrar, no repetimos el onboarding.
@@ -113,7 +114,7 @@ function Onboarding() {
           <button
             type="button"
             aria-label={step === 0 ? "Salir" : "Paso anterior"}
-            onClick={() => (step === 0 ? router.push("/") : setStep(step - 1))}
+            onClick={() => (step === 0 ? router.push("/login") : setStep(step - 1))}
             className="-ml-2 grid size-11 place-items-center rounded-full hover:bg-white/5"
           >
             <ChevronLeft className="size-6" />

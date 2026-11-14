@@ -45,7 +45,7 @@ function Wallet() {
 
   return (
     <main className="pb-10">
-      <PageHeader title="Mis Perks & QRs" subtitle={event.name} backHref="/" />
+      <PageHeader title="Mis Perks & QRs" subtitle={event.name} backHref="/app" />
       <div className="px-4">
         <div role="tablist" className="grid grid-cols-2 rounded-2xl bg-white/[0.05] p-1">
           {(
@@ -156,7 +156,7 @@ function Wallet() {
                 block
                 variant="glass"
                 onClick={async () => {
-                  const r = await exec(C.redeemPerk(live.id));
+                  const r = await exec(C.redeemPerk(live.id, { simulate: true }));
                   if (r.ok) notify({ tone: "vip", title: "✅ Canjeado en barra", description: "Simulación del escaneo del staff (Modo Demo)." });
                 }}
               >

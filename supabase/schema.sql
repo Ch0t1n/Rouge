@@ -379,6 +379,23 @@ returns boolean language sql stable security definer set search_path = public, e
       or exists (select 1 from public.events where id = p_event and created_by = p_user);
 $$;
 
+-- Permisos por rol (espejo de src/lib/engine/roles.ts). Quien creó el evento es 'owner' aunque no tenga fila.
+create or replace function public.has_staff_role(p_event uuid, p_roles staff_role_t[], p_user uuid default auth.uid())
+returns boolean language sql stable security definer set search_path = public, extensions as $$
+  select exists (select 1 from public.event_staff where event_id = p_event and user_id = p_user and role = any(p_roles))
+      or ('owner' = any(p_roles) and exists (select 1 from public.events where id = p_event and created_by = p_user));
+$$;
+-- Dueño/a y producción: eventos, accesos, CRM, blasts, perks, sorteos y menú.
+create or replace function public.is_event_manager(p_event uuid, p_user uuid default auth.uid())
+returns boolean language sql stable security definer set search_path = public, extensions as $$
+  select public.has_staff_role(p_event, array['owner','manager']::staff_role_t[], p_user);
+$$;
+-- Quien opera comandas: dueño/a, producción, barra y mozos.
+create or replace function public.can_operate_bar(p_event uuid, p_user uuid default auth.uid())
+returns boolean language sql stable security definer set search_path = public, extensions as $$
+  select public.has_staff_role(p_event, array['owner','manager','bartender','waiter']::staff_role_t[], p_user);
+$$;
+
 create or replace function public.is_squad_member(p_squad uuid, p_user uuid default auth.uid())
 returns boolean language sql stable security definer set search_path = public, extensions as $$
   select exists (select 1 from public.squad_members where squad_id = p_squad and user_id = p_user and status = 'joined');
@@ -487,7 +504,7 @@ create policy events_select on public.events for select to anon, authenticated u
 drop policy if exists events_insert on public.events;
 create policy events_insert on public.events for insert to authenticated with check (created_by = auth.uid());
 drop policy if exists events_update on public.events;
-create policy events_update on public.events for update to authenticated using (public.is_event_staff(id)) with check (public.is_event_staff(id));
+create policy events_update on public.events for update to authenticated using (public.is_event_manager(id)) with check (public.is_event_manager(id));
 -- El código maestro no se expone a anónimos (la landing /join solo necesita datos públicos)
 revoke all on public.events from anon;
 grant select (id, slug, name, description, venue_name, cover_url, starts_at, ends_at, lobby_opens_at, lobby_expires_at, max_capacity)
@@ -497,13 +514,13 @@ drop policy if exists staff_select on public.event_staff;
 create policy staff_select on public.event_staff for select to authenticated using (user_id = auth.uid() or public.is_event_staff(event_id));
 drop policy if exists staff_manage on public.event_staff;
 create policy staff_manage on public.event_staff for all to authenticated
-  using (exists (select 1 from public.events e where e.id = event_id and e.created_by = auth.uid()))
-  with check (exists (select 1 from public.events e where e.id = event_id and e.created_by = auth.uid()));
+  using (public.has_staff_role(event_id, array['owner']::staff_role_t[]))
+  with check (public.has_staff_role(event_id, array['owner']::staff_role_t[]));
 
 -- INVITE CODES ── solo staff (el canje va por la RPC join_event).
 drop policy if exists codes_staff on public.event_invite_codes;
 create policy codes_staff on public.event_invite_codes for all to authenticated
-  using (public.is_event_staff(event_id)) with check (public.is_event_staff(event_id));
+  using (public.is_event_manager(event_id)) with check (public.is_event_manager(event_id));
 
 -- ATTENDEES ── veo a los asistentes de mis eventos sin bloqueo; ghost solo para mí, mi squad y mis matches.
 drop policy if exists attendees_select on public.event_attendees;
@@ -601,11 +618,14 @@ create policy perks_select on public.user_perks_qrs for select to authenticated
   using (user_id = auth.uid() or public.is_event_staff(event_id));
 drop policy if exists perks_staff_update on public.user_perks_qrs;
 create policy perks_staff_update on public.user_perks_qrs for update to authenticated
-  using (public.is_event_staff(event_id)) with check (public.is_event_staff(event_id));
+  using (public.has_staff_role(event_id, array['owner','manager','bartender']::staff_role_t[]))
+  with check (public.has_staff_role(event_id, array['owner','manager','bartender']::staff_role_t[]));
 
 drop policy if exists perk_rules_staff on public.perk_rules;
 create policy perk_rules_staff on public.perk_rules for all to authenticated
-  using (public.is_event_staff(event_id)) with check (public.is_event_staff(event_id));
+  using (public.is_event_manager(event_id)) with check (public.is_event_manager(event_id));
+drop policy if exists perk_rules_staff_read on public.perk_rules;
+create policy perk_rules_staff_read on public.perk_rules for select to authenticated using (public.is_event_staff(event_id));
 -- Los asistentes ven las reglas activas de su evento (progreso "Squad de 4 → trago").
 drop policy if exists perk_rules_attendees on public.perk_rules;
 create policy perk_rules_attendees on public.perk_rules for select to authenticated
@@ -615,7 +635,7 @@ drop policy if exists raffles_select on public.raffles;
 create policy raffles_select on public.raffles for select to authenticated
   using (public.is_event_attendee(event_id) or public.is_event_staff(event_id));
 drop policy if exists raffles_staff on public.raffles;
-create policy raffles_staff on public.raffles for insert to authenticated with check (public.is_event_staff(event_id));
+create policy raffles_staff on public.raffles for insert to authenticated with check (public.is_event_manager(event_id));
 
 drop policy if exists songs_select on public.song_requests;
 create policy songs_select on public.song_requests for select to authenticated
@@ -625,14 +645,14 @@ drop policy if exists menu_select on public.bar_menu_items;
 create policy menu_select on public.bar_menu_items for select to authenticated using (true);
 drop policy if exists menu_staff on public.bar_menu_items;
 create policy menu_staff on public.bar_menu_items for all to authenticated
-  using (public.is_event_staff(event_id)) with check (public.is_event_staff(event_id));
+  using (public.is_event_manager(event_id)) with check (public.is_event_manager(event_id));
 
 drop policy if exists orders_select on public.bar_orders;
 create policy orders_select on public.bar_orders for select to authenticated
   using (user_id = auth.uid() or auth.uid() = any(split_user_ids) or public.is_event_staff(event_id));
 drop policy if exists orders_staff_update on public.bar_orders;
 create policy orders_staff_update on public.bar_orders for update to authenticated
-  using (public.is_event_staff(event_id)) with check (public.is_event_staff(event_id));
+  using (public.can_operate_bar(event_id)) with check (public.can_operate_bar(event_id));
 
 -- ════════════════════════════════════════════════════════════════════════
 -- RPCs DE NEGOCIO (atómicas; replican src/lib/engine/actions.ts)
@@ -1019,7 +1039,7 @@ create or replace function public.send_blast(p_event uuid, p_title text, p_messa
 returns int language plpgsql security definer set search_path = public, extensions as $$
 declare v_blast uuid; v_n int;
 begin
-  if not public.is_event_staff(p_event) then raise exception 'forbidden'; end if;
+  if not public.is_event_manager(p_event) then raise exception 'forbidden'; end if;
   insert into public.event_blasts (event_id, title, message, target_segment, cta_label, cta_link, is_flash_promo, expires_at)
   values (p_event, p_title, p_message, p_segment, p_cta_label, p_cta_link, p_flash_minutes is not null,
           case when p_flash_minutes is not null then now() + make_interval(mins => p_flash_minutes) end)
@@ -1050,7 +1070,7 @@ returns uuid language plpgsql security definer set search_path = public, extensi
 declare v_r public.raffles; v_winner uuid; v_perk uuid;
 begin
   select * into v_r from public.raffles where id = p_raffle for update;
-  if not public.is_event_staff(v_r.event_id) then raise exception 'forbidden'; end if;
+  if not public.is_event_manager(v_r.event_id) then raise exception 'forbidden'; end if;
   if v_r.winner_user_id is not null then raise exception 'already_drawn'; end if;
 
   select a.user_id into v_winner from public.event_attendees a
@@ -1078,7 +1098,7 @@ declare v_p public.user_perks_qrs;
 begin
   select * into v_p from public.user_perks_qrs where qr_code_string = p_qr for update;
   if not found then raise exception 'invalid_qr'; end if;
-  if not public.is_event_staff(v_p.event_id) then raise exception 'forbidden'; end if;
+  if not public.has_staff_role(v_p.event_id, array['owner','manager','bartender']::staff_role_t[]) then raise exception 'forbidden'; end if;
   if v_p.status = 'redeemed' then raise exception 'already_redeemed'; end if;
   update public.user_perks_qrs set status = 'redeemed', redeemed_at = now() where id = v_p.id returning * into v_p;
   return v_p;
@@ -1154,7 +1174,7 @@ declare v_o public.bar_orders; v_flow bar_order_status_t[]; v_i int;
 begin
   select * into v_o from public.bar_orders where id = p_order for update;
   if not found then raise exception 'not_found'; end if;
-  if not public.is_event_staff(v_o.event_id) then raise exception 'forbidden'; end if;
+  if not public.can_operate_bar(v_o.event_id) then raise exception 'forbidden'; end if;
   v_flow := case when v_o.delivery_type = 'pin_delivery'
                  then array['pending','preparing','delivering','completed']::bar_order_status_t[]
                  else array['pending','preparing','ready_qr','completed']::bar_order_status_t[] end;
@@ -1169,7 +1189,7 @@ create or replace function public.redeem_pickup_code(p_event uuid, p_code text)
 returns public.bar_orders language plpgsql security definer set search_path = public, extensions as $$
 declare v_o public.bar_orders; v_code text := upper(regexp_replace(trim(p_code), '^ROUGE:ORDER:[^:]+:', '', 'i'));
 begin
-  if not public.is_event_staff(p_event) then raise exception 'forbidden'; end if;
+  if not public.can_operate_bar(p_event) then raise exception 'forbidden'; end if;
   select * into v_o from public.bar_orders where event_id = p_event and upper(pickup_code) = v_code for update;
   if not found then raise exception 'not_found'; end if;
   if v_o.status = 'completed' then raise exception 'already_delivered'; end if;
@@ -1203,7 +1223,7 @@ returns table (
   squad_size int, matches int, total_spent numeric, joined_at timestamptz, tags text[]
 ) language plpgsql stable security definer set search_path = public, extensions as $$
 begin
-  if not public.is_event_staff(p_event) then raise exception 'forbidden'; end if;
+  if not public.is_event_manager(p_event) then raise exception 'forbidden'; end if;
   return query
   with base as (
     select a.user_id, p.full_name, p.username, p.phone_normalized as phone,
@@ -1232,7 +1252,7 @@ create or replace function public.event_stats(p_event uuid)
 returns jsonb language plpgsql stable security definer set search_path = public, extensions as $$
 declare v jsonb;
 begin
-  if not public.is_event_staff(p_event) then raise exception 'forbidden'; end if;
+  if not public.has_staff_role(p_event, array['owner','manager','security']::staff_role_t[]) then raise exception 'forbidden'; end if;
   select jsonb_build_object(
     'matches',            count(*) filter (where status = 'accepted'),
     'pending_connections', count(*) filter (where status = 'pending'),
@@ -1251,7 +1271,7 @@ end $$;
 create or replace function public.generate_invite_codes(p_event uuid, p_count int)
 returns setof public.event_invite_codes language plpgsql security definer set search_path = public, extensions as $$
 begin
-  if not public.is_event_staff(p_event) then raise exception 'forbidden'; end if;
+  if not public.is_event_manager(p_event) then raise exception 'forbidden'; end if;
   if p_count < 1 or p_count > 1000 then raise exception 'invalid_count'; end if;
   return query
   with ins as (
@@ -1264,6 +1284,25 @@ end $$;
 
 -- Limpieza de pines vencidos (programar con pg_cron cada 5 min:
 --   select cron.schedule('purge-pins', '*/5 * * * *', $$select public.purge_expired_pins()$$); )
+-- Equipo del evento (espejo de setStaffRole): solo dueño/a; p_role null = quitar. Busca por @username.
+create or replace function public.set_staff_role(p_event uuid, p_username text, p_role staff_role_t default null)
+returns uuid language plpgsql security definer set search_path = public, extensions as $$
+declare v_user uuid; v_creator uuid;
+begin
+  if not public.has_staff_role(p_event, array['owner']::staff_role_t[]) then raise exception 'forbidden'; end if;
+  select created_by into v_creator from public.events where id = p_event;
+  select id into v_user from public.profiles where username = lower(ltrim(trim(p_username), '@'));
+  if v_user is null then raise exception 'staff_user_not_found'; end if;
+  if v_user = v_creator then raise exception 'staff_is_creator'; end if;
+  if p_role is null then
+    delete from public.event_staff where event_id = p_event and user_id = v_user;
+  else
+    insert into public.event_staff (event_id, user_id, role) values (p_event, v_user, p_role)
+    on conflict (event_id, user_id) do update set role = excluded.role;
+  end if;
+  return v_user;
+end $$;
+
 create or replace function public.purge_expired_pins()
 returns int language sql security definer set search_path = public, extensions as $$
   with d as (delete from public.map_pins where expires_at <= now() returning 1) select count(*)::int from d;
@@ -1315,4 +1354,4 @@ drop policy if exists "chat_media_read" on storage.objects;
 create policy "chat_media_read" on storage.objects for select to authenticated using (bucket_id = 'chat-media');
 drop policy if exists "venue_maps_staff_write" on storage.objects;
 create policy "venue_maps_staff_write" on storage.objects for insert to authenticated
-  with check (bucket_id = 'venue-maps' and public.is_event_staff(((storage.foldername(name))[1])::uuid));
+  with check (bucket_id = 'venue-maps' and public.is_event_manager(((storage.foldername(name))[1])::uuid));

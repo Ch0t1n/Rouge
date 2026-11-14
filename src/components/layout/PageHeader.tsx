@@ -13,7 +13,7 @@ export function PageHeader({ title, subtitle, action, backHref, className }: { t
       <button
         type="button"
         aria-label="Volver"
-        onClick={() => (backHref ? router.push(backHref) : window.history.length > 1 ? router.back() : router.push("/"))}
+        onClick={() => (backHref ? router.push(backHref) : window.history.length > 1 ? router.back() : router.push("/app"))}
         className="grid size-11 shrink-0 place-items-center rounded-full text-primary hover:bg-white/5"
       >
         <ChevronLeft className="size-6" />

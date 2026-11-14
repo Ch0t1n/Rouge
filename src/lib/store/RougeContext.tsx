@@ -23,6 +23,7 @@ import { lobbyPhase } from "@/lib/engine/selectors";
 import { BAR_MENU, createSeedState, STATE_VERSION } from "@/lib/mock/seed";
 import { getSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import { friendlyError } from "@/lib/supabase/errors";
+import { can as canDo, isStaffRole, roleOf, type Permission, type Role } from "@/lib/engine/roles";
 import { fetchRemoteState, subscribeRealtime } from "@/lib/supabase/sync";
 import { uid } from "@/lib/utils";
 import type { Command } from "./commands";
@@ -62,8 +63,12 @@ interface RougeContextValue {
   state: RougeState;
   /** Modo Supabase: hay sesión iniciada (en demo siempre true). */
   signedIn: boolean;
-  /** Modo Supabase: el usuario es staff del evento activo (en demo siempre true). */
+  /** Tipo de usuario en el evento activo (asistente, dueño/a, producción, barra, mozo/a, seguridad). */
+  role: Role;
+  /** El usuario es parte del equipo del evento activo. */
   isStaff: boolean;
+  /** ¿Su rol tiene este permiso en el evento activo? (misma regla que has_staff_role en SQL) */
+  can: (perm: Permission) => boolean;
   /**
    * Ejecuta un comando (regla del motor + contraparte remota). Si falla, muestra
    * un toast de error (salvo `silent`). En demo resuelve en el acto.
@@ -116,6 +121,7 @@ function emptyState(userId: UUID = ""): RougeState {
     profiles: [],
     user_blocks: [],
     events: [],
+    event_staff: [],
     event_invite_codes: [],
     event_attendees: [],
     connections: [],
@@ -138,7 +144,6 @@ export function RougeProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<RougeState | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [signedIn, setSignedIn] = useState(mode === "demo");
-  const [isStaff, setIsStaff] = useState(mode === "demo");
   const stateRef = useRef<RougeState | null>(null);
   const skipNextSave = useRef(false);
   const userRef = useRef<UUID | null>(null);
@@ -177,7 +182,6 @@ export function RougeProvider({ children }: { children: ReactNode }) {
       const preferred = safe(() => localStorage.getItem(EVENT_KEY), null);
       const snap = await fetchRemoteState(sb, userId, preferred);
       if (userRef.current !== userId) return; // cambió la sesión mientras cargaba
-      setIsStaff(snap.isStaff);
       commit(snap.state);
     } catch (e) {
       notify({ tone: "error", title: friendlyError(e) });
@@ -368,17 +372,15 @@ export function RougeProvider({ children }: { children: ReactNode }) {
     await sb.auth.signOut();
     userRef.current = null;
     setSignedIn(false);
-    setIsStaff(false);
     await loadRemote();
   }, [loadRemote]);
 
-  const value = useMemo<RougeContextValue | null>(
-    () =>
-      state
-        ? { ready: true, mode, state, signedIn, isStaff, exec, refresh, setCurrentUser, setActiveEvent, startNewPersona, resetDemo, signOut, toasts, notify, dismiss }
-        : null,
-    [state, mode, signedIn, isStaff, exec, refresh, setCurrentUser, setActiveEvent, startNewPersona, resetDemo, signOut, toasts, notify, dismiss],
-  );
+  const value = useMemo<RougeContextValue | null>(() => {
+    if (!state) return null;
+    const role = signedIn ? roleOf(state, state.active_event_id, state.current_user_id) : "guest";
+    const can = (perm: Permission) => signedIn && canDo(state, state.active_event_id, state.current_user_id, perm);
+    return { ready: true, mode, state, signedIn, role, isStaff: isStaffRole(role), can, exec, refresh, setCurrentUser, setActiveEvent, startNewPersona, resetDemo, signOut, toasts, notify, dismiss };
+  }, [state, mode, signedIn, exec, refresh, setCurrentUser, setActiveEvent, startNewPersona, resetDemo, signOut, toasts, notify, dismiss]);
 
   if (!value) return <BootScreen />;
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

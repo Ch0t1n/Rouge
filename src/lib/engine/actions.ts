@@ -31,6 +31,7 @@ import type {
   SongRequest,
   Squad,
   SquadMember,
+  StaffRole,
   UserPerkQR,
   UUID,
 } from "@/lib/types";
@@ -1256,4 +1257,22 @@ export function redeemPickupCode(state: RougeState, eventId: UUID, rawCode: stri
   if (order.status === "completed") return fail("Ese pedido ya fue entregado.");
   if (order.status !== "ready_qr") return fail("El pedido todavía no está listo para retirar.");
   return setOrderStatus(state, order.id, "completed", now);
+}
+
+// ── Equipo del evento ────────────────────────────────────────────────
+
+/**
+ * Suma, cambia o quita (role = null) a alguien del equipo por @username.
+ * Espejo de la RPC set_staff_role: solo dueño/a; quien creó el evento no se puede quitar ni degradar.
+ */
+export function setStaffRole(state: RougeState, eventId: UUID, username: string, role: StaffRole | null, now = Date.now()): Result<{ user_id: UUID }> {
+  const event = state.events.find((e) => e.id === eventId);
+  if (!event) return fail("El evento no existe.");
+  const uname = username.trim().replace(/^@/, "").toLowerCase();
+  const target = state.profiles.find((p) => p.username === uname);
+  if (!target) return fail("No encontramos a nadie con ese @usuario.");
+  if (target.id === event.created_by) return fail("Quien creó el evento siempre es dueño/a.");
+  const rest = state.event_staff.filter((r) => !(r.event_id === eventId && r.user_id === target.id));
+  const next = role ? [...rest, { event_id: eventId, user_id: target.id, role, created_at: iso(now) }] : rest;
+  return ok({ ...state, event_staff: next }, { user_id: target.id });
 }

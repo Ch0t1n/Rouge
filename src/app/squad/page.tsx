@@ -4,7 +4,8 @@ import * as C from "@/lib/store/commands";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AtSign, Copy, Flag, Gift, House, LogOut, MapPin, MessageCircle, Share2, ShieldAlert, Siren, UserPlus, UsersRound } from "lucide-react";
+import { AtSign, Copy, Flag, Gift, House, LogOut, MapPin, MessageCircle, QrCode, ShieldAlert, Siren, UserPlus, UsersRound } from "lucide-react";
+import { useShare } from "@/components/share/ShareSheet";
 import type { SafetyStatus } from "@/lib/types";
 import {
   announceBaseMeetup,
@@ -219,20 +220,13 @@ const meId = state.current_user_id;
     exec(C.triggerRescue(event.id, meId, coords));
   };
 
-  const share = async () => {
-    try {
-      if (navigator.share) await navigator.share({ title: `Sumate a ${squad.name} en ROUGE`, url: link });
-      else {
-        await navigator.clipboard.writeText(link);
-        notify({ tone: "squad", title: "Link copiado 🔗", description: link });
-      }
-    } catch {
-      /* cancelado */
-    }
-  };
+  const shareSheet = useShare();
+  const share = () =>
+    shareSheet.open({ url: link, title: `Sumate a ${squad.name}`, text: `Sumate a mi Squad "${squad.name}" en ROUGE 👯 (entrás al evento y quedás en el grupo)`, fileName: `rouge-squad-${squad.invite_code}`, accent: "squad", caption: squad.invite_code });
 
   return (
     <>
+      {shareSheet.sheet}
       {/* Seguridad */}
       <section className="grid grid-cols-2 gap-3">
         {member.safety_status === "rescue_needed" ? (
@@ -392,8 +386,14 @@ const meId = state.current_user_id;
             <p className="font-display text-[13px] font-semibold">Link rápido</p>
             <div className="flex gap-2">
               <code className="glass flex min-h-touch flex-1 items-center truncate rounded-2xl px-3 font-display text-sm text-squad">{squad.invite_code}</code>
-              <Button variant="squad" onClick={share}>
-                <Share2 /> Compartir
+              <Button
+                variant="squad"
+                onClick={() => {
+                  setInviteOpen(false);
+                  share();
+                }}
+              >
+                <QrCode /> QR
               </Button>
               <Button
                 variant="glass"

@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { Check, ChevronRight, Lock, PencilLine, Share2, ShieldCheck } from "lucide-react";
+import { Check, ChevronRight, Lock, PencilLine, QrCode, ShieldCheck } from "lucide-react";
+import { useShare } from "@/components/share/ShareSheet";
 import { formatPhone, profileCompleteness } from "@/lib/engine/profile";
 import { getAttendee } from "@/lib/engine/selectors";
 import { useRouge } from "@/lib/store/RougeContext";
@@ -12,34 +13,25 @@ import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export default function MyProfilePage() {
-  const { state, notify, mode, signOut } = useRouge();
+  const { state, mode, signOut } = useRouge();
   const me = useRequireProfile();
+  const shareSheet = useShare();
   if (!me) return null;
   const att = getAttendee(state, state.active_event_id, me.id);
   const { percent, items } = profileCompleteness(me);
 
-  const share = async () => {
-    const url = `${window.location.origin}/u/${me.username}`;
-    try {
-      if (navigator.share) await navigator.share({ title: `@${me.username} en ROUGE`, url });
-      else {
-        await navigator.clipboard.writeText(url);
-        notify({ tone: "squad", title: "Link copiado", description: url });
-      }
-    } catch {
-      /* cancelado */
-    }
-  };
+  const share = () => shareSheet.open({ url: `/u/${me.username}`, title: `@${me.username} en ROUGE`, text: `Encontrame en ROUGE: @${me.username} ✨`, fileName: `rouge-${me.username}`, accent: "rouge", caption: `@${me.username}` });
 
   return (
     <main className="pb-12">
+      {shareSheet.sheet}
       <PageHeader
         title="Mi perfil"
         subtitle="Así te ven los demás asistentes"
-        backHref="/"
+        backHref="/app"
         action={
-          <button type="button" onClick={share} aria-label="Compartir mi perfil" className="grid size-11 place-items-center rounded-full hover:bg-white/5">
-            <Share2 className="size-5" />
+          <button type="button" onClick={share} aria-label="QR de mi perfil" className="grid size-11 place-items-center rounded-full hover:bg-white/5">
+            <QrCode className="size-5" />
           </button>
         }
       />

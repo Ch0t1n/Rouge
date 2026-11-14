@@ -11,6 +11,7 @@ import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { ROLE_META, roleHome, staffRoleOf } from "@/lib/engine/roles";
 
 /**
  * Solo Modo Demo: "actuar como" cualquier asistente para probar ambos lados
@@ -23,8 +24,10 @@ export function PersonaSwitcher() {
   const [open, setOpen] = useState(false);
   if (mode !== "demo") return null;
   const me = state.profiles.find((p) => p.id === state.current_user_id);
-  // Asistentes del evento + personas creadas en el demo (sin el staff)
-  const people = state.profiles.filter((p) => p.username !== "rouge.staff");
+  // Asistentes del evento + personas creadas en el demo; el equipo va aparte (entra a su panel)
+  const roleFor = (id: string) => staffRoleOf(state, state.active_event_id, id);
+  const people = state.profiles.filter((p) => !roleFor(p.id));
+  const team = state.profiles.filter((p) => roleFor(p.id));
 
   return (
     <>
@@ -102,6 +105,38 @@ export function PersonaSwitcher() {
             );
           })}
         </ul>
+        {team.length > 0 && (
+          <>
+            <p className="mb-2 mt-5 font-display text-xs font-semibold uppercase tracking-widest text-vip">Equipo del evento</p>
+            <ul className="space-y-1.5">
+              {team.map((p) => {
+                const r = roleFor(p.id)!;
+                return (
+                  <li key={p.id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCurrentUser(p.id);
+                        setOpen(false);
+                        router.push(roleHome(r));
+                      }}
+                      className="flex min-h-touch w-full items-center gap-3 rounded-2xl p-2 text-left transition hover:bg-white/5"
+                    >
+                      <span className="grid size-10 place-items-center rounded-full bg-vip/12 text-lg" aria-hidden>
+                        {ROLE_META[r].emoji}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold">{p.full_name}</p>
+                        <p className="truncate text-xs text-muted">{ROLE_META[r].description}</p>
+                      </div>
+                      <Badge tone="vip">{ROLE_META[r].label}</Badge>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        )}
       </BottomSheet>
     </>
   );

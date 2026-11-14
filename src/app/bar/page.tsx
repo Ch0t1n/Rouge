@@ -55,7 +55,7 @@ function Bar() {
   if (!attendee || !isLobbyInteractive(event, now)) {
     return (
       <main>
-        <PageHeader title="Barra Express" backHref="/" />
+        <PageHeader title="Barra Express" backHref="/app" />
         <p className="mx-4 mt-10 rounded-3xl border border-dashed border-white/10 p-8 text-center text-sm text-muted">La Barra Express funciona mientras el lobby del evento está abierto.</p>
       </main>
     );
@@ -95,12 +95,12 @@ function Bar() {
 
   return (
     <main className="pb-32">
-      <PageHeader title="Barra Express" subtitle="Pedí sin hacer fila" backHref="/" />
+      <PageHeader title="Barra Express" subtitle="Pedí sin hacer fila" backHref="/app" />
       <div className="space-y-5 px-4">
         {active.map((o) => (
           <OrderCard key={o.id} order={o} meId={meId} onQr={() => setQrOrder(o)} onSimulate={mode === "demo" ? () => {
             const next = nextOrderStatus(o);
-            if (next) void exec(C.advanceOrder(o));
+            if (next) void exec(C.advanceOrder(o, { simulate: true }));
           } : undefined} />
         ))}
 

@@ -20,7 +20,7 @@ export default function JoinCodePage() {
 
   return (
     <main>
-      <PageHeader title="Entrar a un evento" subtitle="Link o código de tu entrada" backHref="/" />
+      <PageHeader title="Entrar a un evento" subtitle="Link o código de tu entrada" backHref="/app" />
       <form
         className="space-y-4 px-5 pt-4"
         onSubmit={(e) => {

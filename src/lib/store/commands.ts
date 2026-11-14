@@ -9,9 +9,10 @@
  * En Modo Demo solo corre `local`. Las pantallas siempre llaman `exec(C.algo(...))`.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { BarOrder, Connection, EventAttendee, EventInviteCode, MoodTag, PerkRule, Raffle, RaffleFilter, RougeEvent, RougeState, SongRequest, Squad, UUID } from "@/lib/types";
+import type { BarOrder, Connection, EventAttendee, EventInviteCode, MoodTag, PerkRule, Raffle, RaffleFilter, RougeEvent, RougeState, SongRequest, Squad, StaffRole, UUID } from "@/lib/types";
 import * as A from "@/lib/engine/actions";
 import type { Result } from "@/lib/engine/actions";
+import { can, NO_PERMISSION, type Permission } from "@/lib/engine/roles";
 
 export interface Command<T> {
   name: string;
@@ -32,6 +33,14 @@ type PgResult<D> = { data: D; error: { message: string; code?: string } | null }
 function must<D>(res: PgResult<D>): D {
   if (res.error) throw res.error;
   return res.data;
+}
+
+/** Regla de rol (misma que has_staff_role en SQL): solo el equipo con ese permiso ejecuta la acción. */
+function guarded<T>(perm: Permission, eventOf: (s: RougeState) => UUID | undefined, fn: (s: RougeState) => Result<T>) {
+  return (s: RougeState): Result<T> => {
+    const eventId = eventOf(s);
+    return eventId && can(s, eventId, s.current_user_id, perm) ? fn(s) : { ok: false, error: NO_PERMISSION };
+  };
 }
 
 const rpc = async <D = unknown>(sb: SupabaseClient, fn: string, args: Record<string, unknown>) => must<D>((await sb.rpc(fn, args)) as PgResult<D>);
@@ -316,32 +325,39 @@ export const createBarOrder = (
     rpc<BarOrder>(sb, "create_bar_order", { p_event: eventId, p_items: cart.map((c) => ({ item_id: c.itemId, qty: c.qty })), p_delivery: delivery }),
 });
 
-export const advanceOrder = (order: BarOrder): Command<BarOrder> => ({
-  name: "advanceOrder",
-  local: (s) => {
+/** `simulate`: botón "Simular barra" del Modo Demo (lo aprieta el asistente para probar el flujo). */
+export const advanceOrder = (order: BarOrder, opts: { simulate?: boolean } = {}): Command<BarOrder> => {
+  const step = (s: RougeState): Result<BarOrder> => {
     const next = A.nextOrderStatus(order);
     return next ? A.setOrderStatus(s, order.id, next) : { ok: false, error: "Ese pedido ya está en su estado final." };
-  },
+  };
+  return {
+  name: "advanceOrder",
+  local: opts.simulate ? step : guarded("bar.operate", () => order.event_id, step),
   remote: async (sb) => rpc<BarOrder>(sb, "advance_bar_order", { p_order: order.id }),
-});
+  };
+};
 
 export const redeemPickupCode = (eventId: UUID, code: string): Command<BarOrder> => ({
   name: "redeemPickupCode",
-  local: (s) => A.redeemPickupCode(s, eventId, code),
+  local: guarded("bar.operate", () => eventId, (s) => A.redeemPickupCode(s, eventId, code)),
   remote: async (sb) => rpc<BarOrder>(sb, "redeem_pickup_code", { p_event: eventId, p_code: code }),
 });
 
 // ── Perks, sorteos y blasts (staff) ──────────────────────────────────
 
-export const redeemPerk = (qrOrId: string): Command<RougeState["user_perks_qrs"][number]> => ({
+/** `simulate`: botón "Simular escaneo del bartender" del Modo Demo (lo aprieta el asistente). */
+export const redeemPerk = (qrOrId: string, opts: { simulate?: boolean } = {}): Command<RougeState["user_perks_qrs"][number]> => ({
   name: "redeemPerk",
-  local: (s) => A.redeemPerk(s, qrOrId),
+  local: opts.simulate
+    ? (s) => A.redeemPerk(s, qrOrId)
+    : guarded("perks.redeem", (s) => s.user_perks_qrs.find((p) => p.id === qrOrId || p.qr_code_string === qrOrId)?.event_id ?? s.active_event_id, (s) => A.redeemPerk(s, qrOrId)),
   remote: async (sb, perk) => rpc(sb, "redeem_perk", { p_qr: perk.qr_code_string }) as Promise<RougeState["user_perks_qrs"][number]>,
 });
 
 export const upsertPerkRule = (rule: Omit<PerkRule, "id" | "created_at"> & { id?: UUID }): Command<PerkRule> => ({
   name: "upsertPerkRule",
-  local: (s) => A.upsertPerkRule(s, rule),
+  local: guarded("admin.perks", () => rule.event_id, (s) => A.upsertPerkRule(s, rule)),
   remote: async (sb, r) => {
     must(await sb.from("perk_rules").upsert({ id: r.id, event_id: r.event_id, title: r.title, perk_type: r.perk_type, trigger: r.trigger, is_active: r.is_active }, { onConflict: "id" }));
   },
@@ -349,7 +365,7 @@ export const upsertPerkRule = (rule: Omit<PerkRule, "id" | "created_at"> & { id?
 
 export const createRaffle = (eventId: UUID, prize: string, filter: RaffleFilter): Command<Raffle> => ({
   name: "createRaffle",
-  local: (s) => A.createRaffle(s, eventId, prize, filter),
+  local: guarded("admin.perks", () => eventId, (s) => A.createRaffle(s, eventId, prize, filter)),
   remote: async (sb, r) => {
     must(await sb.from("raffles").insert({ id: r.id, event_id: r.event_id, prize_title: r.prize_title, filter: r.filter }));
   },
@@ -359,7 +375,7 @@ export const createRaffle = (eventId: UUID, prize: string, filter: RaffleFilter)
 export const drawRaffle = (raffleId: UUID, rng: () => number): Command<{ raffle: Raffle; perk: RougeState["user_perks_qrs"][number]; pool: UUID[] }> => ({
   name: "drawRaffle",
   optimistic: false, // el ganador lo elige el servidor
-  local: (s) => A.drawRaffle(s, raffleId, rng),
+  local: guarded("admin.perks", (s) => s.raffles.find((r) => r.id === raffleId)?.event_id, (s) => A.drawRaffle(s, raffleId, rng)),
   remote: async (sb, local) => {
     const winner = await rpc<UUID>(sb, "draw_raffle", { p_raffle: raffleId });
     return { ...local, raffle: { ...local.raffle, winner_user_id: winner } };
@@ -368,7 +384,7 @@ export const drawRaffle = (raffleId: UUID, rng: () => number): Command<{ raffle:
 
 export const sendBlast = (eventId: UUID, input: A.BlastInput): Command<{ blast: RougeState["event_blasts"][number]; reach: number }> => ({
   name: "sendBlast",
-  local: (s) => A.sendBlast(s, eventId, input),
+  local: guarded("admin.blasts", () => eventId, (s) => A.sendBlast(s, eventId, input)),
   remote: async (sb, local) => {
     const reach = await rpc<number>(sb, "send_blast", {
       p_event: eventId,
@@ -387,7 +403,8 @@ export const sendBlast = (eventId: UUID, input: A.BlastInput): Command<{ blast: 
 
 export const upsertEvent = (input: Parameters<typeof A.upsertEvent>[1]): Command<RougeEvent> => ({
   name: "upsertEvent",
-  local: (s) => A.upsertEvent(s, input),
+  // Cualquiera con sesión crea un evento (queda como owner); editar uno existente exige admin.events.
+  local: (s) => (input.id && s.events.some((e) => e.id === input.id) && !can(s, input.id, s.current_user_id, "admin.events") ? { ok: false, error: NO_PERMISSION } : A.upsertEvent(s, input)),
   remote: async (sb, e, before) => {
     const isNew = !before.events.some((x) => x.id === e.id);
     const row = {
@@ -420,6 +437,24 @@ export const upsertEvent = (input: Parameters<typeof A.upsertEvent>[1]): Command
 export const generateInviteCodes = (eventId: UUID, count: number): Command<EventInviteCode[]> => ({
   name: "generateInviteCodes",
   optimistic: false,
-  local: (s) => A.generateInviteCodes(s, eventId, count),
+  local: guarded("admin.events", () => eventId, (s) => A.generateInviteCodes(s, eventId, count)),
   remote: async (sb) => rpc<EventInviteCode[]>(sb, "generate_invite_codes", { p_event: eventId, p_count: count }),
+});
+
+// ── Equipo del evento (solo dueño/a) ─────────────────────────────────
+
+/**
+ * Suma/cambia/quita (role null) a alguien del equipo por @username.
+ * `serverLookup`: en Supabase el perfil puede no estar cargado en el cliente → la RPC lo busca.
+ */
+export const setStaffRole = (eventId: UUID, username: string, role: StaffRole | null, opts: { serverLookup?: boolean } = {}): Command<{ user_id: UUID }> => ({
+  name: "setStaffRole",
+  optimistic: false,
+  local: guarded("admin.team", () => eventId, (s) => {
+    const r = A.setStaffRole(s, eventId, username, role);
+    // El servidor resuelve el @username que el cliente no tiene cargado.
+    if (!r.ok && opts.serverLookup && r.error.startsWith("No encontramos")) return { ok: true, state: s, data: { user_id: "" } };
+    return r;
+  }),
+  remote: async (sb) => ({ user_id: await rpc<UUID>(sb, "set_staff_role", { p_event: eventId, p_username: username, p_role: role }) }),
 });

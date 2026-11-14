@@ -2,7 +2,8 @@
 
 import * as C from "@/lib/store/commands";
 import { useMemo, useRef, useState } from "react";
-import { Copy, Download, ImagePlus, Link2, Plus, QrCode, Save, Trash2 } from "lucide-react";
+import { Copy, Download, ImagePlus, Link2, Plus, Printer, QrCode, Save, Trash2 } from "lucide-react";
+import Link from "next/link";
 import type { LineupSlot, RougeEvent } from "@/lib/types";
 import { generateInviteCodes, upsertEvent } from "@/lib/engine/actions";
 import { lobbyPhase } from "@/lib/engine/selectors";
@@ -11,12 +12,13 @@ import { uploadMedia } from "@/lib/media/upload";
 import { useRouge } from "@/lib/store/RougeContext";
 import { cn, formatDateTime, toCSV, uid } from "@/lib/utils";
 import { AdminHeader, downloadCSV, Panel } from "@/components/admin/AdminChrome";
-import { QrBlock } from "@/components/perks/QrCard";
+import { useShare } from "@/components/share/ShareSheet";
+import { TeamPanel } from "@/components/admin/TeamPanel";
+import { can } from "@/lib/engine/roles";
 import { VenueMap } from "@/components/venue/VenueMap";
 import { VENUE_LAYOUT } from "@/lib/mock/seed";
 import { Badge } from "@/components/ui/badge";
-import { BottomSheet } from "@/components/ui/bottom-sheet";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { TextAreaField, TextField } from "@/components/ui/field";
 
 const H = 3_600_000;
@@ -29,8 +31,10 @@ const fromLocal = (v: string) => new Date(v).toISOString();
 
 export default function AdminEventsPage() {
   const { state, setActiveEvent } = useRouge();
-  const [editing, setEditing] = useState<string | "new">(state.active_event_id);
-  const event = editing === "new" ? null : state.events.find((e) => e.id === editing) ?? null;
+  // Solo los eventos que mi rol puede editar; sin ninguno, el formulario arranca en "Nuevo evento".
+  const mine = state.events.filter((e) => can(state, e.id, state.current_user_id, "admin.events"));
+  const [editing, setEditing] = useState<string | "new">(mine.some((e) => e.id === state.active_event_id) ? state.active_event_id : "new");
+  const event = editing === "new" ? null : mine.find((e) => e.id === editing) ?? null;
 
   return (
     <main className="mx-auto max-w-7xl space-y-6 px-5 py-6 lg:px-10 lg:py-10">
@@ -44,7 +48,7 @@ export default function AdminEventsPage() {
         }
       />
       <div className="no-scrollbar flex gap-2 overflow-x-auto">
-        {state.events.map((e) => (
+        {mine.map((e) => (
           <button
             key={e.id}
             type="button"
@@ -61,6 +65,7 @@ export default function AdminEventsPage() {
       </div>
       <EventEditor key={editing} event={event} onSaved={(id) => { setEditing(id); setActiveEvent(id); }} />
       {event && <AccessPanel event={event} />}
+      {event && can(state, event.id, state.current_user_id, "admin.team") && <TeamPanel event={event} />}
     </main>
   );
 }
@@ -204,7 +209,7 @@ function EventEditor({ event, onSaved }: { event: RougeEvent | null; onSaved: (i
 function AccessPanel({ event }: { event: RougeEvent }) {
   const { state, exec, notify } = useRouge();
   const [count, setCount] = useState(50);
-  const [qr, setQr] = useState(false);
+  const share = useShare();
   const [filter, setFilter] = useState<"all" | "free" | "used">("all");
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const masterLink = `${origin}/join/${event.slug}`;
@@ -240,7 +245,12 @@ function AccessPanel({ event }: { event: RougeEvent }) {
           <Button size="icon" variant="glass" aria-label="Copiar link maestro" onClick={() => copy(masterLink, "Link maestro copiado")}>
             <Copy />
           </Button>
-          <Button size="icon" variant="glass" aria-label="Ver QR del link maestro" onClick={() => setQr(true)}>
+          <Button
+            size="icon"
+            variant="glass"
+            aria-label="Ver QR del link maestro"
+            onClick={() => share.open({ url: masterLink, title: `QR de ${event.name}`, text: `Entrá al lobby de ${event.name} en ROUGE 🔴`, fileName: `rouge-${event.slug}`, accent: "vip", caption: event.master_invite_code })}
+          >
             <QrCode />
           </Button>
         </div>
@@ -253,9 +263,14 @@ function AccessPanel({ event }: { event: RougeEvent }) {
         title="Códigos únicos de 1 uso"
         className="xl:col-span-2"
         action={
-          <Button size="sm" variant="glass" onClick={exportCodes} disabled={!codes.length}>
-            <Download /> CSV
-          </Button>
+          <div className="flex gap-2">
+            <Link href={`/admin/print-codes?event=${event.id}`} className={cn(buttonVariants({ size: "sm", variant: "glass" }), !codes.some((c) => !c.is_used) && "pointer-events-none opacity-40")}>
+              <Printer /> Imprimir QRs
+            </Link>
+            <Button size="sm" variant="glass" onClick={exportCodes} disabled={!codes.length}>
+              <Download /> CSV
+            </Button>
+          </div>
         }
       >
         <div className="flex flex-wrap items-end gap-2">
@@ -295,7 +310,17 @@ function AccessPanel({ event }: { event: RougeEvent }) {
                   <td className="px-4 py-2 font-display font-semibold tracking-wider">{c.code}</td>
                   <td className="px-4 py-2">{c.is_used ? <Badge>Usado</Badge> : <Badge tone="squad">Libre</Badge>}</td>
                   <td className="px-4 py-2 text-muted">{c.used_by_user_id ? `@${state.profiles.find((p) => p.id === c.used_by_user_id)?.username ?? "—"}` : "—"}</td>
-                  <td className="px-2 py-1 text-right">
+                  <td className="whitespace-nowrap px-2 py-1 text-right">
+                    {!c.is_used && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`QR de ${c.code}`}
+                        onClick={() => share.open({ url: `${origin}/join/${c.code}`, title: `Entrada ${c.code}`, text: `Tu acceso a ${event.name} en ROUGE (1 uso, no lo compartas) 🎟️`, fileName: `rouge-${c.code}`, accent: "vip", caption: c.code })}
+                      >
+                        <QrCode />
+                      </Button>
+                    )}
                     <Button size="sm" variant="ghost" aria-label={`Copiar link de ${c.code}`} onClick={() => copy(`${origin}/join/${c.code}`, "Link de 1 uso copiado")}>
                       <Copy />
                     </Button>
@@ -307,9 +332,7 @@ function AccessPanel({ event }: { event: RougeEvent }) {
         </div>
       </Panel>
 
-      <BottomSheet open={qr} onClose={() => setQr(false)} title="QR del Link Maestro" description={masterLink}>
-        <QrBlock value={masterLink} label="QR del evento" />
-      </BottomSheet>
+      {share.sheet}
     </div>
   );
 }

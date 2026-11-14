@@ -2,19 +2,21 @@
 
 import Link from "next/link";
 import { useMemo } from "react";
-import { ArrowRight, CalendarCog, Gift, Heart, MapPin, Martini, Megaphone, Siren, Ticket, Timer, TrendingUp, Tv, Users, UsersRound } from "lucide-react";
+import { ArrowRight, CalendarCog, Gift, Heart, MapPin, Martini, Megaphone, Ticket, Timer, TrendingUp, Tv, Users, UsersRound } from "lucide-react";
 import { crmRows, eventMetrics, SMART_TAG_META } from "@/lib/engine/analytics";
 import { activeEvent, lobbyPhase, squadOf } from "@/lib/engine/selectors";
 import { useNow, useRouge } from "@/lib/store/RougeContext";
 import { cn, formatMoney, whatsappLink } from "@/lib/utils";
 import { AdminHeader, Panel } from "@/components/admin/AdminChrome";
+import { SecurityPanel } from "@/components/admin/SecurityPanel";
+import { permissionForPath } from "@/lib/engine/roles";
 import { Badge, LiveDot } from "@/components/ui/badge";
 
 /** Minutos de fila que se estima ahorra cada pedido por Barra Express (supuesto comercial). */
 const QUEUE_MINUTES_SAVED = 12;
 
 export default function AdminOverviewPage() {
-  const { state } = useRouge();
+  const { state, role, can } = useRouge();
   const now = useNow(15_000);
   const event = activeEvent(state)!;
   const m = useMemo(() => eventMetrics(state, event.id, now), [state, event.id, now]);
@@ -50,7 +52,8 @@ export default function AdminOverviewPage() {
     { href: "/admin/perks", label: "Perks y sorteo en vivo", sub: `${state.raffles.filter((r) => r.event_id === event.id && !r.winner_user_id).length} sorteos pendientes`, icon: Gift },
     { href: "/admin/bar-pos", label: "Comandas de barra", sub: `${m.openOrders} pedidos abiertos`, icon: Martini },
     { href: "/admin/live-wall", label: "Pantalla gigante LED", sub: "Para conectar por HDMI", icon: Tv },
-  ];
+  ].filter((x) => can(permissionForPath(x.href)!));
+  const security = role === "security";
 
   return (
     <main className="mx-auto max-w-7xl space-y-8 px-5 py-6 lg:px-10 lg:py-10">
@@ -65,18 +68,34 @@ export default function AdminOverviewPage() {
           </span>
         }
         actions={
-          <Link href="/admin/events" className="glass flex min-h-touch items-center gap-2 rounded-2xl px-4 text-sm">
+          security ? undefined : <Link href="/admin/events" className="glass flex min-h-touch items-center gap-2 rounded-2xl px-4 text-sm">
             <Ticket className="size-4 text-vip" /> <code className="font-display font-semibold">/join/{event.slug}</code>
             <span className="text-muted">· {codes.filter((c) => c.is_used).length}/{codes.length} códigos usados</span>
           </Link>
         }
       />
 
-      {m.rescueAlerts > 0 && (
-        <div role="alert" className="flex items-center gap-3 rounded-2xl border border-rouge/50 bg-rouge/10 p-4 text-rouge shadow-glow-rouge">
-          <Siren className="size-5" /> {m.rescueAlerts} asistente(s) activaron el Botón de Rescate. Avisá a seguridad.
-        </div>
-      )}
+      {(security || m.rescueAlerts > 0) && <SecurityPanel event={event} />}
+
+      {security ? (
+        <section className="grid gap-4 sm:grid-cols-3">
+          {[
+            { label: "Asistentes en la app", value: m.attendees, sub: `${Math.round((m.attendees / event.max_capacity) * 100)}% del cupo`, icon: Users },
+            { label: "Squads activos", value: m.squads, sub: `${m.usersInSquads} personas cuidándose entre sí`, icon: UsersRound },
+            { label: "Pines en el plano", value: m.activePins, sub: "Se borran solos a los 15 min", icon: MapPin },
+          ].map(({ label, value, sub, icon: Icon }) => (
+            <div key={label} className="glass rounded-3xl p-5">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted">{label}</p>
+                <Icon className="size-[18px] text-squad" />
+              </div>
+              <p className="metric mt-3 text-4xl">{value}</p>
+              <p className="mt-1 text-xs text-muted">{sub}</p>
+            </div>
+          ))}
+        </section>
+      ) : (
+        <>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {kpis.map(({ label, value, sub, icon: Icon, tone }) => (
@@ -181,6 +200,8 @@ export default function AdminOverviewPage() {
           <p className="mt-4 flex items-center gap-1.5 text-xs text-muted"><MapPin className="size-3.5" /> {m.activePins} pines activos ahora</p>
         </Panel>
       </section>
+        </>
+      )}
     </main>
   );
 }
