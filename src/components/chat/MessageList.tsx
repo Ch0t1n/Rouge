@@ -70,6 +70,12 @@ function SystemAlert({ message: m }: { message: Message }) {
   );
 }
 
+/** Si la foto termina de cargar cuando estabas cerca del final, el chat vuelve al fondo (no queda tapada). */
+function keepAtBottom() {
+  const el = document.documentElement;
+  if (el.scrollHeight - (window.scrollY + window.innerHeight) < 600) window.scrollTo({ top: el.scrollHeight });
+}
+
 function ChatImage({ url, mine, caption }: { url: string; mine: boolean; caption: string }) {
   const { src, missing } = useMediaUrl(url);
   const [zoom, setZoom] = useState(false);
@@ -78,7 +84,7 @@ function ChatImage({ url, mine, caption }: { url: string; mine: boolean; caption
       <button type="button" onClick={() => setZoom(true)} className={cn("overflow-hidden rounded-3xl border border-white/10 bg-surface-raised", mine ? "rounded-br-md" : "rounded-bl-md")} aria-label="Ampliar foto">
         {src && !missing ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={src} alt={caption || "Foto"} loading="lazy" className="max-h-72 w-auto max-w-full object-cover" />
+          <img src={src} alt={caption || "Foto"} loading="lazy" onLoad={keepAtBottom} className="max-h-72 w-auto max-w-full object-cover" />
         ) : (
           <div className="grid h-40 w-56 place-items-center text-xs text-muted">{missing ? "Foto no disponible" : "Cargando…"}</div>
         )}

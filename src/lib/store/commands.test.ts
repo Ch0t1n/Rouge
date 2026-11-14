@@ -261,3 +261,20 @@ describe("contrato del cargador (fetchRemoteState) ↔ schema.sql", () => {
     expect(snap.state.bar_menu[0].price).toBeTypeOf("number");
   });
 });
+
+describe("acciones con datos generados por el servidor", () => {
+  it("no son optimistas: nunca se muestra un código inventado en el cliente", () => {
+    const s = createSeedState(Date.now());
+    const cmds = [
+      C.createSquad(EV, id(5), "x"),
+      C.createBarOrder(EV, ME, [{ itemId: "gin", qty: 1 }], "fast_pickup"),
+      C.generateInviteCodes(EV, 1),
+      C.drawRaffle(s.raffles[0].id, () => 0),
+      C.joinEvent(ME, "BRESH26", "open_to_meet"),
+    ];
+    for (const c of cmds) expect(c.optimistic, c.name).toBe(false);
+    // y las de interacción inmediata sí lo son (UI instantánea con mala señal)
+    for (const c of [C.sendMessage(ME, { type: "squad", squadId: DEMO_IDS.squadMain }, { content: "hola" }), C.triggerRescue(EV, ME), C.dropPin(EV, ME, { x: 1, y: 1, shareWithSquad: true, matchIds: [] })])
+      expect(c.optimistic, c.name).not.toBe(false);
+  });
+});

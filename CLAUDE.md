@@ -28,7 +28,8 @@ conectan con gente afín, arman su **Squad** (seguridad grupal + perks), se ubic
 npm run dev        # servidor de desarrollo (http://localhost:3000)
 npm run build      # build de producción (verifica tipos)
 npm run typecheck  # tsc --noEmit
-npm test           # tests del motor de reglas
+npm test           # tests del motor de reglas + contrato cliente ↔ schema.sql
+npm run test:integration  # integración REAL contra un Supabase de prueba (ver más abajo)
 node scripts/generate-icons.cjs        # re-rasteriza íconos PWA desde public/icons/icon.svg
 node scripts/generate-demo-avatars.mjs # regenera avatares SVG del demo
 ```
@@ -90,6 +91,7 @@ src/
     store/RougeContext.tsx# Estado global: Modo Demo (localStorage) o Supabase (sesión + carga + Realtime); exec()
     store/commands.ts     # Comandos: regla local del motor + contraparte remota (RPC/tabla) de CADA acción
     store/commands.test.ts# Contrato cliente ↔ schema.sql (RPCs, parámetros, tablas, columnas, cargador)
+    store/supabase.integration.test.ts # Flujo completo con usuarios reales, RLS, Realtime y Storage (se saltea sin credenciales)
     store/hooks.ts        # useRequireProfile() → /login (Supabase sin sesión) o /onboarding (sin perfil)
     supabase/sync.ts      # fetchRemoteState() (RLS) + subscribeRealtime()
     supabase/errors.ts    # friendlyError(): excepciones de RPC/RLS → mensajes en español
@@ -115,6 +117,10 @@ public/                   # manifest.json, sw.js, íconos, avatares demo
    `remote` los devuelve y la UI usa `r.data` (nunca el dato local). Inserts directos usan el mismo
    id que el optimista (ej. mensajes) para no duplicar. Todo comando nuevo se agrega a
    `commands.test.ts` (verifica nombres de RPC, parámetros y columnas contra `schema.sql`).
+   **`optimistic: false`** para acciones cuyo resultado lo genera el servidor (crear Squad → código de
+   invitación, pedido → código de retiro, códigos de 1 uso, sorteo, ingreso): en Supabase el estado
+   solo cambia con la respuesta real, así nunca se muestra/comparte un código inventado en el cliente.
+   Tras cada confirmación, `exec` recarga el estado real ANTES de resolver (ids/códigos del servidor).
 2. **Misma semántica en demo y en Supabase.** Cada acción del motor tiene su contraparte
    RLS/RPC en `schema.sql` (`join_event`, `send_connection`, `send_icebreaker`,
    `trigger_rescue`, `send_blast`, `draw_raffle`, `create_bar_order`, `event_crm`…).
@@ -125,6 +131,12 @@ public/                   # manifest.json, sw.js, íconos, avatares demo
    Rutas públicas sin sesión: `/login`, `/join/*`, `/offline`; el resto pasa por el login (AppShell).
    Sin evento activo se muestra la pantalla "No hay ninguna fiesta activa" (o "Crear evento" en admin).
    Botones "Simular…" solo existen en Modo Demo.
+   `/join/<código>`: los códigos de 1 uso y los squads ajenos NO son legibles por RLS → la vista previa
+   se pide a la RPC `resolve_access_code` (también para anónimos) y `C.joinEvent(..., serverEventId)`
+   delega la validación al servidor cuando el cliente no puede ver el código.
+   El staff NO ve las conexiones (quién hizo match con quién es privado): sus métricas vienen de la
+   RPC `event_stats` (conteos agregados) en `state.admin_stats`, que `analytics.ts` usa si existe.
+   El staff sí ve la composición de los squads de su evento (sorteos, CRM, Squad Leader).
 3. **Modo Demo automático.** Sin `NEXT_PUBLIC_SUPABASE_URL`/`ANON_KEY` en `.env.local`,
    la app usa el estado local sembrado por `createSeedState(now)` y persistido en
    `localStorage` (`rouge:state`). Dos pestañas se sincronizan por el evento `storage`
@@ -151,6 +163,13 @@ public/                   # manifest.json, sw.js, íconos, avatares demo
 11. **Admin.** Las páginas `page.tsx` solo exportan el componente por defecto (Next lo exige): helpers
     a `components/admin` o `lib`. Los avisos en `/admin` van arriba a la derecha. La Pantalla LED se
     dimensiona con `min(vw, vh)` para entrar en cualquier proyector (probado 1920×1080, 1280×720, 1024×768).
+13. **Extensiones en Supabase:** viven en el schema `extensions`. Toda función `security definer` usa
+    `set search_path = public, extensions` (si no, `gen_random_bytes` falla en producción aunque en
+    PGlite funcione).
+14. **Integración real:** `npm run test:integration` con `SUPABASE_TEST_URL`, `SUPABASE_TEST_ANON_KEY` y
+    `SUPABASE_TEST_SERVICE_KEY` (Supabase local o de staging con `schema.sql` + `seed.sql`). Crea
+    usuarios únicos por corrida y prueba RLS, privacidad del teléfono, códigos ocultos por RLS,
+    Realtime y Storage. Correrlo antes de cada cambio de `schema.sql` o `commands.ts`.
 12. **RPCs que devuelven filas:** llamar `select * from fn(...)`, nunca `select (fn(...)).*` (Postgres
     re-ejecuta la función una vez por columna). `supabase.rpc()` ya lo hace bien.
 8. **Guardado sincrónico.** `run()` persiste en el acto (y hay flush en `pagehide`): una acción

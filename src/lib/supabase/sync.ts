@@ -88,9 +88,12 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
   // Mi teléfono (my_profile) y, para el staff, los de los asistentes (event_crm) → CRM y bloqueos.
   const phones = new Map<UUID, string | null>();
   if (me[0]) phones.set(userId, me[0].phone_normalized);
+  let adminStats: RougeState["admin_stats"] = null;
   if (isStaff && eventId) {
     const crm = await q<{ user_id: UUID; phone: string | null }>(sb.rpc("event_crm", { p_event: eventId })).catch(() => []);
     crm.forEach((r) => phones.set(r.user_id, r.phone));
+    const { data: stats } = await sb.rpc("event_stats", { p_event: eventId });
+    if (stats) adminStats = { event_id: eventId, ...(stats as Omit<NonNullable<RougeState["admin_stats"]>, "event_id">) };
   }
 
   const squadIds = new Set(squads.map((s) => s.id));
@@ -118,6 +121,7 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
       ? menu.filter((i) => i.is_available !== false).map((i) => ({ id: i.id, name: i.name, category: i.category, price: Number(i.price), emoji: i.emoji }))
       : BAR_MENU,
     bar_orders: orders.map((o) => ({ ...o, total_amount: Number(o.total_amount) })),
+    admin_stats: adminStats,
   };
   return { state, isStaff };
 }

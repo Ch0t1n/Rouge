@@ -13,8 +13,11 @@
 --  menú de barra, reglas de perks, sorteos, pedidos de temas, entregas de blasts).
 -- ════════════════════════════════════════════════════════════════════════
 
-create extension if not exists pgcrypto;   -- gen_random_uuid(), gen_random_bytes()
-create extension if not exists citext;     -- usernames case-insensitive
+-- Supabase instala las extensiones en el schema `extensions` (no en public).
+create schema if not exists extensions;
+create extension if not exists pgcrypto with schema extensions;   -- gen_random_bytes()
+create extension if not exists citext with schema extensions;     -- usernames case-insensitive
+set search_path = public, extensions;
 
 -- ────────────────────────────────────────────────────────────────────────
 -- ENUMS
@@ -354,7 +357,7 @@ create index if not exists idx_songs_event           on public.song_requests (ev
 
 -- Invisibilidad mutua: bloqueo por id o por coincidencia de teléfono, en cualquier dirección.
 create or replace function public.is_blocked(a uuid, b uuid)
-returns boolean language sql stable security definer set search_path = public as $$
+returns boolean language sql stable security definer set search_path = public, extensions as $$
   select exists (
     select 1
     from public.user_blocks ub
@@ -366,23 +369,23 @@ returns boolean language sql stable security definer set search_path = public as
 $$;
 
 create or replace function public.is_event_attendee(p_event uuid, p_user uuid default auth.uid())
-returns boolean language sql stable security definer set search_path = public as $$
+returns boolean language sql stable security definer set search_path = public, extensions as $$
   select exists (select 1 from public.event_attendees where event_id = p_event and user_id = p_user);
 $$;
 
 create or replace function public.is_event_staff(p_event uuid, p_user uuid default auth.uid())
-returns boolean language sql stable security definer set search_path = public as $$
+returns boolean language sql stable security definer set search_path = public, extensions as $$
   select exists (select 1 from public.event_staff where event_id = p_event and user_id = p_user)
       or exists (select 1 from public.events where id = p_event and created_by = p_user);
 $$;
 
 create or replace function public.is_squad_member(p_squad uuid, p_user uuid default auth.uid())
-returns boolean language sql stable security definer set search_path = public as $$
+returns boolean language sql stable security definer set search_path = public, extensions as $$
   select exists (select 1 from public.squad_members where squad_id = p_squad and user_id = p_user and status = 'joined');
 $$;
 
 create or replace function public.user_squad(p_event uuid, p_user uuid)
-returns uuid language sql stable security definer set search_path = public as $$
+returns uuid language sql stable security definer set search_path = public, extensions as $$
   select sm.squad_id from public.squad_members sm
   join public.squads s on s.id = sm.squad_id
   where s.event_id = p_event and sm.user_id = p_user and sm.status = 'joined'
@@ -390,12 +393,12 @@ returns uuid language sql stable security definer set search_path = public as $$
 $$;
 
 create or replace function public.are_squadmates(p_event uuid, a uuid, b uuid)
-returns boolean language sql stable security definer set search_path = public as $$
+returns boolean language sql stable security definer set search_path = public, extensions as $$
   select public.user_squad(p_event, a) is not null and public.user_squad(p_event, a) = public.user_squad(p_event, b);
 $$;
 
 create or replace function public.is_match(p_event uuid, a uuid, b uuid)
-returns boolean language sql stable security definer set search_path = public as $$
+returns boolean language sql stable security definer set search_path = public, extensions as $$
   select exists (
     select 1 from public.connections
     where status = 'accepted' and (p_event is null or event_id = p_event)
@@ -403,14 +406,19 @@ returns boolean language sql stable security definer set search_path = public as
   );
 $$;
 
+create or replace function public.squad_event(p_squad uuid)
+returns uuid language sql stable security definer set search_path = public, extensions as $$
+  select event_id from public.squads where id = p_squad;
+$$;
+
 create or replace function public.lobby_is_open(p_event uuid)
-returns boolean language sql stable security definer set search_path = public as $$
+returns boolean language sql stable security definer set search_path = public, extensions as $$
   select exists (select 1 from public.events where id = p_event and now() >= lobby_opens_at and now() < lobby_expires_at);
 $$;
 
 -- Regla de visibilidad de pines (sin difusión implícita a matches).
 create or replace function public.can_see_pin(p public.map_pins, viewer uuid default auth.uid())
-returns boolean language sql stable security definer set search_path = public as $$
+returns boolean language sql stable security definer set search_path = public, extensions as $$
   select p.expires_at > now() and (
     p.user_id = viewer or (
       not public.is_blocked(viewer, p.user_id) and (
@@ -464,7 +472,7 @@ grant update (username, full_name, birth_date, gender, phone_normalized, bio, ph
 
 -- Mi perfil completo (incluye mi teléfono)
 create or replace function public.my_profile()
-returns setof public.profiles language sql stable security definer set search_path = public as $$
+returns setof public.profiles language sql stable security definer set search_path = public, extensions as $$
   select * from public.profiles where id = auth.uid();
 $$;
 
@@ -538,7 +546,7 @@ create policy squads_update on public.squads for update to authenticated
 
 drop policy if exists squad_members_select on public.squad_members;
 create policy squad_members_select on public.squad_members for select to authenticated
-  using (user_id = auth.uid() or public.is_squad_member(squad_id));
+  using (user_id = auth.uid() or public.is_squad_member(squad_id) or public.is_event_staff(public.squad_event(squad_id)));
 drop policy if exists squad_members_leave on public.squad_members;
 create policy squad_members_leave on public.squad_members for delete to authenticated using (user_id = auth.uid());
 
@@ -637,7 +645,7 @@ returns table (
   user_id uuid, username citext, full_name text, birth_date date, gender gender_t, bio text, photos jsonb,
   loop_video_url text, music_genres text[], spotify_embed_url text, is_verified boolean,
   mood_tag mood_tag_t, last_active_at timestamptz, music_affinity int, rank numeric, shared_zones text[]
-) language sql stable security definer set search_path = public as $$
+) language sql stable security definer set search_path = public, extensions as $$
   with me as (
     select p.music_genres, a.mood_tag, a.visited_sectors from public.profiles p
     join public.event_attendees a on a.user_id = p.id and a.event_id = p_event
@@ -667,7 +675,7 @@ $$;
 
 -- Ingreso por Link Maestro, Código Único de 1 uso o link de Squad.
 create or replace function public.join_event(p_code text, p_mood mood_tag_t)
-returns uuid language plpgsql security definer set search_path = public as $$
+returns uuid language plpgsql security definer set search_path = public, extensions as $$
 declare
   v_uid uuid := auth.uid();
   v_event public.events;
@@ -716,9 +724,46 @@ begin
   return v_event.id;
 end $$;
 
+-- Vista previa de un link/código de acceso (también sin sesión). Los squads y los códigos de 1 uso
+-- no son legibles por RLS, así que /join/<código> se resuelve acá devolviendo SOLO datos públicos.
+create or replace function public.resolve_access_code(p_code text)
+returns jsonb language plpgsql stable security definer set search_path = public, extensions as $$
+declare
+  v_event public.events; v_code public.event_invite_codes; v_squad public.squads; v_via text;
+begin
+  select * into v_event from public.events where upper(master_invite_code) = upper(trim(p_code)) or slug = lower(trim(p_code));
+  if found then v_via := 'master_link';
+  else
+    select * into v_code from public.event_invite_codes where upper(code) = upper(trim(p_code));
+    if found then
+      select * into v_event from public.events where id = v_code.event_id;
+      v_via := 'single_use_code';
+    else
+      select * into v_squad from public.squads where upper(invite_code) = upper(trim(p_code));
+      if not found then return null; end if;
+      select * into v_event from public.events where id = v_squad.event_id;
+      v_via := 'squad_link';
+    end if;
+  end if;
+  return jsonb_build_object(
+    'via', v_via,
+    'event', jsonb_build_object(
+      'id', v_event.id, 'slug', v_event.slug, 'name', v_event.name, 'description', v_event.description,
+      'venue_name', v_event.venue_name, 'cover_url', v_event.cover_url, 'lineup_json', v_event.lineup_json,
+      'venue_layout_json', v_event.venue_layout_json, 'starts_at', v_event.starts_at, 'ends_at', v_event.ends_at,
+      'lobby_opens_at', v_event.lobby_opens_at, 'lobby_expires_at', v_event.lobby_expires_at, 'max_capacity', v_event.max_capacity),
+    'attendees', (select count(*) from public.event_attendees where event_id = v_event.id),
+    'code_used_by_other', coalesce(v_code.is_used, false) and v_code.used_by_user_id is distinct from auth.uid(),
+    'squad', case when v_squad.id is null then null else jsonb_build_object(
+      'id', v_squad.id, 'name', v_squad.name,
+      'members', (select count(*) from public.squad_members where squad_id = v_squad.id and status = 'joined'),
+      'creator_first_name', (select split_part(full_name, ' ', 1) from public.profiles where id = v_squad.created_by)) end
+  );
+end $$;
+
 -- Conectar: crea solicitud o, si había una recíproca pendiente, la convierte en match.
 create or replace function public.send_connection(p_event uuid, p_receiver uuid)
-returns public.connections language plpgsql security definer set search_path = public as $$
+returns public.connections language plpgsql security definer set search_path = public, extensions as $$
 declare
   v_uid uuid := auth.uid();
   v_reciprocal public.connections;
@@ -744,7 +789,7 @@ end $$;
 
 -- Rompehielos: 1 bala por evento, respeta "solo de quien conecté primero".
 create or replace function public.send_icebreaker(p_event uuid, p_receiver uuid, p_message text, p_gift_item text default null)
-returns public.connections language plpgsql security definer set search_path = public as $$
+returns public.connections language plpgsql security definer set search_path = public, extensions as $$
 declare
   v_uid uuid := auth.uid();
   v_att public.event_attendees;
@@ -790,7 +835,7 @@ end $$;
 
 -- Al aceptar un rompehielos, su texto pasa a ser el primer mensaje del chat.
 create or replace function public.tg_connection_accepted()
-returns trigger language plpgsql security definer set search_path = public as $$
+returns trigger language plpgsql security definer set search_path = public, extensions as $$
 begin
   if new.status = 'accepted' and old.status = 'pending' and new.type = 'icebreaker' and new.icebreaker_message is not null then
     insert into public.messages (event_id, conversation_type, connection_id, sender_id, message_type, content, created_at)
@@ -804,7 +849,7 @@ create trigger connection_accepted after update of status on public.connections
 
 -- Squads
 create or replace function public.create_squad(p_event uuid, p_name text)
-returns public.squads language plpgsql security definer set search_path = public as $$
+returns public.squads language plpgsql security definer set search_path = public, extensions as $$
 declare v_row public.squads;
 begin
   if not public.lobby_is_open(p_event) or not public.is_event_attendee(p_event) then raise exception 'not_allowed'; end if;
@@ -815,7 +860,7 @@ begin
 end $$;
 
 create or replace function public.invite_to_squad(p_squad uuid, p_invitee uuid)
-returns void language plpgsql security definer set search_path = public as $$
+returns void language plpgsql security definer set search_path = public, extensions as $$
 declare v_event uuid;
 begin
   select event_id into v_event from public.squads where id = p_squad;
@@ -828,7 +873,7 @@ begin
 end $$;
 
 create or replace function public.join_squad(p_squad uuid)
-returns void language plpgsql security definer set search_path = public as $$
+returns void language plpgsql security definer set search_path = public, extensions as $$
 declare v_event uuid; v_name text;
 begin
   select event_id into v_event from public.squads where id = p_squad;
@@ -844,7 +889,7 @@ end $$;
 
 -- QR Drops automáticos: "Squad de N miembros antes de HH:MM" → 1 QR por integrante (idempotente).
 create or replace function public.apply_squad_perk_rules(p_squad uuid)
-returns int language plpgsql security definer set search_path = public as $$
+returns int language plpgsql security definer set search_path = public, extensions as $$
 declare
   v_event uuid; v_size int; r public.perk_rules; v_count int := 0; v_n int;
 begin
@@ -865,14 +910,14 @@ begin
 end $$;
 
 create or replace function public.tg_squad_member_joined()
-returns trigger language plpgsql security definer set search_path = public as $$
+returns trigger language plpgsql security definer set search_path = public, extensions as $$
 begin
   if new.status = 'joined' then perform public.apply_squad_perk_rules(new.squad_id); end if;
   return new;
 end $$;
 -- Una regla nueva o reactivada aplica retroactivamente a los squads que ya cumplen (idéntico al motor).
 create or replace function public.tg_perk_rule_apply()
-returns trigger language plpgsql security definer set search_path = public as $$
+returns trigger language plpgsql security definer set search_path = public, extensions as $$
 declare v_sq uuid;
 begin
   if new.is_active then
@@ -892,7 +937,7 @@ create trigger squad_member_joined after insert or update of status on public.sq
 
 -- 🚨 Botón de Rescate
 create or replace function public.trigger_rescue(p_event uuid, p_x double precision, p_y double precision, p_sector text default null)
-returns public.map_pins language plpgsql security definer set search_path = public as $$
+returns public.map_pins language plpgsql security definer set search_path = public, extensions as $$
 declare v_squad uuid; v_pin public.map_pins; v_name text;
 begin
   v_squad := public.user_squad(p_event, auth.uid());
@@ -911,7 +956,7 @@ end $$;
 -- Pin-Drop de 15 min: 1 activo por usuario; solo comparte con matches REALES seleccionados.
 create or replace function public.drop_pin(p_event uuid, p_x double precision, p_y double precision, p_sector text,
                                            p_share_with_squad boolean, p_match_ids uuid[] default '{}', p_note text default null)
-returns public.map_pins language plpgsql security definer set search_path = public as $$
+returns public.map_pins language plpgsql security definer set search_path = public, extensions as $$
 declare v_matches uuid[]; v_pin public.map_pins;
 begin
   if not public.lobby_is_open(p_event) or not public.is_event_attendee(p_event) then raise exception 'not_allowed'; end if;
@@ -929,7 +974,7 @@ end $$;
 
 -- 🚩 Punto Base del Squad (+ aviso en el chat)
 create or replace function public.set_squad_base_pin(p_squad uuid, p_x double precision, p_y double precision, p_label text)
-returns void language plpgsql security definer set search_path = public as $$
+returns void language plpgsql security definer set search_path = public, extensions as $$
 declare v_event uuid; v_label text := coalesce(nullif(trim(p_label), ''), 'Nuestro Punto de Encuentro');
 begin
   if not public.is_squad_member(p_squad) then raise exception 'not_member'; end if;
@@ -939,7 +984,7 @@ begin
 end $$;
 
 create or replace function public.announce_base_meetup(p_squad uuid, p_minutes int default 10)
-returns void language plpgsql security definer set search_path = public as $$
+returns void language plpgsql security definer set search_path = public, extensions as $$
 declare v_sq public.squads;
 begin
   if not public.is_squad_member(p_squad) then raise exception 'not_member'; end if;
@@ -951,7 +996,7 @@ end $$;
 
 -- 🏠 Ya llegué bien a casa / ✅ Ya estoy bien
 create or replace function public.set_safety_status(p_event uuid, p_status safety_status_t)
-returns void language plpgsql security definer set search_path = public as $$
+returns void language plpgsql security definer set search_path = public, extensions as $$
 declare v_squad uuid; v_name text;
 begin
   v_squad := public.user_squad(p_event, auth.uid());
@@ -971,7 +1016,7 @@ end $$;
 -- Text Blast segmentado: materializa la audiencia en blast_deliveries.
 create or replace function public.send_blast(p_event uuid, p_title text, p_message text, p_segment jsonb,
                                              p_cta_label text default null, p_cta_link text default null, p_flash_minutes int default null)
-returns int language plpgsql security definer set search_path = public as $$
+returns int language plpgsql security definer set search_path = public, extensions as $$
 declare v_blast uuid; v_n int;
 begin
   if not public.is_event_staff(p_event) then raise exception 'forbidden'; end if;
@@ -1001,7 +1046,7 @@ end $$;
 
 -- Ruleta de sorteo en vivo
 create or replace function public.draw_raffle(p_raffle uuid)
-returns uuid language plpgsql security definer set search_path = public as $$
+returns uuid language plpgsql security definer set search_path = public, extensions as $$
 declare v_r public.raffles; v_winner uuid; v_perk uuid;
 begin
   select * into v_r from public.raffles where id = p_raffle for update;
@@ -1028,7 +1073,7 @@ end $$;
 
 -- Canje de QR en la barra (staff)
 create or replace function public.redeem_perk(p_qr text)
-returns public.user_perks_qrs language plpgsql security definer set search_path = public as $$
+returns public.user_perks_qrs language plpgsql security definer set search_path = public, extensions as $$
 declare v_p public.user_perks_qrs;
 begin
   select * into v_p from public.user_perks_qrs where qr_code_string = p_qr for update;
@@ -1042,7 +1087,7 @@ end $$;
 -- Barra Express: precios desde el servidor, vaquita reparte total_spent.
 -- p_items: [{"item_id":"gin","qty":2}, ...]
 create or replace function public.create_bar_order(p_event uuid, p_items jsonb, p_delivery delivery_type_t)
-returns public.bar_orders language plpgsql security definer set search_path = public as $$
+returns public.bar_orders language plpgsql security definer set search_path = public, extensions as $$
 declare
   v_uid uuid := auth.uid();
   v_items jsonb; v_total numeric(12,2); v_squad uuid; v_split uuid[] := '{}';
@@ -1085,7 +1130,7 @@ end $$;
 
 -- Sectores visitados (alimenta el filtro post-fiesta "Coincidieron en tu zona")
 create or replace function public.tg_pin_mark_visited()
-returns trigger language plpgsql security definer set search_path = public as $$
+returns trigger language plpgsql security definer set search_path = public, extensions as $$
 begin
   if new.sector_name is not null then
     update public.event_attendees
@@ -1104,7 +1149,7 @@ create trigger bar_orders_touch before update on public.bar_orders for each row 
 
 -- Kanban de barra: avanza un pedido al siguiente estado de SU flujo (solo staff).
 create or replace function public.advance_bar_order(p_order uuid)
-returns public.bar_orders language plpgsql security definer set search_path = public as $$
+returns public.bar_orders language plpgsql security definer set search_path = public, extensions as $$
 declare v_o public.bar_orders; v_flow bar_order_status_t[]; v_i int;
 begin
   select * into v_o from public.bar_orders where id = p_order for update;
@@ -1121,7 +1166,7 @@ end $$;
 
 -- Ventanilla rápida: entrega el pedido solo si está "Listo para retiro".
 create or replace function public.redeem_pickup_code(p_event uuid, p_code text)
-returns public.bar_orders language plpgsql security definer set search_path = public as $$
+returns public.bar_orders language plpgsql security definer set search_path = public, extensions as $$
 declare v_o public.bar_orders; v_code text := upper(regexp_replace(trim(p_code), '^ROUGE:ORDER:[^:]+:', '', 'i'));
 begin
   if not public.is_event_staff(p_event) then raise exception 'forbidden'; end if;
@@ -1135,7 +1180,7 @@ end $$;
 
 -- Votar / pedir tema
 create or replace function public.vote_song(p_event uuid, p_title text, p_artist text default '')
-returns public.song_requests language plpgsql security definer set search_path = public as $$
+returns public.song_requests language plpgsql security definer set search_path = public, extensions as $$
 declare v_row public.song_requests;
 begin
   if not public.is_event_attendee(p_event) then raise exception 'not_attendee'; end if;
@@ -1156,7 +1201,7 @@ create or replace function public.event_crm(p_event uuid)
 returns table (
   user_id uuid, full_name text, username citext, phone text, age int, gender gender_t, music_genres text[],
   squad_size int, matches int, total_spent numeric, joined_at timestamptz, tags text[]
-) language plpgsql stable security definer set search_path = public as $$
+) language plpgsql stable security definer set search_path = public, extensions as $$
 begin
   if not public.is_event_staff(p_event) then raise exception 'forbidden'; end if;
   return query
@@ -1181,9 +1226,30 @@ begin
   order by b.total_spent desc;
 end $$;
 
+-- Métricas agregadas para el staff. Las conexiones son privadas (el organizador NO ve quién
+-- hizo match con quién): solo conteos, y matches por persona para el Smart Tag "Power Matcher".
+create or replace function public.event_stats(p_event uuid)
+returns jsonb language plpgsql stable security definer set search_path = public, extensions as $$
+declare v jsonb;
+begin
+  if not public.is_event_staff(p_event) then raise exception 'forbidden'; end if;
+  select jsonb_build_object(
+    'matches',            count(*) filter (where status = 'accepted'),
+    'pending_connections', count(*) filter (where status = 'pending'),
+    'icebreakers_sent',   count(*) filter (where type = 'icebreaker'),
+    'matches_last_hour',  count(*) filter (where status = 'accepted' and responded_at > now() - interval '1 hour'),
+    'matches_by_user',    coalesce((
+      select jsonb_object_agg(u, n) from (
+        select u, count(*) n from public.connections c2, unnest(array[c2.sender_id, c2.receiver_id]) u
+        where c2.event_id = p_event and c2.status = 'accepted' group by u) t), '{}'::jsonb)
+  ) into v
+  from public.connections where event_id = p_event;
+  return v;
+end $$;
+
 -- Generador de códigos únicos de 1 uso (lote)
 create or replace function public.generate_invite_codes(p_event uuid, p_count int)
-returns setof public.event_invite_codes language plpgsql security definer set search_path = public as $$
+returns setof public.event_invite_codes language plpgsql security definer set search_path = public, extensions as $$
 begin
   if not public.is_event_staff(p_event) then raise exception 'forbidden'; end if;
   if p_count < 1 or p_count > 1000 then raise exception 'invalid_count'; end if;
@@ -1199,7 +1265,7 @@ end $$;
 -- Limpieza de pines vencidos (programar con pg_cron cada 5 min:
 --   select cron.schedule('purge-pins', '*/5 * * * *', $$select public.purge_expired_pins()$$); )
 create or replace function public.purge_expired_pins()
-returns int language sql security definer set search_path = public as $$
+returns int language sql security definer set search_path = public, extensions as $$
   with d as (delete from public.map_pins where expires_at <= now() returning 1) select count(*)::int from d;
 $$;
 
@@ -1208,6 +1274,7 @@ revoke execute on all functions in schema public from anon;
 grant execute on all functions in schema public to authenticated;
 revoke execute on function public.purge_expired_pins() from authenticated;
 revoke execute on function public.apply_squad_perk_rules(uuid) from authenticated;
+grant execute on function public.resolve_access_code(text) to anon;
 
 -- ════════════════════════════════════════════════════════════════════════
 -- REALTIME (chat, pines, alertas, blasts, comandas)

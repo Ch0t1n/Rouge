@@ -44,9 +44,8 @@ export function crmRows(s: RougeState, eventId: UUID): CrmRow[] {
       if (!p) return null;
       const sq = squadOf(s, eventId, a.user_id);
       const size = sq ? squadMembers(s, sq.squad.id).length : 0;
-      const matches = s.connections.filter(
-        (c) => c.event_id === eventId && c.status === "accepted" && (c.sender_id === a.user_id || c.receiver_id === a.user_id),
-      ).length;
+      const matches = statsFor(s, eventId)?.matches_by_user[a.user_id] ??
+        s.connections.filter((c) => c.event_id === eventId && c.status === "accepted" && (c.sender_id === a.user_id || c.receiver_id === a.user_id)).length;
       const brought = s.squad_members.filter((m) => m.invited_by === a.user_id && m.status === "joined").length;
       const tags: SmartTag[] = [];
       if (a.total_spent > 0 && a.total_spent >= topThreshold) tags.push("top_spender");
@@ -72,6 +71,9 @@ export function crmRows(s: RougeState, eventId: UUID): CrmRow[] {
     .sort((a, b) => b.total_spent - a.total_spent);
 }
 
+/** En Supabase el staff no ve las conexiones (privadas): usa los conteos del servidor. */
+const statsFor = (s: RougeState, eventId: UUID) => (s.admin_stats?.event_id === eventId ? s.admin_stats : null);
+
 export function eventMetrics(s: RougeState, eventId: UUID, now = Date.now()) {
   const attendees = s.event_attendees.filter((a) => a.event_id === eventId);
   const conns = s.connections.filter((c) => c.event_id === eventId);
@@ -85,9 +87,9 @@ export function eventMetrics(s: RougeState, eventId: UUID, now = Date.now()) {
     attendees: attendees.length,
     femaleShare: attendees.length ? female / attendees.length : 0,
     ghostMode: attendees.filter((a) => a.ghost_mode).length,
-    matches: conns.filter((c) => c.status === "accepted").length,
-    pendingConnections: conns.filter((c) => c.status === "pending").length,
-    icebreakersSent: conns.filter((c) => c.type === "icebreaker").length,
+    matches: statsFor(s, eventId)?.matches ?? conns.filter((c) => c.status === "accepted").length,
+    pendingConnections: statsFor(s, eventId)?.pending_connections ?? conns.filter((c) => c.status === "pending").length,
+    icebreakersSent: statsFor(s, eventId)?.icebreakers_sent ?? conns.filter((c) => c.type === "icebreaker").length,
     squads: squads.length,
     usersInSquads: attendees.filter((a) => squadOf(s, eventId, a.user_id)).length,
     biggestSquad: biggest ? { name: biggest.squad.name, size: biggest.size } : null,
@@ -105,7 +107,7 @@ export function eventMetrics(s: RougeState, eventId: UUID, now = Date.now()) {
 export function liveWallData(s: RougeState, eventId: UUID, now = Date.now()) {
   const event = getEvent(s, eventId)!;
   const m = eventMetrics(s, eventId, now);
-  const lastHour = s.connections.filter((c) => c.event_id === eventId && c.status === "accepted" && c.responded_at && now - +new Date(c.responded_at) < 3_600_000).length;
+  const lastHour = statsFor(s, eventId)?.matches_last_hour ?? s.connections.filter((c) => c.event_id === eventId && c.status === "accepted" && c.responded_at && now - +new Date(c.responded_at) < 3_600_000).length;
   const flash = s.event_blasts
     .filter((b) => b.event_id === eventId && b.is_flash_promo && b.expires_at && +new Date(b.expires_at) > now)
     .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))[0];

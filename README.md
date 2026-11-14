@@ -43,6 +43,21 @@ Con credenciales en `.env.local` la app deja el Modo Demo y usa Supabase: login 
 
 > En producción: configurá un SMTP propio en Supabase (el de prueba tiene un límite bajo de emails por hora).
 
+### Test de integración contra Supabase
+
+Con un Supabase de prueba (local con `supabase start` o un proyecto de staging) que tenga
+`schema.sql` + `seed.sql` aplicados:
+
+```bash
+SUPABASE_TEST_URL=http://localhost:54321 \
+SUPABASE_TEST_ANON_KEY=<anon key> SUPABASE_TEST_SERVICE_KEY=<service role key> \
+npm run test:integration
+```
+
+Recorre el flujo completo con usuarios reales: perfiles, ingreso por código maestro / de 1 uso / de
+Squad, matches y chat, pines privados, rescate, bloqueos por teléfono, Rompehielos con trago, Barra
+Express y comandas, Text Blasts, sorteos, CRM, Storage y Realtime.
+
 ## Scripts
 
 | Comando | Qué hace |

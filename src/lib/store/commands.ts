@@ -18,6 +18,12 @@ export interface Command<T> {
   local: (s: RougeState) => Result<T>;
   /** Devuelve los datos "reales" del servidor cuando difieren de los locales (ids, códigos). */
   remote?: (sb: SupabaseClient, local: T, before: RougeState) => Promise<T | void>;
+  /**
+   * false = en Supabase NO se muestra el resultado local antes de que responda el servidor.
+   * Para acciones cuyo resultado lo genera el servidor (códigos de Squad o de retiro, códigos de 1 uso,
+   * ganador del sorteo): nunca se muestra/comparte un código inventado en el cliente.
+   */
+  optimistic?: boolean;
 }
 
 type PgResult<D> = { data: D; error: { message: string; code?: string } | null };
@@ -83,9 +89,18 @@ export const unblock = (blockerId: UUID, blockId: UUID): Command<undefined> => (
 
 // ── Ingreso y ajustes de la noche ────────────────────────────────────
 
-export const joinEvent = (userId: UUID, code: string, mood: MoodTag): Command<{ eventId: UUID; squadId?: UUID }> => ({
+/**
+ * `serverEventId`: el código lo resolvió el servidor (resolve_access_code) porque el cliente no puede
+ * verlo por RLS (códigos de 1 uso, squads ajenos). Si la regla local no lo encuentra, decide el servidor.
+ */
+export const joinEvent = (userId: UUID, code: string, mood: MoodTag, serverEventId?: UUID): Command<{ eventId: UUID; squadId?: UUID }> => ({
   name: "joinEvent",
-  local: (s) => A.joinEvent(s, userId, code, mood),
+  optimistic: false,
+  local: (s) => {
+    const r = A.joinEvent(s, userId, code, mood);
+    if (!r.ok && serverEventId && !A.resolveAccessCode(s, code)) return { ok: true, state: s, data: { eventId: serverEventId } };
+    return r;
+  },
   remote: async (sb, local) => {
     const eventId = await rpc<UUID>(sb, "join_event", { p_code: code, p_mood: mood });
     return { ...local, eventId };
@@ -134,6 +149,7 @@ export const sendIcebreaker = (eventId: UUID, senderId: UUID, receiverId: UUID, 
 
 export const createSquad = (eventId: UUID, userId: UUID, name: string): Command<Squad> => ({
   name: "createSquad",
+  optimistic: false, // el código de invitación lo genera el servidor
   local: (s) => A.createSquad(s, eventId, userId, name),
   remote: async (sb) => rpc<Squad>(sb, "create_squad", { p_event: eventId, p_name: name }),
 });
@@ -293,6 +309,7 @@ export const createBarOrder = (
   delivery: Exclude<BarOrder["delivery_type"], "icebreaker_gift">,
 ): Command<BarOrder> => ({
   name: "createBarOrder",
+  optimistic: false, // el código de retiro (QR) lo genera el servidor
   local: (s) => A.createBarOrder(s, eventId, userId, cart, delivery),
   // El servidor fija precios y código de retiro: se usa SU pedido (el QR tiene que coincidir).
   remote: async (sb) =>
@@ -341,6 +358,7 @@ export const createRaffle = (eventId: UUID, prize: string, filter: RaffleFilter)
 /** El ganador lo decide el servidor (random() en draw_raffle); la ruleta anima hacia ESE ganador. */
 export const drawRaffle = (raffleId: UUID, rng: () => number): Command<{ raffle: Raffle; perk: RougeState["user_perks_qrs"][number]; pool: UUID[] }> => ({
   name: "drawRaffle",
+  optimistic: false, // el ganador lo elige el servidor
   local: (s) => A.drawRaffle(s, raffleId, rng),
   remote: async (sb, local) => {
     const winner = await rpc<UUID>(sb, "draw_raffle", { p_raffle: raffleId });
@@ -401,6 +419,7 @@ export const upsertEvent = (input: Parameters<typeof A.upsertEvent>[1]): Command
 
 export const generateInviteCodes = (eventId: UUID, count: number): Command<EventInviteCode[]> => ({
   name: "generateInviteCodes",
+  optimistic: false,
   local: (s) => A.generateInviteCodes(s, eventId, count),
   remote: async (sb) => rpc<EventInviteCode[]>(sb, "generate_invite_codes", { p_event: eventId, p_count: count }),
 });

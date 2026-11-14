@@ -2,11 +2,12 @@
 
 import * as C from "@/lib/store/commands";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { CalendarClock, DoorOpen, Lock, MapPin, Ticket, Users, UsersRound } from "lucide-react";
-import type { MoodTag } from "@/lib/types";
-import { joinEvent, resolveAccessCode } from "@/lib/engine/actions";
+import type { EventAttendee, MoodTag, Profile, RougeEvent } from "@/lib/types";
+import { resolveAccessCode } from "@/lib/engine/actions";
+import { getSupabase } from "@/lib/supabase/client";
 import { getAttendee, getProfile, lobbyPhase, squadMembers } from "@/lib/engine/selectors";
 import { useNow, useRouge } from "@/lib/store/RougeContext";
 import { cn, formatDateTime, formatTime } from "@/lib/utils";
@@ -15,6 +16,16 @@ import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 
+interface Preview {
+  event: Pick<RougeEvent, "id" | "name" | "description" | "venue_name" | "starts_at" | "ends_at" | "lineup_json" | "lobby_opens_at" | "lobby_expires_at" | "max_capacity">;
+  via: EventAttendee["joined_via"];
+  attendees: number;
+  codeUsedByOther: boolean;
+  squad?: { name: string; members: number; creator?: Profile; creatorFirstName?: string };
+  /** true si lo resolvió el servidor (el cliente no puede ver el código por RLS) */
+  fromServer: boolean;
+}
+
 export default function JoinPage() {
   const { code: rawCode } = useParams<{ code: string }>();
   const code = decodeURIComponent(rawCode ?? "");
@@ -22,11 +33,59 @@ export default function JoinPage() {
   const { state, exec, notify, setActiveEvent, mode, signedIn } = useRouge();
   const now = useNow(30_000);
   const me = getProfile(state, state.current_user_id);
-  const resolved = resolveAccessCode(state, code);
-  const existing = resolved ? getAttendee(state, resolved.event.id, state.current_user_id) : undefined;
+
+  // 1) Resolución local (Modo Demo / códigos visibles)
+  const local = resolveAccessCode(state, code);
+  const localPreview: Preview | null = local
+    ? {
+        event: local.event,
+        via: local.via,
+        attendees: state.event_attendees.filter((a) => a.event_id === local.event.id).length,
+        codeUsedByOther: !!local.inviteCode?.is_used && local.inviteCode.used_by_user_id !== state.current_user_id,
+        squad: local.squad
+          ? { name: local.squad.name, members: squadMembers(state, local.squad.id).length, creator: getProfile(state, local.squad.created_by) }
+          : undefined,
+        fromServer: false,
+      }
+    : null;
+
+  // 2) Supabase: si no es visible localmente, lo resuelve el servidor (resolve_access_code)
+  const [remote, setRemote] = useState<{ code: string; preview: Preview | null } | null>(null);
+  useEffect(() => {
+    if (mode !== "supabase" || localPreview) return;
+    const sb = getSupabase();
+    if (!sb) return;
+    let alive = true;
+    sb.rpc("resolve_access_code", { p_code: code }).then(({ data }) => {
+      if (!alive) return;
+      const d = data as null | { via: Preview["via"]; event: Preview["event"]; attendees: number; code_used_by_other: boolean; squad: null | { name: string; members: number; creator_first_name: string | null } };
+      setRemote({
+        code,
+        preview: d
+          ? { event: d.event, via: d.via, attendees: d.attendees, codeUsedByOther: d.code_used_by_other, squad: d.squad ? { name: d.squad.name, members: d.squad.members, creatorFirstName: d.squad.creator_first_name ?? undefined } : undefined, fromServer: true }
+          : null,
+      });
+    });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, code, !!localPreview]);
+
+  // Demo: si no se resuelve en local, es inválido. Supabase: undefined = esperando al servidor.
+  const preview = localPreview ?? (mode === "demo" ? null : remote?.code === code ? remote.preview : undefined);
+  const existing = preview ? getAttendee(state, preview.event.id, state.current_user_id) : undefined;
   const [mood, setMood] = useState<MoodTag | null>(existing?.mood_tag ?? null);
 
-  if (!resolved) {
+  if (preview === undefined) {
+    return (
+      <Shell>
+        <p className="pt-24 text-center text-sm text-muted" role="status">Buscando tu evento…</p>
+      </Shell>
+    );
+  }
+
+  if (!preview) {
     return (
       <Shell>
         <div className="flex flex-col items-center gap-3 pt-24 text-center">
@@ -43,12 +102,12 @@ export default function JoinPage() {
     );
   }
 
-  const { event, via, inviteCode, squad } = resolved;
-  const phase = lobbyPhase(event, now);
-  const attendees = state.event_attendees.filter((a) => a.event_id === event.id).length;
-  const usedByOther = !!inviteCode?.is_used && inviteCode.used_by_user_id !== state.current_user_id;
+  const { event, via, squad } = preview;
+  const phase = lobbyPhase(event as RougeEvent, now);
+  const attendees = preview.attendees;
+  const usedByOther = preview.codeUsedByOther;
   const full = via !== "single_use_code" && !existing && attendees >= event.max_capacity;
-  const squadCreator = squad ? getProfile(state, squad.created_by) : undefined;
+  const squadCreator = squad?.creator;
   const opensIn = Math.max(0, +new Date(event.lobby_opens_at) - now);
 
   const blocker =
@@ -64,13 +123,13 @@ export default function JoinPage() {
 
   const enter = async () => {
     if (!mood) return;
-    const r = await exec(C.joinEvent(state.current_user_id, code, mood));
+    const r = await exec(C.joinEvent(state.current_user_id, code, mood, preview.fromServer ? event.id : undefined));
     if (!r.ok) return;
     setActiveEvent(r.data.eventId);
     notify({
       tone: "rouge",
       title: existing ? "Mood actualizado ✓" : `🔥 Entraste a ${event.name}`,
-      description: r.data.squadId ? `Y te sumaste al Squad ${squad?.name}.` : "Ya aparecés en la grilla de asistentes.",
+      description: via === "squad_link" && squad ? `Y te sumaste al Squad ${squad.name}.` : "Ya aparecés en la grilla de asistentes.",
     });
     router.push("/lobby");
   };
@@ -115,11 +174,11 @@ export default function JoinPage() {
           {squadCreator && <Avatar profile={squadCreator} size={44} ring="squad" />}
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold">
-              {squadCreator?.full_name.split(" ")[0]} te invitó a <span className="text-squad">{squad.name}</span>
+              {squadCreator?.full_name.split(" ")[0] ?? squad.creatorFirstName ?? "Tu amiga"} te invitó a <span className="text-squad">{squad.name}</span>
             </p>
             <p className="text-xs text-muted">
               <UsersRound className="mr-1 inline size-3.5" />
-              {squadMembers(state, squad.id).length} en el Squad · se ven en el plano y se cuidan entre sí
+              {squad.members} en el Squad · se ven en el plano y se cuidan entre sí
             </p>
           </div>
         </section>

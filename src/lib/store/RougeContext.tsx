@@ -299,7 +299,9 @@ export function RougeProvider({ children }: { children: ReactNode }) {
         if (!opts?.silent) notify({ tone: "error", title: local.error });
         return local;
       }
-      commit(local.state);
+      const sb = mode === "supabase" ? getSupabase() : null;
+      const waitForServer = !!sb && !!cmd.remote && cmd.optimistic === false;
+      if (!waitForServer) commit(local.state);
 
       if (mode === "demo") {
         // Guardado sincrónico: una acción nunca se pierde por navegar o cerrar al instante.
@@ -307,12 +309,13 @@ export function RougeProvider({ children }: { children: ReactNode }) {
         return local;
       }
 
-      const sb = getSupabase();
       if (!sb || !cmd.remote) return local;
       try {
         const data = await cmd.remote(sb, local.data, before);
-        scheduleRefresh();
-        return { ok: true, state: local.state, data: (data ?? local.data) as T };
+        // Reconciliación inmediata: ids, códigos (Squad, retiro) y totales pasan a ser los del servidor
+        // ANTES de devolver el control (nunca se comparte un código optimista que no existe).
+        await loadRemote();
+        return { ok: true, state: stateRef.current ?? local.state, data: (data ?? local.data) as T };
       } catch (e) {
         await loadRemote(); // vuelve a la verdad del servidor
         const error = friendlyError(e);
@@ -320,7 +323,7 @@ export function RougeProvider({ children }: { children: ReactNode }) {
         return { ok: false, error };
       }
     },
-    [mode, commit, notify, loadRemote, scheduleRefresh],
+    [mode, commit, notify, loadRemote],
   );
 
   // ── Persona / evento ──────────────────────────────────────────────

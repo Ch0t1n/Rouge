@@ -340,6 +340,16 @@ export interface BarOrder {
 
 // ── Estado global ────────────────────────────────────────────────────
 
+/** Métricas agregadas que el servidor calcula para el staff (Supabase: RPC event_stats). */
+export interface AdminStats {
+  event_id: UUID;
+  matches: number;
+  pending_connections: number;
+  icebreakers_sent: number;
+  matches_last_hour: number;
+  matches_by_user: Record<UUID, number>;
+}
+
 export interface RougeState {
   /** Versión del formato persistido; si cambia, se re-siembra el demo. */
   version: number;
@@ -363,4 +373,6 @@ export interface RougeState {
   song_requests: SongRequest[];
   bar_menu: BarMenuItem[];
   bar_orders: BarOrder[];
+  /** Solo staff en Modo Supabase: conteos de conexiones (que son privadas por RLS). */
+  admin_stats?: AdminStats | null;
 }
