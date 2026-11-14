@@ -28,7 +28,7 @@ export function Switch({ checked, onCheckedChange, tone = "rouge", label, descri
       onClick={() => onCheckedChange(!checked)}
       className={cn(
         "relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors disabled:opacity-40",
-        checked ? TRACK[tone] : "bg-white/12",
+        checked ? TRACK[tone] : "bg-white/15 ring-1 ring-inset ring-white/25",
       )}
     >
       <span

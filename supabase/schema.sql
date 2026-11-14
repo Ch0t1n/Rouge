@@ -122,9 +122,12 @@ create table if not exists public.event_attendees (
   total_spent              numeric(12,2) not null default 0 check (total_spent >= 0),
   joined_via               join_via_t not null default 'master_link',  -- [ext]
   last_active_at           timestamptz not null default now(),         -- [ext] para el algoritmo de afinidad
+  visited_sectors          text[] not null default '{}',               -- [ext] sectores con pin (filtro "coincidieron en tu zona"), sin coordenadas
   joined_at                timestamptz not null default now(),
   unique (event_id, user_id)
 );
+
+alter table public.event_attendees add column if not exists visited_sectors text[] not null default '{}';
 
 create table if not exists public.connections (
   id                    uuid primary key default gen_random_uuid(),
@@ -623,15 +626,16 @@ create policy orders_staff_update on public.bar_orders for update to authenticat
 -- RPCs DE NEGOCIO (atómicas; replican src/lib/engine/actions.ts)
 -- ════════════════════════════════════════════════════════════════════════
 
--- Grilla: asistentes visibles + afinidad musical (Dice) + rank.
+-- Grilla: asistentes visibles + afinidad musical (Dice) + rank + zonas en común.
+drop function if exists public.event_grid(uuid);
 create or replace function public.event_grid(p_event uuid)
 returns table (
   user_id uuid, username citext, full_name text, birth_date date, gender gender_t, bio text, photos jsonb,
   loop_video_url text, music_genres text[], spotify_embed_url text, is_verified boolean,
-  mood_tag mood_tag_t, last_active_at timestamptz, music_affinity int, rank numeric
+  mood_tag mood_tag_t, last_active_at timestamptz, music_affinity int, rank numeric, shared_zones text[]
 ) language sql stable security definer set search_path = public as $$
   with me as (
-    select p.music_genres, a.mood_tag from public.profiles p
+    select p.music_genres, a.mood_tag, a.visited_sectors from public.profiles p
     join public.event_attendees a on a.user_id = p.id and a.event_id = p_event
     where p.id = auth.uid()
   )
@@ -644,13 +648,16 @@ returns table (
              / nullif(cardinality(p.music_genres) + cardinality(me.music_genres), 0), 0)
          + 0.25 * case when a.mood_tag = me.mood_tag then 0.8 when a.mood_tag in ('open_to_meet','at_bar','after_hunt') and me.mood_tag in ('open_to_meet','at_bar','after_hunt') then 0.7 else 0.4 end
          + 0.15 * greatest(0, 1 - extract(epoch from now() - a.last_active_at) / 5400)
-         )::numeric, 4) as rank
+         )::numeric, 4) as rank,
+         array(select unnest(a.visited_sectors) intersect select unnest(me.visited_sectors)) as shared_zones
   from public.event_attendees a
   join public.profiles p on p.id = a.user_id
   cross join me
   where a.event_id = p_event and a.user_id <> auth.uid() and not a.ghost_mode
     and not public.is_blocked(auth.uid(), a.user_id)
     and public.lobby_is_open(p_event)
+    and not exists (select 1 from public.connections c where c.event_id = p_event and c.status = 'rejected'
+                    and ((c.sender_id = auth.uid() and c.receiver_id = a.user_id) or (c.sender_id = a.user_id and c.receiver_id = auth.uid())))
   order by rank desc;
 $$;
 
@@ -716,6 +723,7 @@ begin
   if not public.lobby_is_open(p_event) then raise exception 'lobby_closed'; end if;
   if not public.is_event_attendee(p_event, v_uid) or not public.is_event_attendee(p_event, p_receiver) then raise exception 'not_attendee'; end if;
   if public.is_blocked(v_uid, p_receiver) then raise exception 'unavailable'; end if;
+  if exists (select 1 from public.event_attendees where event_id = p_event and user_id = v_uid and ghost_mode) then raise exception 'sender_in_ghost_mode'; end if;
   if public.is_match(p_event, v_uid, p_receiver) then raise exception 'already_matched'; end if;
 
   select * into v_reciprocal from public.connections
@@ -746,6 +754,7 @@ begin
   select * into v_att from public.event_attendees where event_id = p_event and user_id = v_uid for update;
   select * into v_rcv from public.event_attendees where event_id = p_event and user_id = p_receiver;
   if v_att.id is null or v_rcv.id is null or public.is_blocked(v_uid, p_receiver) or v_rcv.ghost_mode then raise exception 'unavailable'; end if;
+  if v_att.ghost_mode then raise exception 'sender_in_ghost_mode'; end if;
   if v_att.icebreaker_used then raise exception 'icebreaker_already_used'; end if;
   if coalesce(trim(p_message), '') = '' or char_length(p_message) > 140 then raise exception 'invalid_message'; end if;
   if public.is_match(p_event, v_uid, p_receiver) then raise exception 'already_matched'; end if;
@@ -754,7 +763,8 @@ begin
   ) then raise exception 'receiver_only_accepts_liked'; end if;
 
   if p_gift_item is not null then
-    select * into v_item from public.bar_menu_items where event_id = p_event and id = p_gift_item and is_available;
+    select * into v_item from public.bar_menu_items where event_id = p_event and id = p_gift_item and is_available
+      and category in ('trago','cerveza','sin_alcohol');
     if not found then raise exception 'invalid_item'; end if;
     insert into public.bar_orders (event_id, user_id, delivery_type, items_json, total_amount)
       values (p_event, v_uid, 'icebreaker_gift',
@@ -1011,6 +1021,20 @@ begin
   end if;
   return v_order;
 end $$;
+
+-- Sectores visitados (alimenta el filtro post-fiesta "Coincidieron en tu zona")
+create or replace function public.tg_pin_mark_visited()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.sector_name is not null then
+    update public.event_attendees
+       set visited_sectors = array_append(visited_sectors, new.sector_name)
+     where event_id = new.event_id and user_id = new.user_id and not (new.sector_name = any(visited_sectors));
+  end if;
+  return new;
+end $$;
+drop trigger if exists pin_mark_visited on public.map_pins;
+create trigger pin_mark_visited after insert on public.map_pins for each row execute function public.tg_pin_mark_visited();
 
 create or replace function public.tg_touch_updated_at()
 returns trigger language plpgsql as $$ begin new.updated_at := now(); return new; end $$;

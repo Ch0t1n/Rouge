@@ -30,7 +30,7 @@ import type {
   VenueLayout,
 } from "@/lib/types";
 
-export const STATE_VERSION = 1;
+export const STATE_VERSION = 2;
 
 // IDs estables → los links de demo (/join/..., /u/...) no cambian entre re-siembras.
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -106,6 +106,21 @@ const PERSONAS: Persona[] = [
   // Perfil bloqueado preventivamente por teléfono por la persona demo (ex): invisible para ella.
   { n: 13, username: "gonza.x", full_name: "Gonzalo Ibarra", age: 27, gender: "male", phone: "+5491150009999", bio: "—", genres: ["House", "Techno"], mood: "open_to_meet", spent: 8000, activeMinAgo: 2 },
 ];
+
+/** Sectores donde cada persona dejó pin esta noche (para "Coincidieron en tu zona"). */
+const VISITED: Record<number, string[]> = {
+  1: ["Pista Principal", "Barra Central"],
+  2: ["Pista Principal"],
+  3: ["Patio Terraza", "Barra Terraza"],
+  4: ["Pista Principal", "Lounge"],
+  5: ["Barra Central", "Pista Principal"],
+  6: ["Barra Central"],
+  7: ["Patio Terraza"],
+  8: ["Lounge", "Patio Terraza"],
+  10: ["Sector VIP"],
+  11: ["Sector VIP", "Barra Central"],
+  12: ["Pista Principal"],
+};
 
 const LINEUP = [
   { id: "set-1", artist: "Sol Ortega", genre: "House" as MusicGenre, from: 0, to: 90 },
@@ -210,6 +225,7 @@ export function createSeedState(now = Date.now()): RougeState {
     total_spent: p.spent,
     joined_via: i < 6 ? "single_use_code" : i % 2 ? "master_link" : "squad_link",
     last_active_at: t(-p.activeMinAgo),
+    visited_sectors: VISITED[p.n] ?? [],
     joined_at: t(START - 40 + i * 6),
   }));
 

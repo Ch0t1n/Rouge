@@ -8,6 +8,7 @@
  * con RLS + funciones RPC (ver supabase/schema.sql).
  */
 import type {
+  BarMenuItem,
   BarOrder,
   BarOrderItem,
   BlastSegment,
@@ -68,6 +69,17 @@ function touch(state: RougeState, eventId: UUID, userId: UUID, now: number): Rou
     ...state,
     event_attendees: state.event_attendees.map((a) =>
       a.event_id === eventId && a.user_id === userId ? { ...a, last_active_at: iso(now) } : a,
+    ),
+  };
+}
+
+/** Agrega el sector a `visited_sectors` (alimenta el filtro "Coincidieron en tu zona"). */
+function markVisited(state: RougeState, eventId: UUID, userId: UUID, sector: string | null): RougeState {
+  if (!sector) return state;
+  return {
+    ...state,
+    event_attendees: state.event_attendees.map((a) =>
+      a.event_id === eventId && a.user_id === userId && !a.visited_sectors.includes(sector) ? { ...a, visited_sectors: [...a.visited_sectors, sector] } : a,
     ),
   };
 }
@@ -293,6 +305,7 @@ export function joinEvent(
       user_id: userId,
       mood_tag: mood,
       ghost_mode: false,
+      visited_sectors: [],
       only_liked_can_icebreak: false,
       icebreaker_used: false,
       total_spent: 0,
@@ -346,7 +359,9 @@ function validatePair(state: RougeState, eventId: UUID, senderId: UUID, receiver
   const gate = requireInteractive(state, eventId, now);
   if (gate) return gate;
   if (senderId === receiverId) return fail("No podés conectar con vos mismo.");
-  if (!getAttendee(state, eventId, senderId)) return fail("No estás en este evento.");
+  const sender = getAttendee(state, eventId, senderId);
+  if (!sender) return fail("No estás en este evento.");
+  if (sender.ghost_mode) return fail("Estás en Modo Solo Amigos. Desactivalo para conectar con gente nueva.");
   const receiver = getAttendee(state, eventId, receiverId);
   if (!receiver || isBlockedBetween(state, senderId, receiverId)) return fail(UNAVAILABLE);
   return null;
@@ -435,6 +450,30 @@ function seedIcebreakerMessage(state: RougeState, c: Connection, now: number): R
   return { ...state, messages: [...state.messages, msg] };
 }
 
+export const ICEBREAKER_MAX = 140;
+export const GIFTABLE_CATEGORIES: BarMenuItem["category"][] = ["trago", "cerveza", "sin_alcohol"];
+
+/**
+ * ¿Puede `senderId` mandarle su Rompehielos a `receiverId`? Devuelve null si
+ * puede o el motivo (para deshabilitar el botón ANTES de que escriba).
+ */
+export function icebreakerEligibility(state: RougeState, eventId: UUID, senderId: UUID, receiverId: UUID, now = Date.now()): string | null {
+  const err = validatePair(state, eventId, senderId, receiverId, now);
+  if (err) return err.error;
+  const sender = getAttendee(state, eventId, senderId)!;
+  const receiver = getAttendee(state, eventId, receiverId)!;
+  if (sender.icebreaker_used) return "Ya usaste tu Rompehielos de esta noche.";
+  if (receiver.ghost_mode) return UNAVAILABLE;
+  const existing = connectionBetween(state, eventId, senderId, receiverId);
+  if (existing.some((c) => c.status === "accepted")) return "Ya hicieron match: escribile por chat.";
+  if (existing.some((c) => c.status === "rejected")) return UNAVAILABLE;
+  if (existing.some((c) => c.sender_id === senderId && c.type === "icebreaker")) return "Ya le enviaste un Rompehielos.";
+  if (receiver.only_liked_can_icebreak && !existing.some((c) => c.sender_id === receiverId)) {
+    return "Esta persona solo recibe Rompehielos de gente a la que conectó primero.";
+  }
+  return null;
+}
+
 export interface IcebreakerInput {
   message: string;
   /** Fase 2: adjuntar un "Trago Rompehielos" prepago (id de ítem del menú). */
@@ -449,26 +488,12 @@ export function sendIcebreaker(
   input: IcebreakerInput,
   now = Date.now(),
 ): Result<Connection> {
-  const err = validatePair(state, eventId, senderId, receiverId, now);
-  if (err) return err;
+  const blocked = icebreakerEligibility(state, eventId, senderId, receiverId, now);
+  if (blocked) return fail(blocked);
   const sender = getAttendee(state, eventId, senderId)!;
-  const receiver = getAttendee(state, eventId, receiverId)!;
   const text = input.message.trim();
-
-  if (sender.icebreaker_used) return fail("Ya usaste tu Rompehielos de esta noche.");
   if (!text) return fail("Escribí un mensaje para romper el hielo.");
-  if (text.length > 140) return fail("Máximo 140 caracteres.");
-  if (receiver.ghost_mode) return fail(UNAVAILABLE);
-
-  const existing = connectionBetween(state, eventId, senderId, receiverId);
-  if (existing.some((c) => c.status === "accepted")) return fail("Ya hicieron match: escribile por chat.");
-  if (existing.some((c) => c.status === "rejected")) return fail(UNAVAILABLE);
-  if (existing.some((c) => c.sender_id === senderId && c.type === "icebreaker")) return fail("Ya le enviaste un Rompehielos.");
-
-  if (receiver.only_liked_can_icebreak) {
-    const receiverLikedSender = existing.some((c) => c.sender_id === receiverId);
-    if (!receiverLikedSender) return fail("Esta persona solo recibe Rompehielos de gente a la que conectó primero.");
-  }
+  if (text.length > ICEBREAKER_MAX) return fail(`Máximo ${ICEBREAKER_MAX} caracteres.`);
 
   let next = state;
   let drinkPerkId: UUID | null = null;
@@ -476,6 +501,7 @@ export function sendIcebreaker(
   if (input.giftDrinkItemId) {
     const item = state.bar_menu.find((i) => i.id === input.giftDrinkItemId);
     if (!item) return fail("Trago inexistente.");
+    if (!GIFTABLE_CATEGORIES.includes(item.category)) return fail("Solo se pueden regalar tragos individuales.");
     const order = makeOrder(state, eventId, senderId, "icebreaker_gift", [{ item_id: item.id, name: item.name, qty: 1, unit_price: item.price }], {}, now);
     const perk = makePerk(eventId, receiverId, null, `${item.emoji} ${item.name} — regalo Rompehielos`, "gifted_drink", "icebreaker_gift", order.id, now);
     drinkPerkId = perk.id;
@@ -690,7 +716,7 @@ export function triggerRescue(
       systemMessage(eventId, sq.squad.id, userId, `🚨 RESCATE: ${name} necesita que vayan a su pin${sector ? ` (${sector})` : ""}`, now),
     ],
   };
-  return ok(next, pin);
+  return ok(markVisited(next, eventId, userId, sector), pin);
 }
 
 export function resolveRescue(state: RougeState, eventId: UUID, userId: UUID, now = Date.now()): Result {
@@ -763,10 +789,12 @@ export function dropPin(state: RougeState, eventId: UUID, userId: UUID, input: D
     created_at: iso(now),
   };
   // 1 pin activo por usuario: el nuevo reemplaza al anterior
-  const next: RougeState = {
-    ...state,
-    map_pins: [...state.map_pins.filter((p) => !(p.event_id === eventId && p.user_id === userId)), pin],
-  };
+  const next: RougeState = markVisited(
+    { ...state, map_pins: [...state.map_pins.filter((p) => !(p.event_id === eventId && p.user_id === userId)), pin] },
+    eventId,
+    userId,
+    pin.sector_name,
+  );
   return ok(touch(next, eventId, userId, now), pin);
 }
 

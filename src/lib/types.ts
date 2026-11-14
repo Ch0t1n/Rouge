@@ -138,6 +138,8 @@ export interface EventAttendee {
   total_spent: number;
   joined_via: "master_link" | "single_use_code" | "squad_link";
   last_active_at: ISODate;
+  /** Sectores del plano donde dejó pin esta noche (filtro post-fiesta "coincidieron en tu zona"). Sin coordenadas: privacidad. */
+  visited_sectors: string[];
   joined_at: ISODate;
 }
 

@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { Toaster } from "@/components/ui/toaster";
+import { BottomNav, NAV_ROUTES } from "./BottomNav";
 import { cn } from "@/lib/utils";
 
 /**
@@ -13,6 +14,7 @@ import { cn } from "@/lib/utils";
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? "/";
   const expanded = pathname.startsWith("/admin");
+  const withNav = NAV_ROUTES.includes(pathname);
 
   return (
     <>
@@ -27,10 +29,12 @@ export function AppShell({ children }: { children: ReactNode }) {
         className={cn(
           "relative min-h-screen bg-background",
           expanded ? "w-full" : "mx-auto max-w-md border-x border-white/10 shadow-2xl",
+          withNav && "pb-[calc(64px+var(--safe-bottom))]",
         )}
       >
         {children}
       </div>
+      {withNav && <BottomNav />}
       <Toaster />
     </>
   );

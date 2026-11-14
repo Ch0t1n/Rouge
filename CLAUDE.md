@@ -43,14 +43,19 @@ src/
     onboarding/           # Alta del perfil persistente en 4 pasos (guarda progresivamente)
     profile/              # "Así te ven" + completitud · profile/edit (editor completo)
     settings/privacy/     # Lista negra por teléfono + perfiles bloqueados
-    u/[username]/         # Perfil de otro asistente (afinidad, bloquear)
+    u/[username]/         # Perfil de otro asistente (afinidad, Conectar, Rompehielos, bloquear)
+    join/                 # Ingreso manual por código · join/[code]: link maestro, código único o link de Squad + Mood
+    lobby/                # Grilla por afinidad, Ghost Mode, filtros, Line-up, cambio de Mood
+    inbox/                # Rompehielos fijados arriba, solicitudes, enviadas y matches (de todos los eventos)
+    chat/[connectionId]/  # Chat 1:1 entre matches (persiste tras el cierre del lobby)
     admin/                # Suite del organizador (vista EXPANDIDA en desktop)
     offline/              # Fallback del Service Worker
   components/
     ui/                   # Primitivas: Button, Badge, Switch, BottomSheet, Avatar, Toaster, field (TextField, Segmented)
     media/                # MediaImage (placeholder color), LoopVideo (GIF-like), SpotifyEmbed (lazy)
     profile/              # ProfileView, PhotoSlots, LoopVideoField, GenrePicker, SpotifyField, PhoneField, BlacklistManager
-    layout/               # AppShell (contenedor móvil vs. admin), PersonaSwitcher, SW register
+    layout/               # AppShell (contenedor móvil vs. admin), BottomNav, PageHeader, PersonaSwitcher, SW register
+    lobby/                # GridCard, ConnectActions, IcebreakerComposer, MatchCelebration, useConnect
     venue/VenueMap.tsx    # Plano interactivo (zoom/paneo, sectores, pines)
     event/                # LineupBanner, MoodPicker
   lib/
@@ -59,6 +64,7 @@ src/
       selectors.ts        # Reglas de VISIBILIDAD (bloqueos, ghost, pines, lobby)
       actions.ts          # Reglas de NEGOCIO puras (state, input, now) → Result
       affinity.ts         # Algoritmo de afinidad
+      grid.ts             # lobbyGrid(): visibles + afinidad + estado de conexión + filtros
       profile.ts          # Validaciones de perfil, parser de Spotify, máscara de teléfono, completitud
       analytics.ts        # Métricas B2B, CRM, Smart Tags
       engine.test.ts      # Tests de invariantes de negocio
@@ -115,11 +121,20 @@ public/                   # manifest.json, sw.js, íconos, avatares demo
   (`maskPhone`). Un perfil bloqueado o inexistente muestra el mismo estado "no disponible".
 - **Teléfono privado:** nunca se expone a otros usuarios (column privileges en `profiles`);
   solo el CRM del staff (`event_crm`) lo ve.
-- **Ghost Mode:** oculta al usuario de la grilla de conexiones; sigue visible para su Squad y matches.
+- **Ghost Mode ("Modo Solo Amigos"):** oculta al usuario de la grilla de conexiones; sigue visible
+  para su Squad y matches. Mientras está activo **no puede enviar** Conectar ni Rompehielos (sí aceptar
+  solicitudes que ya tenía). Plano, barra, perks y sorteos siguen funcionando.
+- **Grilla:** `lobbyGrid()` excluye bloqueados, ghost, a uno mismo y conexiones rechazadas; ordena por
+  rank de afinidad. Filtros: géneros, moods y "Coincidieron en tu zona" (`visited_sectors` en común:
+  sectores donde cada uno dejó pin, sin guardar coordenadas).
 - **Conexión:** like normal → pendiente; like recíproco → match inmediato.
 - **Rompehielos:** **1 por evento** (`icebreaker_used`), máx 140 caracteres, fijado arriba en la
   bandeja. Respeta `only_liked_can_icebreak`. Al aceptar, su texto es el primer mensaje del chat.
-  Opcional: trago QR prepago adjunto (`gifted_drink`).
+  Opcional: trago QR prepago adjunto (`gifted_drink`), solo categorías individuales
+  (`GIFTABLE_CATEGORIES`: trago, cerveza, sin alcohol). Usar `icebreakerEligibility()` para
+  deshabilitar el botón y explicar el motivo ANTES de que el usuario escriba.
+- **Ingreso:** `resolveAccessCode()` acepta slug, código maestro, código único de 1 uso o código de
+  Squad (que además suma al Squad). Sin perfil → `/onboarding?next=/join/<code>`.
 - **Efecto Cenicienta:** el lobby abre `lobby_opens_at` y cierra `lobby_expires_at`. Cerrado ⇒
   sin grilla, plano, squads ni conexiones nuevas; **matches y chats 1:1 quedan para siempre**.
 - **Pines:** 1 activo por usuario, expiran a los **15 min**. Audiencia elegida manualmente:
@@ -156,7 +171,7 @@ public/                   # manifest.json, sw.js, íconos, avatares demo
 
 - [x] **Fase 1** — Cimientos, identidad, esquema SQL, motor de reglas y Mock Data.
 - [x] **Fase 2** — Onboarding/perfil (4 fotos comprimidas, loop 5s, géneros, Spotify), privacidad y bloqueos.
-- [ ] **Fase 3** — Ingreso `/join/[code]` + Mood, Line-up, grilla por afinidad, Ghost Mode, conexiones y Rompehielos.
+- [x] **Fase 3** — Ingreso `/join/[code]` + Mood, Line-up, grilla por afinidad, Ghost Mode, conexiones y Rompehielos.
 - [ ] **Fase 4** — Squads y seguridad, Pin-Drop 15 min, Punto Base, chat realtime (texto + fotos), Perks/QRs y Barra Express.
 - [ ] **Fase 5** — `/admin`: eventos y códigos, CRM + CSV, Text Blasts, perks y sorteos, Kanban de barra, Pantalla LED.
 

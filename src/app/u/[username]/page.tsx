@@ -10,6 +10,7 @@ import { useRouge } from "@/lib/store/RougeContext";
 import { useRequireProfile } from "@/lib/store/hooks";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ProfileView } from "@/components/profile/ProfileView";
+import { ConnectActions } from "@/components/lobby/ConnectActions";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
 
@@ -71,7 +72,7 @@ export default function UserProfilePage() {
         }
       />
       <div className="px-4">
-        <ProfileView profile={other} mood={theirs && !theirs.ghost_mode ? theirs.mood_tag : null} affinity={affinity} />
+        <ProfileView profile={other} mood={theirs && !theirs.ghost_mode ? theirs.mood_tag : null} affinity={affinity} actions={<ConnectActions target={other} />} />
       </div>
 
       <BottomSheet open={menu} onClose={() => setMenu(false)} title={`@${other.username}`}>
