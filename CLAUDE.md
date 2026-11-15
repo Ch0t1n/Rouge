@@ -30,6 +30,7 @@ npm run build      # build de producción (verifica tipos)
 npm run typecheck  # tsc --noEmit
 npm test           # tests del motor de reglas + contrato cliente ↔ schema.sql
 npm run test:integration  # integración REAL contra un Supabase de prueba (ver más abajo)
+npm run e2e:demo          # E2E Playwright contra la app en demo levantada (e2e/; también e2e:supabase, e2e:instagram)
 node scripts/generate-icons.cjs        # re-rasteriza íconos PWA desde public/icons/icon.svg
 node scripts/generate-demo-avatars.mjs # regenera avatares SVG del demo
 node scripts/capture-landing-shots.cjs # re-captura las pantallas reales de la landing (app en demo corriendo)
@@ -111,6 +112,9 @@ src/
     media/compress.ts     # Compresión WebP, color dominante, transcodificación del loop (sin audio)
     media/mediaStore.ts   # Blobs en IndexedDB (`idb:<uuid>`) para el Modo Demo
     media/upload.ts       # uploadMedia(): Supabase Storage si hay sesión, si no IndexedDB
+docs/                     # Documentación v1: producto (funcionalidades, guías, demo), técnica y operaciones
+e2e/                      # E2E Playwright (demo, Supabase, Instagram con API imitada) + env.cjs + run.cjs
+CHANGELOG.md              # Historial de versiones (SemVer); pendientes conocidos
 supabase/schema.sql       # Tablas, índices, RLS, RPCs, triggers, realtime, storage
 supabase/seed.sql         # Opcional: evento de prueba, menú y regla de QR (fechas relativas a now())
 public/                   # manifest.json, sw.js, íconos, avatares demo, landing/ (capturas WebP)
@@ -298,3 +302,4 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
 - Campos en `snake_case` (igual que Postgres) en `types.ts`.
 - Nada de `any`. Nuevas tablas ⇒ actualizar `types.ts`, `RougeState`, `seed.ts`, `schema.sql`.
 - Antes de commitear: `npm run typecheck && npm test && npm run build`.
+- Funcionalidad nueva ⇒ actualizar `docs/producto/funcionalidades.md` y el `CHANGELOG.md` (sección sin publicar).
