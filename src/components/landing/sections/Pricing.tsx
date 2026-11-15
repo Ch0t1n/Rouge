@@ -55,7 +55,7 @@ const TONE = {
 function Faq() {
   const [open, setOpen] = useState<number | null>(0);
   return (
-    <div className="divide-y divide-white/10 border-y border-white/10">
+    <div className="divide-y divide-white/10 rounded-2xl border-y border-white/10 bg-background/70 px-4 backdrop-blur-md sm:px-6">
       {FAQ.map((f, i) => {
         const isOpen = open === i;
         return (

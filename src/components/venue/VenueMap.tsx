@@ -138,6 +138,85 @@ export function VenueMap({
 
   const sectors = useMemo(() => [...layout.sectors].sort((a, b) => b.w * b.h - a.w * a.h), [layout.sectors]);
 
+  // Sectores con otro sector pegado arriba adentro (ej. Barra Terraza dentro de Patio Terraza): su nombre va abajo.
+  const labelAtBottom = useMemo(() => {
+    const out = new Set<string>();
+    for (const s of layout.sectors) {
+      const lw = ((s.name.length * 4.2 + 8) / W) * 100; // ancho aprox. del texto en % del plano
+      const lh = (14 / H) * 100;
+      const hit = layout.sectors.some((t) => t.id !== s.id && t.x < s.x + lw && t.x + t.w > s.x && t.y < s.y + lh && t.y + t.h > s.y && t.w * t.h < s.w * s.h);
+      if (hit) out.add(s.id);
+    }
+    return out;
+  }, [layout.sectors, H]);
+
+  // Ancho real del plano en pantalla: para que las etiquetas de los pines no se pisen.
+  const [vpW, setVpW] = useState(0);
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setVpW(el.clientWidth));
+    ro.observe(el);
+    setVpW(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+
+  /**
+   * Etiquetas visibles sin superposición: se ubican por prioridad (rescate > vos > Punto Base > Squad > match)
+   * y la que choca con otra etiqueta o con la foto de otro pin se oculta (el pin sigue). Al hacer zoom se separan.
+   */
+  const { shownLabels, nudge } = useMemo(() => {
+    const shown = new Set<string>();
+    const nudge = new Map<string, { dx: number; dy: number }>();
+    if (!vpW) return { shownLabels: shown, nudge };
+    const cw = vpW * view.z;
+    const ch = (vpW / layout.aspect) * view.z;
+    type M = { key: string; x: number; y: number; text: string; prio: number; avatar: number };
+    const marks: M[] = pins.map((vp) => ({
+      key: vp.pin.id,
+      x: (vp.pin.coord_x / 100) * cw,
+      y: (vp.pin.coord_y / 100) * ch,
+      text: `${vp.profile.full_name.split(" ")[0]} · ${vp.minutesLeft}m`,
+      prio: vp.pin.is_rescue_alert ? 0 : vp.audience === "self" ? 1 : vp.audience === "squad" ? 3 : 4,
+      avatar: vp.pin.is_rescue_alert ? 40 : 34,
+    }));
+    if (basePin) marks.push({ key: "base", x: (basePin.x / 100) * cw, y: (basePin.y / 100) * ch, text: basePin.label, prio: 2, avatar: 32 });
+    // Marcadores casi en el mismo punto (ej. un pin sobre el Punto Base): se separan unos px para que se vean los dos.
+    const order = [...marks.keys()].sort((i, j) => marks[i].prio - marks[j].prio);
+    const centers: { x: number; y: number }[] = [];
+    for (const i of order) {
+      const m = marks[i];
+      let { x, y } = m;
+      for (let tries = 0; tries < 6; tries++) {
+        const near = centers.find((c) => Math.hypot(c.x - x, c.y - y) < 38);
+        if (!near) break;
+        const ang = Math.atan2(y - near.y, x - near.x) || (tries % 2 ? Math.PI : 0);
+        x = near.x + Math.cos(ang) * 40;
+        y = near.y + Math.sin(ang) * 40;
+      }
+      centers.push({ x, y });
+      if (x !== m.x || y !== m.y) nudge.set(m.key, { dx: x - m.x, dy: y - m.y });
+      m.x = x;
+      m.y = y;
+    }
+    if (compact) return { shownLabels: shown, nudge };
+    const boxes: { l: number; r: number; t: number; b: number }[] = marks.map((m) => ({ l: m.x - m.avatar / 2, r: m.x + m.avatar / 2, t: m.y - 18, b: m.y - 18 + m.avatar }));
+    const placed: { l: number; r: number; t: number; b: number }[] = [];
+    const hits = (a: { l: number; r: number; t: number; b: number }, b: { l: number; r: number; t: number; b: number }) => a.l < b.r && a.r > b.l && a.t < b.b && a.b > b.t;
+    order.forEach((i) => {
+      const m = marks[i];
+      const w = Math.min(m.key === "base" ? 110 : 140, m.text.length * 6 + 14);
+      const top = m.y - 18 + m.avatar + 4;
+      const box = { l: m.x - w / 2, r: m.x + w / 2, t: top, b: top + 17 };
+      const clash = placed.some((p) => hits(p, box)) || boxes.some((b, j) => j !== i && hits(b, box));
+      if (!clash) {
+        shown.add(m.key);
+        placed.push(box);
+      }
+    });
+    return { shownLabels: shown, nudge };
+  }, [pins, basePin, vpW, view.z, layout.aspect, compact]);
+
   return (
     <div className={cn("relative", className)}>
       <div
@@ -213,10 +292,10 @@ export function VenueMap({
                     {s.kind === "entrance" && <path d={`M${x + w / 2 - 6} ${y + h - 6} L${x + w / 2} ${y + 6} L${x + w / 2 + 6} ${y + h - 6}`} fill="none" stroke={st.stroke} strokeWidth={1.2} />}
                     <text
                       x={x + (s.kind === "booth" ? w / 2 : 6)}
-                      y={y + (s.kind === "booth" ? h * 0.38 : 11)}
+                      y={y + (s.kind === "booth" ? h * 0.38 : labelAtBottom.has(s.id) ? h - 5 : 11)}
                       textAnchor={s.kind === "booth" ? "middle" : "start"}
                       fill={st.label}
-                      fontSize={s.kind === "dancefloor" ? 9 : 6.4}
+                      fontSize={Math.min(s.kind === "dancefloor" ? 9 : 6.4, (w - 10) / (s.name.length * 0.7))}
                       fontFamily="var(--font-display)"
                       fontWeight={700}
                       letterSpacing="0.04em"
@@ -231,12 +310,12 @@ export function VenueMap({
 
           {/* Punto Base del Squad */}
           {basePin && (
-            <MapMarker x={basePin.x} y={basePin.y} z={view.z}>
+            <MapMarker x={basePin.x} y={basePin.y} z={view.z} nudge={nudge.get("base")}>
               <div className="flex flex-col items-center" title={basePin.label}>
                 <span className="grid size-8 place-items-center rounded-full bg-vip text-background shadow-glow-vip ring-2 ring-background">
                   <Flag className="size-4" />
                 </span>
-                {!compact && <span className="mt-1 max-w-[110px] truncate rounded-full bg-vip/90 px-2 py-0.5 font-display text-[10px] font-bold text-background">{basePin.label}</span>}
+                {!compact && shownLabels.has("base") && <span className="mt-1 max-w-[110px] truncate rounded-full bg-vip/90 px-2 py-0.5 font-display text-[10px] font-bold text-background">{basePin.label}</span>}
               </div>
             </MapMarker>
           )}
@@ -246,7 +325,7 @@ export function VenueMap({
             const color = { rescue: "bg-rouge", rouge: "bg-rouge", squad: "bg-squad", self: "bg-white" }[tone];
             const ring = { rescue: "rouge", rouge: "rouge", squad: "squad", self: "none" }[tone] as "rouge" | "squad" | "none";
             return (
-              <MapMarker key={vp.pin.id} x={vp.pin.coord_x} y={vp.pin.coord_y} z={view.z}>
+              <MapMarker key={vp.pin.id} x={vp.pin.coord_x} y={vp.pin.coord_y} z={view.z} nudge={nudge.get(vp.pin.id)}>
                 <button
                   data-pin
                   type="button"
@@ -263,7 +342,7 @@ export function VenueMap({
                       </span>
                     )}
                   </span>
-                  {!compact && (
+                  {!compact && shownLabels.has(vp.pin.id) && (
                     <span
                       className={cn(
                         "mt-1 whitespace-nowrap rounded-full px-1.5 py-0.5 font-display text-[10px] font-bold",
@@ -311,9 +390,11 @@ export function VenueMap({
 }
 
 /** Posiciona un marcador en % y lo contra-escala para que no crezca con el zoom. */
-function MapMarker({ x, y, z, children }: { x: number; y: number; z: number; children: ReactNode }) {
+function MapMarker({ x, y, z, nudge, children }: { x: number; y: number; z: number; nudge?: { dx: number; dy: number }; children: ReactNode }) {
+  const dx = (nudge?.dx ?? 0) / z;
+  const dy = (nudge?.dy ?? 0) / z;
   return (
-    <div className="absolute" style={{ left: `${x}%`, top: `${y}%`, transform: `translate(-50%, -18px) scale(${1 / z})`, transformOrigin: "50% 18px" }}>
+    <div className="absolute" style={{ left: `${x}%`, top: `${y}%`, transform: `translate(calc(-50% + ${dx}px), ${dy - 18}px) scale(${1 / z})`, transformOrigin: "50% 18px" }}>
       {children}
     </div>
   );

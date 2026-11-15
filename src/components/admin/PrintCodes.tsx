@@ -31,8 +31,8 @@ export function PrintCodes() {
         <Link href="/admin/events" className={buttonVariants({ variant: "ghost", size: "sm" })}>
           <ArrowLeft /> Volver
         </Link>
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-2xl">QRs de 1 uso · {event.name}</h1>
+        <div className="order-first w-full min-w-0 sm:order-none sm:w-auto sm:flex-1">
+          <h1 className="text-2xl [text-wrap:balance]">QRs de 1 uso · {event.name}</h1>
           <p className="text-sm text-muted">{free.length} códigos libres. Cada QR entra una sola vez: entregalos con cada entrada.</p>
         </div>
         <label className="text-sm text-muted">

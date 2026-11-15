@@ -50,10 +50,13 @@ export function Hero() {
 
   return (
     <section ref={root} data-stage="0" className="relative flex min-h-[100svh] flex-col justify-end px-4 pb-10 pt-28 sm:px-8 lg:pb-14">
-      <p data-hero-fade className="font-mono text-[11px] uppercase tracking-[0.25em] text-muted sm:text-xs">
-        [ NEXT-GEN NIGHTLIFE ECOSYSTEM <span className="text-rouge">{"//"}</span> B2B2C ]
+      {/* En celular, dos renglones alineados (sin sangría ni "B2B2C ]" huérfano); desde sm, en una línea. */}
+      <p data-hero-fade className="flex flex-col items-start gap-1.5 font-mono text-[11px] uppercase tracking-[0.18em] text-muted sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:text-xs sm:tracking-[0.25em]">
+        <span className="[text-wrap:balance]">
+          [ NEXT-GEN NIGHTLIFE ECOSYSTEM <span className="text-rouge">{"//"}</span> B2B2C ]
+        </span>
         {eventName && (
-          <span className="ml-3 inline-flex items-center gap-1.5 text-squad">
+          <span className="inline-flex items-center gap-1.5 text-squad">
             <span className="size-1.5 animate-pulse rounded-full bg-squad" /> EN VIVO: {eventName.toUpperCase()}
           </span>
         )}

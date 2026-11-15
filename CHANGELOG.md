@@ -2,6 +2,24 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y [SemVer](https://semver.org/lang/es/).
 
+## [1.2.1] — 2026-11-15
+
+Revisión visual completa (81 combinaciones de pantalla × tamaño × rol, más el arranque).
+
+### Corregido
+- Inicio: se quitó la tarjeta interna "Roadmap del MVP" que veían los asistentes.
+- Plano: las etiquetas de pines y del Punto Base ya no se pisan (se muestra la más importante; al acercar
+  vuelven), los marcadores en el mismo lugar se separan y los nombres de sectores siempre entran en su recuadro
+  (y van abajo cuando hay otro sector pegado arriba).
+- Panel en celular: Eventos y accesos, Text Blasts y Perks y sorteos se salían de la pantalla (scroll horizontal).
+- Panel en tablet: en el line-up el nombre del artista quedaba aplastado a una letra.
+- Barra / POS y hoja imprimible de QRs: encabezados que se cortaban en celular.
+- Links chicos del Inicio y del Squad: ahora miden 44 px de alto para tocarlos con el dedo.
+- Landing 3D en celular: el encabezado del hero ("NEXT-GEN NIGHTLIFE…" / "EN VIVO…") queda en dos renglones
+  alineados, sin sangría ni texto huérfano.
+- Landing 3D: las preguntas frecuentes y los links del pie tienen un fondo translúcido para leerse aunque la
+  escena 3D pase por detrás.
+
 ## [1.2.0] — 2026-11-15
 
 Primera versión publicada en producción.

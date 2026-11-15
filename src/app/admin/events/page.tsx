@@ -171,8 +171,10 @@ function EventEditor({ event, onSaved }: { event: RougeEvent | null; onSaved: (i
           {lineup.length === 0 && <p className="rounded-2xl border border-dashed border-white/10 p-4 text-center text-sm text-muted">Sin sets todavía.</p>}
           <ul className="space-y-2">
             {lineup.map((sl) => (
-              <li key={sl.id} className="grid grid-cols-1 items-end gap-2 rounded-2xl border border-white/10 p-3 sm:grid-cols-[1.4fr_1fr_1fr_auto_auto]">
-                <TextField label="Artista" value={sl.artist} onChange={(e) => patchSlot(sl.id, { artist: e.target.value })} />
+              <li key={sl.id} className="grid grid-cols-1 items-end gap-2 rounded-2xl border border-white/10 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] 2xl:grid-cols-[minmax(10rem,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_auto_auto]">
+                <div className="min-w-0 sm:col-span-4 2xl:col-span-1">
+                  <TextField label="Artista" value={sl.artist} onChange={(e) => patchSlot(sl.id, { artist: e.target.value })} />
+                </div>
                 <TextField label="Desde" type="datetime-local" value={toLocal(sl.starts_at)} onChange={(e) => patchSlot(sl.id, { starts_at: fromLocal(e.target.value) })} />
                 <TextField label="Hasta" type="datetime-local" value={toLocal(sl.ends_at)} onChange={(e) => patchSlot(sl.id, { ends_at: fromLocal(e.target.value) })} />
                 <label className="flex min-h-[52px] items-center gap-2 text-sm">

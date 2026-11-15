@@ -51,7 +51,7 @@ export default function AdminBarPosPage() {
         subtitle={`${orders.length - completed.length} pedidos abiertos · ${formatMoney(revenue)} vendidos por la app`}
         actions={
           <form
-            className="flex items-center gap-2"
+            className="flex w-full items-center gap-2 sm:w-auto"
             onSubmit={async (e) => {
               e.preventDefault();
               // QR de perk (trago gratis, premio, regalo de Rompehielos): lo canjea quien tenga perks.redeem (barra).
@@ -71,10 +71,10 @@ export default function AdminBarPosPage() {
               }
             }}
           >
-            <label className="relative">
+            <label className="relative min-w-0 flex-1 sm:w-72 sm:flex-none">
               <span className="sr-only">Código de retiro</span>
               <ScanLine className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-squad" />
-              <input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder={can("perks.redeem") ? "Código de retiro o QR de perk" : "Código o QR de retiro"} className="min-h-touch w-56 rounded-2xl border border-squad/40 bg-squad/[0.06] pl-9 pr-3 font-display text-sm tracking-wider focus:outline-none focus:ring-2 focus:ring-squad/50" />
+              <input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder={can("perks.redeem") ? "Código de retiro o QR de perk" : "Código o QR de retiro"} className="min-h-touch w-full min-w-0 rounded-2xl border border-squad/40 bg-squad/[0.06] pl-9 pr-3 font-display text-sm tracking-wider focus:outline-none focus:ring-2 focus:ring-squad/50" />
             </label>
             <Button type="submit" variant="squad" disabled={!code.trim()}>
               <PackageCheck /> Entregar

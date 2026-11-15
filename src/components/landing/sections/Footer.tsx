@@ -54,9 +54,9 @@ export function Footer() {
         <div>
           <p className="font-mono text-xs uppercase tracking-[0.25em] text-rouge">[ 06 {"//"} ESTA NOCHE ]</p>
           <h2 className="mt-4 font-display text-5xl font-bold uppercase leading-[0.9] tracking-tighter sm:text-7xl">¿Salís hoy?</h2>
-          <p className="mt-4 max-w-md text-muted">Entrá con el link de tu entrada o armá tu evento en minutos. Todo link tiene su QR.</p>
+          <p className="mt-4 max-w-md rounded-xl bg-background/60 text-muted backdrop-blur-sm">Entrá con el link de tu entrada o armá tu evento en minutos. Todo link tiene su QR.</p>
         </div>
-        <nav aria-label="Vistas de la demo" className="grid gap-1">
+        <nav aria-label="Vistas de la demo" className="grid gap-1 rounded-2xl bg-background/70 p-3 backdrop-blur-md">
           {links.map((l) => (
             <Link
               key={l.label}

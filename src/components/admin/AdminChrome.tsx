@@ -178,14 +178,15 @@ export function AdminHeader({ title, subtitle, actions }: { title: string; subti
         <h1 className="text-3xl lg:text-4xl">{title}</h1>
         {subtitle && <p className="mt-1 text-sm text-muted">{subtitle}</p>}
       </div>
-      {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
+      {actions && <div className="flex w-full flex-wrap gap-2 sm:w-auto">{actions}</div>}
     </div>
   );
 }
 
 export function Panel({ title, action, children, className }: { title?: ReactNode; action?: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <section className={cn("glass rounded-3xl p-5", className)}>
+    // min-w-0: como ítem de grilla, un panel nunca se estira por el ancho de su contenido (filas con scroll, links largos).
+    <section className={cn("glass min-w-0 rounded-3xl p-5", className)}>
       {(title || action) && (
         <div className="mb-4 flex items-center justify-between gap-3">
           {title && <h2 className="text-lg">{title}</h2>}

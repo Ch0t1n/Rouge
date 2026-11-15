@@ -307,7 +307,7 @@ const meId = state.current_user_id;
             <Gift className="size-4" /> {rule.title}
           </p>
           {unlocked ? (
-            <Link href="/perks" className="mt-2 inline-block text-sm text-primary underline decoration-vip underline-offset-4">
+            <Link href="/perks" className="mt-1 inline-flex min-h-touch items-center text-sm text-primary underline decoration-vip underline-offset-4">
               ¡Desbloqueado! Ver mi QR →
             </Link>
           ) : (

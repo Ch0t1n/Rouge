@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { UserRound, ArrowRight, Check, ChevronRight, Clock3, Crown, DoorOpen, Flag, Gift, Heart, LayoutDashboard, MapPin, Martini, QrCode, ShieldCheck, Users, Zap } from "lucide-react";
+import { UserRound, ArrowRight, ChevronRight, Clock3, Crown, DoorOpen, Flag, Gift, Heart, LayoutDashboard, MapPin, Martini, QrCode, ShieldCheck, Users, Zap } from "lucide-react";
 import { MOOD_TAGS } from "@/lib/types";
 import {
   activeEvent,
@@ -40,14 +40,6 @@ const PHASE_LABEL: Record<LobbyPhase, string> = {
   afterglow: "After · lobby abierto",
   expired: "Lobby cerrado",
 };
-
-const ROADMAP = [
-  { n: 1, title: "Cimientos, identidad, SQL y Mock Data", done: true },
-  { n: 2, title: "Onboarding, perfil, Spotify y bloqueo por teléfono", done: true },
-  { n: 3, title: "Lobby: grilla por afinidad, Ghost Mode, Rompehielos", done: true },
-  { n: 4, title: "Squads, seguridad, Pin-Drop 15m, chat y perks", done: true },
-  { n: 5, title: "Suite B2B: CRM, Blasts, sorteos, barra y LED", done: true },
-];
 
 export default function HomePage() {
   const me = useRequireProfile();
@@ -213,7 +205,7 @@ function Home() {
           <div className="mb-2 flex items-end justify-between">
             <div>
               <h2 className="text-lg">Plano en vivo</h2>
-              <Link href="/map" className="text-xs font-semibold text-squad">Abrir plano y dejar mi pin →</Link>
+              <Link href="/map" className="-my-3 inline-flex min-h-touch items-center text-xs font-semibold text-squad">Abrir plano y dejar mi pin →</Link>
             </div>
             <div className="flex gap-3 text-[11px] font-semibold">
               <Legend className="bg-squad" label="Squad" />
@@ -238,24 +230,6 @@ function Home() {
               })
             }
           />
-        </section>
-
-        {/* Roadmap */}
-        <section className="glass rounded-3xl p-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg">Roadmap del MVP</h2>
-            <Badge tone="squad">MVP completo</Badge>
-          </div>
-          <ol className="mt-3 space-y-2">
-            {ROADMAP.map((f) => (
-              <li key={f.n} className="flex items-center gap-3 text-sm">
-                <span className={cn("grid size-7 shrink-0 place-items-center rounded-full font-display text-xs font-bold", f.done ? "bg-squad text-background" : "bg-white/5 text-muted")}>
-                  {f.done ? <Check className="size-4" /> : f.n}
-                </span>
-                <span className={f.done ? "text-primary" : "text-muted"}>{f.title}</span>
-              </li>
-            ))}
-          </ol>
         </section>
 
         <Link href="/settings/privacy" className="glass flex min-h-touch items-center gap-3 rounded-2xl p-4 transition hover:bg-white/5">
