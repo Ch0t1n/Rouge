@@ -33,7 +33,7 @@ npm run test:integration  # integración REAL contra un Supabase de prueba (ver 
 npm run e2e:demo          # E2E Playwright contra la app en demo levantada (e2e/; también e2e:supabase, e2e:instagram, e2e:api)
 node scripts/generate-icons.cjs        # re-rasteriza íconos PWA desde public/icons/icon.svg
 node scripts/generate-demo-avatars.mjs # regenera avatares SVG del demo
-node scripts/capture-landing-shots.cjs # re-captura las pantallas reales de la landing (app en demo corriendo)
+node scripts/capture-landing-shots.cjs # capturas reales de la app en public/landing (material comercial; la landing 3D no las usa)
 ```
 
 ## Estructura
@@ -42,7 +42,7 @@ node scripts/capture-landing-shots.cjs # re-captura las pantallas reales de la l
 src/
   app/                    # Rutas (App Router)
     layout.tsx            # Fuentes, metadata PWA, RougeProvider, AppShell
-    page.tsx              # Landing pública a ancho completo (capturas reales en public/landing)
+    page.tsx              # Landing comercial 3D a ancho completo (components/landing)
     app/                  # Home del asistente (hub del evento) — start_url de la PWA
     login/                # Login por tipo de usuario: Asistente / Equipo. Supabase: magic link, Google, Instagram; demo: persona/rol
       instagram/          # Vuelta del login con Instagram: canjea #token_hash por la sesión (verifyOtp)
@@ -82,7 +82,8 @@ src/
     perks/                # QrBlock (QR alto contraste)
     share/ShareSheet.tsx  # QR + compartir nativo + WhatsApp + copiar + PNG para CUALQUIER link (useShare, ShareButton)
     social/               # SocialLoginButtons, InstagramPhotoPicker, InstagramField (+ useInstagramReturn), InstagramCallback
-    landing/Landing.tsx   # Secciones de la landing
+    landing/              # Landing 3D: Landing.tsx (composición), core/ (Lenis+ScrollTrigger, scrollStore, entry: destinos de CTAs),
+                          # fx/ (Cursor, Magnetic, SplitReveal, TiltCard), three/ (Scene R3F + choreography), sections/ (8 secciones)
     admin/                # AdminChrome (nav por permisos, NoAccess, badge de rol), TeamPanel, SecurityPanel, ApiKeysPanel, PrintCodes, AdminHeader, Panel, downloadCSV
     venue/VenueMap.tsx    # Plano interactivo (zoom/paneo, sectores, pines)
     event/                # LineupBanner, MoodPicker
@@ -213,6 +214,13 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
     `service_role` (cerradas para `public`, `anon` y `authenticated`). Las claves se crean con `create_api_key` (devuelve
     la clave UNA vez; se guarda su SHA-256) y el servidor las busca por hash. Respuestas `{ data }` / `{ error: { code,
     message } }`. Cambios de la API ⇒ actualizar `openapi.ts`, `docs/api/README.md`, `v1.test.ts` y `e2e/api.cjs`.
+19. **Landing 3D.** Stack solo de la landing: `three` + `@react-three/fiber` + `drei`, `gsap` (+ `@gsap/react`,
+   ScrollTrigger), `lenis` y `framer-motion`. La escena (`three/Scene.tsx`) se carga con `dynamic(..., { ssr: false })` y
+   es 100% procedural (sin .glb ni HDR externos: reflejos con `Lightformer`). Cada sección declara `data-stage` (0 Hero ·
+   1 Experiencia · 2 Plano/Barra · 3 B2B/Cierre) y la escena lee `scrollState` (mutable, sin renders) en `useFrame`.
+   Importar gsap desde `landing/core/gsap.ts`. Todo efecto se limpia al desmontar (useGSAP revierte, Lenis se destruye,
+   el ticker vuelve a su lagSmoothing): /app y /admin no cargan ni heredan nada de esto. Ojo con `cn()` (tailwind-merge)
+   y clases `text-glow-*`: las confunde con colores de texto; en SplitReveal se concatenan sin `cn`.
 8. **Guardado sincrónico.** `run()` persiste en el acto (y hay flush en `pagehide`): una acción
    nunca se pierde por cerrar la PWA o navegar inmediatamente.
 

@@ -19,11 +19,12 @@ const assert = (c, m) => { if (!c) throw new Error("✘ " + m); log("✔ " + m);
 
   // Landing pública
   await p.goto(`${B}/`, { waitUntil: "networkidle" });
-  assert(await p.isVisible("text=conectada."), "landing: hero");
-  assert(await p.isVisible("text=Cada tipo de usuario entra a su pantalla."), "landing: sección de roles");
-  assert((await p.locator('img[src^="/landing/"]').count()) >= 5, "landing: capturas reales de la app");
-  await p.click("header >> text=Entrar");
-  await p.waitForURL("**/login");
+  assert((await p.getAttribute("h1", "aria-label")) === "No vayas a ciegas. Domina la noche.", "landing: hero");
+  assert(await p.isVisible("#organizadores"), "landing: sección para organizadores");
+  assert((await p.locator("[data-stage]").count()) >= 6, "landing: secciones coreografiadas de la escena 3D");
+  await p.click("header >> text=Entrar a un Evento");
+  await p.waitForURL("**/app");
+  await p.goto(`${B}/login`);
 
   // Login como asistente → /app
   await p.click("text=Sofía");

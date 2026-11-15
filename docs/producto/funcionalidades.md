@@ -166,8 +166,26 @@ invitación al Squad, perfil e invitación al evento desde el inicio. `/admin/pr
 
 ## 14. Landing pública
 
-`/` presenta ROUGE con capturas reales de la app: cómo funciona, seguridad, organizadores, tipos de usuario, QR y
-llamado final ("Tengo una entrada" / "Organizar un evento"). Si ya hay sesión, ofrece "Mi pantalla".
+`/` es una landing comercial 3D para asistentes (B2C) y organizadores (B2B), con scroll suave y una escena WebGL
+procedural de fondo que cambia con cada sección (núcleo de cromo → anillos de conexiones → grilla holográfica del
+plano con pines → cierre dorado/carmesí). Secciones:
+
+1. **Hero** "No vayas a ciegas. Domina la noche." con CTAs *Probar App en Vivo* (`/app` en demo; login o tu pantalla
+   en Supabase) y *Soy Organizador* (panel `/admin`).
+2. **Marquesina** doble que acelera y cambia de sentido con el scroll.
+3. **Los 4 pilares** (lobby previo, Squads y seguridad, Pin-Drop 15 min, caducidad y privacidad) con un iPhone fijo
+   que cambia de pantalla al bajar (en mobile, cada bloque trae su pantalla).
+4. **"Tocá el club"**: plano miniatura interactivo con capas (Squad, Matches, Punto Base, mapa de calor de barras) y
+   tarjetas en vivo por sector.
+5. **Smart Bar & Perks**: tarjetas con inclinación 3D (Fast-Pickup QR, delivery al pin, Vaquita, QR Drops y sorteos).
+6. **B2B**: comparación, pestañas del panel (CRM, Text Blast por zona, Pantalla LED) y **calculadora de ROI**
+   (capacidad y precio del trago; supuestos visibles, estimación ilustrativa).
+7. **Planes** (Event Pass, Club Pro, Festival/Enterprise) y preguntas frecuentes.
+8. **Footer** monumental con reloj, accesos a `/app`, `/join`, `/admin`, `/admin/bar-pos`, `/admin/live-wall` y CTA.
+
+En Modo Demo, los accesos al panel entran directo como el dueño/a o producción del evento demo (barra para
+comandas). En Supabase llevan al login de equipo con `next`. En desktop hay cursor propio magnético; respeta
+"reducir movimiento" (sin Lenis ni animaciones pesadas) y, si el dispositivo no tiene WebGL, queda el fondo CSS.
 
 ## 15. PWA y mala señal
 

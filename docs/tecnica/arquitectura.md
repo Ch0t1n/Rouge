@@ -139,7 +139,7 @@ src/lib/media/      compresión, IndexedDB, subida
 src/lib/mock/       datos del Modo Demo
 supabase/           schema.sql (todo el backend) · seed.sql (evento de prueba)
 e2e/                pruebas de navegador (Playwright) + mock de Instagram
-scripts/            íconos, avatares demo, capturas de la landing
+scripts/            íconos, avatares demo, capturas de la app (material comercial)
 ```
 
 ## Decisiones de diseño relevantes
