@@ -146,6 +146,31 @@ export interface EventInviteCode {
   is_used: boolean;
   used_by_user_id: UUID | null;
   used_at: ISODate | null;
+  /** Referencia de la entrada en el sistema del cliente (ticketera). Única por evento: hace idempotente la API. */
+  external_ref: string | null;
+  /** Etiqueta libre (ej. "VIP", "General"). */
+  label: string | null;
+  source: "panel" | "api";
+  api_key_id: UUID | null;
+  /** Anulado (ej. entrada reembolsada): deja de servir para entrar. */
+  revoked_at: ISODate | null;
+  created_at: ISODate;
+}
+
+export type ApiScope = "codes:read" | "codes:write";
+
+/** Clave de la API v1 para clientes empresariales (tabla `api_keys`, sin el hash). */
+export interface ApiKey {
+  id: UUID;
+  name: string;
+  /** Parte visible de la clave (ej. rk_live_ab12cd34ef). La clave completa se muestra una sola vez. */
+  prefix: string;
+  created_by: UUID;
+  /** null = todos los eventos que administra quien la creó. */
+  event_id: UUID | null;
+  scopes: ApiScope[];
+  last_used_at: ISODate | null;
+  revoked_at: ISODate | null;
   created_at: ISODate;
 }
 
@@ -385,6 +410,8 @@ export interface RougeState {
   events: RougeEvent[];
   event_staff: EventStaff[];
   event_invite_codes: EventInviteCode[];
+  /** Mis claves de la API (Supabase: solo las que creé). */
+  api_keys: ApiKey[];
   event_attendees: EventAttendee[];
   connections: Connection[];
   squads: Squad[];

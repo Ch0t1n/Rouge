@@ -208,10 +208,47 @@ describe("schema.sql: RLS y RPCs resisten ataques (PGlite)", () => {
     r = await as("B", `select phone_normalized from public.profiles where id = $1`, [U.A]);
     check("el teléfono ajeno sigue siendo ilegible", !r.ok);
 
+    // ── API v1 para ticketeras (claves y códigos por entrada)
+    const asService = async (sql: string, p: unknown[] = []): Promise<Q> => {
+      await db.exec("reset role");
+      await db.exec("set role service_role");
+      try {
+        return { ok: true, rows: (await db.query<Record<string, unknown>>(sql, p)).rows };
+      } catch (e) {
+        return { ok: false, err: (e as Error).message };
+      } finally {
+        await db.exec("reset role");
+      }
+    };
+    r = await as("C", `select public.create_api_key('Mi ticketera', $1) as k`, [EV]);
+    check("un asistente no puede crear claves de API", !r.ok && /forbidden/.test(err(r)), JSON.stringify(r));
+    r = await as("O", `select public.create_api_key('Ticketera', $1) as k`, [EV]);
+    const created = rows(r)[0]?.k as { id?: string; key?: string } | undefined;
+    check("el dueño crea una clave (se muestra una sola vez)", r.ok && /^rk_live_/.test(String(created?.key)), JSON.stringify(r));
+    r = await as("O", `select key_hash from public.api_keys`);
+    check("ni el dueño puede leer el hash de la clave", !r.ok);
+    r = await as("A", `select id from public.api_keys`);
+    check("otra persona del equipo no ve las claves del dueño", denied(r));
+    r = await as("O", `select * from public.api_issue_codes($1, $2, 3)`, [created?.id, EV]);
+    check("las funciones api_* no se pueden llamar con sesión de usuario (solo el servidor)", !r.ok && /permission denied/.test(err(r)), JSON.stringify(r));
+    r = await as(null, `select public.api_authorize($1, $2, 'codes:write')`, [created?.id, EV]);
+    check("anon tampoco", !r.ok);
+    r = await asService(`select * from public.api_issue_codes($1, $2, null, '[{"external_ref":"ORD-1"}]'::jsonb)`, [created?.id, EV]);
+    const ticket = String(rows(r)[0]?.code ?? "");
+    check("el servidor emite un código por entrada", r.ok && ticket.length === 10, JSON.stringify(r));
+    r = await asService(`select (public.api_revoke_code($1, $2, $3)).revoked_at is not null as ok`, [created?.id, EV, ticket]);
+    check("el servidor anula el código (reembolso)", r.ok && rows(r)[0]?.ok === true, JSON.stringify(r));
+    await su(`delete from public.event_attendees where user_id = $1`, [U.B]);
+    r = await as("B", `select public.join_event($1, 'open_to_meet') as e`, [ticket]);
+    check("un código anulado no sirve para entrar", r.ok && rows(r)[0]?.e === null, JSON.stringify(r));
+    await su(`update public.events set created_by = null where id = $1`, [EV]);
+    r = await asService(`select public.api_authorize($1, $2, 'codes:write') as ok`, [created?.id, EV]);
+    check("si quien creó la clave deja de ser dueño/producción, la clave deja de funcionar", r.ok && rows(r)[0]?.ok === false, JSON.stringify(r));
+
   }, 60_000);
 
   it("todos los ataques quedan bloqueados y los flujos legítimos siguen andando", () => {
-    expect(results.length).toBeGreaterThan(40);
+    expect(results.length).toBeGreaterThan(55);
     const failed = results.filter((r) => !r.pass).map((r) => `${r.label} ${r.detail}`);
     expect(failed).toEqual([]);
   });

@@ -25,6 +25,12 @@ Marcar antes del primer evento real.
 - [ ] Integración real (`npm run test:integration`) pasando contra staging.
 - [ ] Alguien de guardia con acceso a Vercel y Supabase durante el evento.
 
+## API para ticketeras (si se usa)
+
+- [ ] `SUPABASE_SERVICE_ROLE_KEY` y `NEXT_PUBLIC_APP_URL` cargadas; `GET /api/v1` responde.
+- [ ] Clave creada para la ticketera y prueba de punta a punta: código por entrada → mail con QR → entrar → anular.
+- [ ] Guía de la API compartida con la ticketera ([docs/api](../api/README.md)).
+
 ## Seguridad
 
 - [ ] **2FA** en todas las cuentas con poder: Vercel, Supabase, GitHub, Meta for Developers, Google Cloud y el registrador del dominio.

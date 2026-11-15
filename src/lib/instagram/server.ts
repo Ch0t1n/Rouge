@@ -13,6 +13,7 @@
  */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
+import { publicOrigin } from "@/lib/security/api";
 import { importablePhotos, isAllowedMediaHost, isImportableImageType, openToken, parseTokenResponse, sealToken, type IgMediaRaw } from "./oauth";
 
 export const IG_COOKIE = "rouge_ig_nonce";
@@ -47,10 +48,9 @@ export const igConfigured = () => {
  * (el Host del request lo controla quien manda el pedido: no sirve para armar links con tokens).
  */
 export function siteOrigin(req: NextRequest): string {
-  const fixed = process.env.NEXT_PUBLIC_APP_URL;
-  if (fixed) return new URL(fixed).origin;
-  if (isProd()) throw new IgError("ig_not_configured", 503);
-  return req.nextUrl.origin;
+  const origin = publicOrigin(req);
+  if (!origin) throw new IgError("ig_not_configured", 503);
+  return origin;
 }
 
 export const redirectUri = (req: NextRequest) => `${siteOrigin(req)}/api/instagram/callback`;

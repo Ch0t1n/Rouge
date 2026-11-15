@@ -15,6 +15,10 @@ const PROFILE_COLUMNS = "id,username,full_name,birth_date,gender,bio,photos,loop
 
 type Row = Record<string, unknown>;
 
+/** Ids por pedido al cargar perfiles (≈ 2,3 KB de URL: entra holgado en cualquier gateway). */
+export const PROFILE_BATCH = 60;
+export const chunk = <T,>(list: T[], size: number): T[][] => Array.from({ length: Math.ceil(list.length / size) }, (_, i) => list.slice(i * size, (i + 1) * size));
+
 async function q<T = Row>(p: PromiseLike<{ data: unknown; error: { message: string } | null }>): Promise<T[]> {
   const { data, error } = await p;
   if (error) throw error;
@@ -77,6 +81,8 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
     q<Profile>(sb.rpc("my_profile")),
   ]);
   // Mi Instagram conectado (sin token). Si la RPC no existe todavía (esquema viejo), no rompe la carga.
+  // Mis claves de la API (la columna key_hash no es legible por clientes).
+  const apiKeys = await q<RougeState["api_keys"][number]>(sb.from("api_keys").select("id,name,prefix,created_by,event_id,scopes,last_used_at,revoked_at,created_at").eq("created_by", userId).order("created_at", { ascending: false })).catch(() => []);
   const igRows = await q<{ username: string; account_type: string | null; connected_at: string }>(sb.rpc("my_instagram")).catch(() => []);
   // Mis roles en todos los eventos (selector del panel) + el equipo completo del evento activo si soy staff.
   const teamRows = isStaff ? await byEvent<RougeState["event_staff"][number]>("event_staff") : [];
@@ -91,7 +97,8 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
   raffles.forEach((r) => r.winner_user_id && ids.add(r.winner_user_id));
   orders.forEach((o) => ids.add(o.user_id));
   teamRows.forEach((r) => ids.add(r.user_id));
-  const profiles = ids.size ? await q<Profile>(sb.from("profiles").select(PROFILE_COLUMNS).in("id", [...ids])) : [];
+  // Por tandas: un `in (...)` con cientos de ids arma una URL que los gateways rechazan (evento real = miles de asistentes).
+  const profiles = (await Promise.all(chunk([...ids], PROFILE_BATCH).map((part) => q<Profile>(sb.from("profiles").select(PROFILE_COLUMNS).in("id", part))))).flat();
 
   // Mi teléfono (my_profile) y, para el staff, los de los asistentes (event_crm) → CRM y bloqueos.
   const phones = new Map<UUID, string | null>();
@@ -119,6 +126,7 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
     events,
     event_staff: eventStaff,
     event_invite_codes: codes,
+    api_keys: apiKeys,
     event_attendees: attendees.map((a) => ({ ...a, total_spent: Number(a.total_spent), visited_sectors: a.visited_sectors ?? [] })),
     connections,
     squads,

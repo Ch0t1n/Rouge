@@ -180,6 +180,10 @@ describe("contrato comandos ↔ schema.sql", () => {
     ["upsertEvent (edición)", () => runRemote(C.upsertEvent({ ...s0().events[0], name: "Otro nombre" }), st())],
     ["generateInviteCodes", () => runRemote(C.generateInviteCodes(EV, 5), st(), { generate_invite_codes: [] })],
     ["setStaffRole", () => runRemote(C.setStaffRole(EV, "@" + s0().profiles.find((p) => p.id === ME)!.username, "bartender"), st(), { set_staff_role: ME })],
+    ["revokeInviteCode", () => runRemote(C.revokeInviteCode(s0().event_invite_codes.find((c) => !c.is_used)!), st())],
+    ["createApiKey", () => runRemote(C.createApiKey("Ticketera", EV), st(), { create_api_key: { id: id(9), key: "rk_live_x_y", prefix: "rk_live_x" } })],
+    ["createApiKey (todos mis eventos)", () => runRemote(C.createApiKey("Productora", null), st(), { create_api_key: { id: id(9), key: "rk_live_x_y", prefix: "rk_live_x" } })],
+    ["revokeApiKey", () => { const r = C.createApiKey("T", EV).local(st()); const s = (r as { state: RougeState }).state; return runRemote(C.revokeApiKey(s.api_keys[0].id), s); }],
     ["setStaffRole (quitar)", () => runRemote(C.setStaffRole(EV, "dani.barra", null), st(), { set_staff_role: DEMO_IDS.bartender })],
   ];
 
@@ -277,6 +281,7 @@ describe("acciones con datos generados por el servidor", () => {
       C.drawRaffle(s.raffles[0].id, () => 0),
       C.joinEvent(ME, "BRESH26", "open_to_meet"),
       C.setStaffRole(EV, "dani.barra", "waiter"),
+      C.createApiKey("Ticketera", EV),
     ];
     for (const c of cmds) expect(c.optimistic, c.name).toBe(false);
     // y las de interacción inmediata sí lo son (UI instantánea con mala señal)
@@ -325,5 +330,44 @@ describe("permisos por rol (misma regla que has_staff_role en SQL)", () => {
     expect(C.upsertEvent({ name: "Mi fiesta", starts_at: start, ends_at: end }).local(s).ok).toBe(true);
     expect(C.upsertEvent({ ...s.events[0], name: "Hackeado" }).local(s).ok).toBe(false);
     expect(C.upsertEvent({ ...s.events[0], name: "Renombrado" }).local(as(DEMO_IDS.manager)).ok).toBe(true);
+  });
+});
+
+describe("API v1: códigos y claves (mismas reglas que api_* en SQL)", () => {
+  const as = (userId: string) => ({ ...createSeedState(Date.now()), current_user_id: userId });
+  it("la clave real sale del servidor y se muestra una sola vez", async () => {
+    const r = await runRemote(C.createApiKey("Ticketera", EV), as(DEMO_IDS.organizer), { create_api_key: { id: id(77), key: "rk_live_srv_secret", prefix: "rk_live_srv" } });
+    expect(r.data).toMatchObject({ secret: "rk_live_srv_secret", key: { id: id(77), prefix: "rk_live_srv" } });
+  });
+  it("solo dueño/a o producción crean claves y anulan códigos", () => {
+    const code = createSeedState(Date.now()).event_invite_codes.find((c) => !c.is_used)!;
+    for (const u of [DEMO_IDS.bartender, DEMO_IDS.security, ME]) {
+      expect(C.createApiKey("x", EV).local(as(u)).ok, u).toBe(false);
+      expect(C.revokeInviteCode(code).local(as(u)).ok, u).toBe(false);
+    }
+    expect(C.createApiKey("x", null).local(as(DEMO_IDS.manager)).ok).toBe(true);
+    expect(C.revokeInviteCode(code).local(as(DEMO_IDS.manager)).ok).toBe(true);
+  });
+  it("un código anulado no sirve para entrar y uno usado no se anula", () => {
+    const s = as(DEMO_IDS.organizer);
+    const free = s.event_invite_codes.find((c) => !c.is_used)!;
+    const used = s.event_invite_codes.find((c) => c.is_used)!;
+    const r = C.revokeInviteCode(free).local(s);
+    expect(r.ok).toBe(true);
+    const after = { ...(r as { state: RougeState }).state, current_user_id: id(12) };
+    expect(C.joinEvent(id(12), free.code, "open_to_meet").local(after)).toMatchObject({ ok: false, error: "Código o link inválido." });
+    expect(C.revokeInviteCode(used).local(s)).toMatchObject({ ok: false, error: "Ese código ya se usó: no se puede anular." });
+  });
+});
+
+describe("cargador: perfiles por tandas", () => {
+  it("parte listas largas para no armar URLs gigantes", async () => {
+    const { chunk, PROFILE_BATCH } = await import("@/lib/supabase/sync");
+    const ids = Array.from({ length: 1500 }, (_, i) => String(i));
+    const parts = chunk(ids, PROFILE_BATCH);
+    expect(parts).toHaveLength(Math.ceil(1500 / PROFILE_BATCH));
+    expect(parts.every((p) => p.length <= PROFILE_BATCH)).toBe(true);
+    expect(parts.flat()).toEqual(ids);
+    expect(chunk([], 60)).toEqual([]);
   });
 });

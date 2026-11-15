@@ -19,7 +19,7 @@ Cada función existe en los dos modos de la app:
 [7. Chats](#7-chats) · [8. Barra Express](#8-barra-express) · [9. Perks, sorteos y avisos](#9-perks-sorteos-y-avisos) ·
 [10. Música](#10-música) · [11. Panel del organizador](#11-panel-del-organizador) · [12. Roles del equipo](#12-roles-del-equipo) ·
 [13. Compartir con QR](#13-compartir-con-qr) · [14. Landing pública](#14-landing-pública) ·
-[15. PWA y mala señal](#15-pwa-y-mala-señal) · [16. Privacidad](#16-privacidad-y-reglas-que-no-se-negocian)
+[15. PWA y mala señal](#15-pwa-y-mala-señal) · [16. Privacidad](#16-privacidad-y-reglas-que-no-se-negocian) · [17. API para ticketeras](#17-api-para-ticketeras-y-productoras)
 
 ---
 
@@ -55,7 +55,10 @@ Un solo perfil que sirve para **todas las fiestas**.
 ## 3. Ingreso al evento
 
 - **Link maestro** (`/join/<slug>`) para redes y listas; respeta el cupo del evento en la app.
-- **Códigos de 1 uso** para entregar con cada entrada (email, ticketera o impresos).
+- **Códigos de 1 uso** para entregar con cada entrada (email, ticketera o impresos). Se pueden **anular** si la
+  entrada se reembolsa: un código anulado deja de servir.
+- **API para ticketeras:** el sistema de entradas genera un código por entrada y lo manda en el mail con su QR
+  (ver [sección 17](#17-api-para-ticketeras-y-productoras)).
 - **Link de Squad:** entra al evento y queda sumado al grupo de quien lo compartió.
 - **Ingreso manual** (`/join`) escribiendo el código.
 - **Vista previa** del evento antes de entrar (también sin sesión), y **Mood de la noche** al entrar:
@@ -133,7 +136,7 @@ Vista expandida en desktop y pestañas en el celular (`/admin`).
 | Sección | Qué hace |
 |---|---|
 | **Resumen** | ROI de la noche: ventas por la app, ticket promedio, asistentes y % del cupo, matches, squads, **filas evitadas**, perks canjeados, embudo (entraron → Squad → match → compraron), top consumo y temas más votados. |
-| **Eventos y accesos** | Crear y editar eventos (horarios, lobby, cupo, plano subido, line-up), **link maestro con QR**, **códigos de 1 uso** (lotes, filtros, CSV, QR de cada código), **hoja imprimible de QRs** y **Equipo del evento**. |
+| **Eventos y accesos** | Crear y editar eventos (horarios, lobby, cupo, plano subido, line-up), **link maestro con QR**, **códigos de 1 uso** (lotes, filtros, CSV con entrada/etiqueta/origen, QR de cada código, **anular**), **hoja imprimible de QRs**, **Equipo del evento** y **API para ticketeras** (claves). |
 | **CRM** | Tabla completa con búsqueda, orden, **Smart Tags** (🏆 Top Spender, 👑 Squad Leader, 🔥 Power Matcher), WhatsApp directo y export CSV. |
 | **Text Blasts** | Aviso o **Flash Promo** con vencimiento, segmentado por: todos, Squads de N+, sector, mood o top consumo. Alcance en vivo y vista previa. |
 | **Perks y sorteos** | Reglas de QR Drop, **ruleta de sorteo en vivo** y validación de QRs. |
@@ -183,3 +186,16 @@ llamado final ("Tengo una entrada" / "Organizar un evento"). Si ya hay sesión, 
 - **El staff no ve quién hizo match con quién:** sus métricas son conteos agregados.
 - **Tokens de Instagram** solo en el servidor; desconectar los borra. Meta puede pedir el borrado por su callback.
 - Ver el detalle técnico en [Seguridad y privacidad](../tecnica/seguridad-y-privacidad.md).
+
+## 17. API para ticketeras y productoras
+
+Para clientes empresariales que venden entradas con su propio sistema. Guía completa: [docs/api](../api/README.md).
+
+- **Claves de API** desde *Eventos y accesos → API para ticketeras* (dueño/a o producción): para un evento o para
+  todos los eventos de quien la crea. Se muestran una sola vez y se pueden revocar.
+- **Un código por entrada** (`POST /api/v1/events/{evento}/codes` con `tickets[].external_ref`): idempotente, reintentar
+  devuelve el mismo código. También por cantidad (cortesías).
+- Cada código trae **`join_url`** (botón del mail) y **`qr_url`** (QR en PNG listo para el mail de la entrada).
+- **Anular** códigos de entradas reembolsadas, **consultar estado** y **sincronizar check-ins** (`status=used&used_since`).
+- Especificación **OpenAPI** en `/api/v1/openapi.json`. En el panel, los códigos emitidos por API muestran su número
+  de entrada, etiqueta y la marca *API*.

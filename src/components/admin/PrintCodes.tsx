@@ -20,7 +20,7 @@ export function PrintCodes() {
   const [limit, setLimit] = useState(24);
   if (!event) return null;
   const origin = typeof window !== "undefined" ? window.location.origin : "";
-  const free = state.event_invite_codes.filter((c) => c.event_id === event.id && !c.is_used).sort((a, b) => a.code.localeCompare(b.code));
+  const free = state.event_invite_codes.filter((c) => c.event_id === event.id && !c.is_used && !c.revoked_at).sort((a, b) => a.code.localeCompare(b.code));
   const codes = free.slice(0, limit);
 
   return (

@@ -9,11 +9,17 @@ Recomendado: **dos despliegues** en Vercel desde el mismo repo.
 
 ## Demo pública
 
-1. Vercel → *Add New → Project* → importar el repositorio. Framework: Next.js (se detecta solo).
-2. **No** cargar variables de entorno. Deploy.
-3. Asignar el dominio (*Settings → Domains*).
+1. Entrá a [vercel.com/new](https://vercel.com/new) con tu cuenta de GitHub y elegí **Import** en `Ch0t1n/Rouge`
+   (si no aparece, *Adjust GitHub App Permissions* y dale acceso al repo).
+2. Dejá todo como viene (Framework: Next.js, rama `main`) y **no cargues variables de entorno**. Tocá **Deploy**.
+3. En 2–3 minutos te da una URL `https://<proyecto>.vercel.app`. Para un dominio propio: *Settings → Domains*
+   (ej. `demo.tudominio.com`).
 
-Listo: la app arranca en Modo Demo. Se actualiza sola con cada push a la rama elegida.
+Listo: la app arranca en Modo Demo y se vuelve a publicar sola con cada cambio en `main`.
+
+Qué mostrar: `/` (landing), `/login` → **Asistente** (la app) o **Equipo** (Dueña, Producción, Barra, Mozo,
+Seguridad). Guion de 7 minutos en [Demo comercial](../producto/demo-comercial.md). La API para ticketeras responde
+`not_configured` en la demo (necesita Supabase).
 
 ## Producción
 
@@ -38,12 +44,12 @@ Listo: la app arranca en Modo Demo. Se actualiza sola con cada push a la rama el
 |---|---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | Sí | Navegador | *Project Settings → API → Project URL* |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Sí | Navegador | *Project Settings → API → anon public* |
-| `NEXT_PUBLIC_APP_URL` | Con Instagram | Servidor | `https://app.tudominio.com` (arma la URL de vuelta del OAuth). **Obligatoria en producción**: sin ella Instagram queda deshabilitado (el origen nunca se toma del header `Host`). |
+| `NEXT_PUBLIC_APP_URL` | Con Instagram o API | Servidor | `https://app.tudominio.com` (vuelta del OAuth y links/QR que devuelve la API). **Obligatoria en producción**: sin ella Instagram queda deshabilitado (el origen nunca se toma del header `Host`). |
 | `NEXT_PUBLIC_AUTH_GOOGLE` | No | Navegador | `1` para mostrar "Continuar con Google" |
 | `NEXT_PUBLIC_AUTH_INSTAGRAM` | No | Navegador | `1` para mostrar Instagram (login, conectar e importar fotos) |
 | `INSTAGRAM_APP_ID` | Con Instagram | Servidor | App de Meta |
 | `INSTAGRAM_APP_SECRET` | Con Instagram | Servidor | App de Meta (secreto) |
-| `SUPABASE_SERVICE_ROLE_KEY` | Con Instagram | **Solo servidor** | *Project Settings → API → service_role*. Nunca con prefijo `NEXT_PUBLIC_`. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Con Instagram o API | **Solo servidor** | *Project Settings → API → service_role*. Nunca con prefijo `NEXT_PUBLIC_`. |
 | `INSTAGRAM_TOKEN_KEY` | Recomendada con Instagram | **Solo servidor** | Secreto largo para cifrar los tokens de Instagram en la base (AES-256-GCM). Generarlo con `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`. Si se cambia, cada usuario reconecta Instagram. |
 
 Opcionales (tests o casos especiales): `INSTAGRAM_OAUTH_URL`, `INSTAGRAM_TOKEN_URL`, `INSTAGRAM_GRAPH_URL`,
@@ -76,7 +82,12 @@ Opcionales (tests o casos especiales): `INSTAGRAM_OAUTH_URL`, `INSTAGRAM_TOKEN_U
 
 > Solo cuentas **profesionales** (Creador o Empresa) pueden conectarse. Las personales pueden escribir su @ a mano.
 
-### 5. Dominio y verificación final
+### 5. API para ticketeras
+
+Con `SUPABASE_SERVICE_ROLE_KEY` y `NEXT_PUBLIC_APP_URL` cargadas, la API queda en `https://app.tudominio.com/api/v1`.
+Cada organizador crea sus claves desde el panel. Guía para pasarle a la ticketera: [docs/api](../api/README.md).
+
+### 6. Dominio y verificación final
 
 1. Asignar `app.tudominio.com` en Vercel.
 2. Verificar los headers de seguridad: `curl -sI https://app.tudominio.com/app` tiene que mostrar

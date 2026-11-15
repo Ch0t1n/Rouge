@@ -9,7 +9,7 @@
  * En Modo Demo solo corre `local`. Las pantallas siempre llaman `exec(C.algo(...))`.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { BarOrder, Connection, EventAttendee, EventInviteCode, MoodTag, PerkRule, Raffle, RaffleFilter, RougeEvent, RougeState, SongRequest, Squad, StaffRole, UUID } from "@/lib/types";
+import type { ApiKey, BarOrder, Connection, EventAttendee, EventInviteCode, MoodTag, PerkRule, Raffle, RaffleFilter, RougeEvent, RougeState, SongRequest, Squad, StaffRole, UUID } from "@/lib/types";
 import * as A from "@/lib/engine/actions";
 import type { Result } from "@/lib/engine/actions";
 import { can, NO_PERMISSION, type Permission } from "@/lib/engine/roles";
@@ -476,4 +476,40 @@ export const setStaffRole = (eventId: UUID, username: string, role: StaffRole | 
     return r;
   }),
   remote: async (sb) => ({ user_id: await rpc<UUID>(sb, "set_staff_role", { p_event: eventId, p_username: username, p_role: role }) }),
+});
+
+// ── Accesos: anular códigos y claves de la API v1 ────────────────────
+
+/** Anular un código de 1 uso que no se usó (entrada reembolsada). Dueño/a o producción. */
+export const revokeInviteCode = (code: EventInviteCode): Command<EventInviteCode> => ({
+  name: "revokeInviteCode",
+  local: guarded("admin.events", () => code.event_id, (s) => A.revokeInviteCode(s, code.id)),
+  remote: async (sb, c) => {
+    must(await sb.from("event_invite_codes").update({ revoked_at: c.revoked_at }).eq("id", code.id).eq("is_used", false));
+  },
+});
+
+/**
+ * Clave de la API para una ticketera (eventId = un evento, null = todos los que administro).
+ * La clave completa solo existe en la respuesta: la UI la muestra UNA vez.
+ */
+export const createApiKey = (name: string, eventId: UUID | null): Command<{ key: ApiKey; secret: string }> => ({
+  name: "createApiKey",
+  optimistic: false,
+  local: (s) => {
+    const allowed = eventId ? can(s, eventId, s.current_user_id, "admin.events") : s.events.some((e) => can(s, e.id, s.current_user_id, "admin.events"));
+    return allowed ? A.createApiKey(s, s.current_user_id, { name, eventId }) : { ok: false, error: NO_PERMISSION };
+  },
+  remote: async (sb, local) => {
+    const r = await rpc<{ id: UUID; key: string; prefix: string }>(sb, "create_api_key", { p_name: name.trim(), p_event: eventId });
+    return { key: { ...local.key, id: r.id, prefix: r.prefix }, secret: r.key };
+  },
+});
+
+export const revokeApiKey = (keyId: UUID): Command<undefined> => ({
+  name: "revokeApiKey",
+  local: (s) => A.revokeApiKey(s, s.current_user_id, keyId),
+  remote: async (sb) => {
+    await rpc(sb, "revoke_api_key", { p_id: keyId });
+  },
 });

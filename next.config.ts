@@ -15,9 +15,26 @@ const nextConfig: NextConfig = {
       // Headers de seguridad en TODAS las respuestas (la CSP con nonce la pone src/proxy.ts).
       { source: "/:path*", headers: STATIC_SECURITY_HEADERS },
       {
-        // La API nunca se cachea (respuestas por usuario, tokens, fotos privadas).
-        source: "/api/:path*",
+        // La API nunca se cachea (respuestas por usuario, tokens, fotos privadas). El QR público queda afuera: su ruta
+        // decide (inmutable si sale bien, no-store si falla). Ojo: estos headers PISAN a los que pone la ruta.
+        source: "/api/:path((?!v1/qr/).*)",
         headers: [{ key: "Cache-Control", value: "no-store, max-age=0" }],
+      },
+      {
+        // QRs de entradas y especificación OpenAPI: se embeben desde webs y mails de las ticketeras (otro origen).
+        // Va DESPUÉS de los anteriores: en Next gana el último header que coincide.
+        source: "/api/v1/qr/:code",
+        headers: [
+          // La caché la pone la ruta (inmutable solo si el QR se generó bien).
+          { key: "Cross-Origin-Resource-Policy", value: "cross-origin" },
+        ],
+      },
+      {
+        source: "/api/v1/openapi.json",
+        headers: [
+          { key: "Cross-Origin-Resource-Policy", value: "cross-origin" },
+          { key: "Cache-Control", value: "public, max-age=300" },
+        ],
       },
       {
         // The service worker must never be served stale, or PWA updates get stuck.

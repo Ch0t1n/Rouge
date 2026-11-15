@@ -16,6 +16,7 @@ import type {
   DeliveryType,
   EventAttendee,
   EventBlast,
+  ApiKey,
   EventInviteCode,
   InstagramLink,
   MapPin,
@@ -311,7 +312,8 @@ export function resolveAccessCode(state: RougeState, rawCode: string): ResolvedC
   const upper = code.toUpperCase();
   const byMaster = state.events.find((e) => e.master_invite_code.toUpperCase() === upper || e.slug === code.toLowerCase());
   if (byMaster) return { event: byMaster, via: "master_link" };
-  const inviteCode = state.event_invite_codes.find((c) => c.code.toUpperCase() === upper);
+  // Un código anulado (entrada reembolsada) es inválido, igual que uno inexistente (mismo criterio que join_event).
+  const inviteCode = state.event_invite_codes.find((c) => c.code.toUpperCase() === upper && !c.revoked_at);
   if (inviteCode) {
     const event = getEvent(state, inviteCode.event_id);
     return event ? { event, via: "single_use_code", inviteCode } : null;
@@ -1283,16 +1285,50 @@ export function upsertEvent(state: RougeState, input: Partial<RougeEvent> & Pick
   return ok({ ...state, events: existing ? state.events.map((e) => (e.id === event.id ? event : e)) : [...state.events, event] }, event);
 }
 
+/** Largo de los códigos de 1 uso (espejo de public.new_access_code: 32^10 ≈ 2^50 combinaciones). */
+export const ACCESS_CODE_LENGTH = 10;
+
+/** Anular un código no usado (entrada reembolsada). Espejo de api_revoke_code / update con RLS de staff. */
+export function revokeInviteCode(state: RougeState, codeId: UUID, now = Date.now()): Result<EventInviteCode> {
+  const code = state.event_invite_codes.find((c) => c.id === codeId);
+  if (!code) return fail("Ese código no existe.");
+  if (code.is_used) return fail("Ese código ya se usó: no se puede anular.");
+  const next: EventInviteCode = { ...code, revoked_at: code.revoked_at ?? iso(now) };
+  return ok({ ...state, event_invite_codes: state.event_invite_codes.map((c) => (c.id === codeId ? next : c)) }, next);
+}
+
+// ── API v1: claves para clientes empresariales ────────────────────────
+
+/**
+ * Crea una clave de API (espejo de create_api_key). En Supabase la genera el servidor y la devuelve UNA vez;
+ * en el Modo Demo es una clave de ejemplo (la API real requiere Supabase).
+ */
+export function createApiKey(state: RougeState, userId: UUID, input: { name: string; eventId: UUID | null }, now = Date.now()): Result<{ key: ApiKey; secret: string }> {
+  const name = input.name.trim();
+  if (!name || name.length > 60) return fail("Poné un nombre de hasta 60 caracteres (ej. \"Ticketera\").");
+  if (input.eventId && !getEvent(state, input.eventId)) return fail("Evento inexistente.");
+  const hex = (n: number) => Array.from({ length: n }, () => "0123456789abcdef"[Math.floor(Math.random() * 16)]).join("");
+  const prefix = `rk_live_${hex(10)}`;
+  const key: ApiKey = { id: uid(), name, prefix, created_by: userId, event_id: input.eventId, scopes: ["codes:read", "codes:write"], last_used_at: null, revoked_at: null, created_at: iso(now) };
+  return ok({ ...state, api_keys: [...state.api_keys, key] }, { key, secret: `${prefix}_${hex(48)}` });
+}
+
+export function revokeApiKey(state: RougeState, userId: UUID, keyId: UUID, now = Date.now()): Result {
+  const key = state.api_keys.find((k) => k.id === keyId && k.created_by === userId);
+  if (!key) return fail("Esa clave no existe.");
+  return ok({ ...state, api_keys: state.api_keys.map((k) => (k.id === keyId ? { ...k, revoked_at: k.revoked_at ?? iso(now) } : k)) }, undefined);
+}
+
 export function generateInviteCodes(state: RougeState, eventId: UUID, count: number, now = Date.now()): Result<EventInviteCode[]> {
   if (!getEvent(state, eventId)) return fail("Evento inexistente.");
   if (count < 1 || count > 1000) return fail("Generá entre 1 y 1000 códigos por lote.");
   const taken = new Set(state.event_invite_codes.map((c) => c.code));
   const codes: EventInviteCode[] = [];
   while (codes.length < count) {
-    const code = shortCode(8);
+    const code = shortCode(ACCESS_CODE_LENGTH);
     if (taken.has(code)) continue;
     taken.add(code);
-    codes.push({ id: uid(), event_id: eventId, code, is_used: false, used_by_user_id: null, used_at: null, created_at: iso(now) });
+    codes.push({ id: uid(), event_id: eventId, code, is_used: false, used_by_user_id: null, used_at: null, external_ref: null, label: null, source: "panel", api_key_id: null, revoked_at: null, created_at: iso(now) });
   }
   return ok({ ...state, event_invite_codes: [...state.event_invite_codes, ...codes] }, codes);
 }

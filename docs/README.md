@@ -19,6 +19,12 @@
 | [Base de datos](tecnica/base-de-datos.md) | Tablas, RPCs y quién puede usarlas, triggers, Storage, Realtime, reglas para cambiar el esquema. |
 | [Seguridad y privacidad](tecnica/seguridad-y-privacidad.md) | Qué ve cada uno, controles, limitaciones conocidas y cumplimiento. |
 
+## Integraciones
+
+| Documento | Contenido |
+|---|---|
+| [API para ticketeras y productoras](api/README.md) | Claves, generar un código por entrada, mail con QR, reembolsos, check-in, errores. Especificación en `/api/v1/openapi.json`. |
+
 ## Operaciones
 
 | Documento | Contenido |

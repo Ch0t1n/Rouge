@@ -1,6 +1,6 @@
 # ROUGE
 
-**La noche, conectada.** PWA social y operativa para eventos, fiestas y boliches (B2B2C) · **v1.0.0**
+**La noche, conectada.** PWA social y operativa para eventos, fiestas y boliches (B2B2C) · **v1.1.0**
 
 El asistente entra al lobby privado del evento con un link o QR, conecta con gente afín, arma su **Squad** (con
 botón de rescate), se ubica en el **plano** con pines de 15 minutos y pide en la **Barra Express** sin fila. El
@@ -28,6 +28,12 @@ persiste en el navegador.
 - Abrí una **segunda pestaña** con otra persona para simular otro teléfono: los cambios se sincronizan.
 - Todo link tiene su **QR** (evento, códigos de 1 uso, Squad, perfil). `/admin/live-wall` es la Pantalla LED.
 
+## Demo online (para mostrar a clientes)
+
+En [vercel.com/new](https://vercel.com/new) importá este repo, rama `main`, **sin variables de entorno** y tocá Deploy:
+en 2–3 minutos queda una URL pública en Modo Demo que se actualiza sola con cada cambio en `main`.
+Detalle: [Puesta en producción → Demo pública](docs/operaciones/puesta-en-produccion.md#demo-pública).
+
 ## Conectar Supabase (producción)
 
 1. Ejecutá [`supabase/schema.sql`](supabase/schema.sql) en el SQL Editor (opcional: `supabase/seed.sql`).
@@ -40,6 +46,12 @@ Paso a paso (Vercel, variables, Google, Meta, pg_cron, backups): [Puesta en prod
 > Instagram solo permite conectar cuentas **profesionales** (Creador o Empresa). Las personales pueden escribir su @
 > a mano (se muestra como "sin verificar").
 
+## API para ticketeras
+
+Las productoras con sistema de entradas propio generan un código de ROUGE por entrada y lo mandan en el mail con su QR:
+`POST /api/v1/events/{evento}/codes`. Claves desde el panel (*Eventos y accesos → API para ticketeras*).
+Guía: [docs/api](docs/api/README.md) · Especificación: `/api/v1/openapi.json`.
+
 ## Scripts
 
 | Comando | Qué hace |
@@ -49,7 +61,7 @@ Paso a paso (Vercel, variables, Google, Meta, pg_cron, backups): [Puesta en prod
 | `npm run typecheck` | Verificación de tipos |
 | `npm test` | Motor de reglas, helpers y contrato cliente ↔ `schema.sql` |
 | `npm run test:integration` | Integración real contra un Supabase de prueba (`SUPABASE_TEST_*`) |
-| `npm run e2e:demo` · `e2e:supabase` · `e2e:instagram` | Pruebas en navegador (Playwright) contra una app levantada |
+| `npm run e2e:demo` · `e2e:supabase` · `e2e:instagram` · `e2e:api` | Pruebas en navegador / HTTP contra una app levantada |
 | `node scripts/capture-landing-shots.cjs` | Re-captura las pantallas reales de la landing |
 
 Detalle en [Testing](docs/operaciones/testing.md).

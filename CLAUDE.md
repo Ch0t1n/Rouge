@@ -30,7 +30,7 @@ npm run build      # build de producción (verifica tipos)
 npm run typecheck  # tsc --noEmit
 npm test           # tests del motor de reglas + contrato cliente ↔ schema.sql
 npm run test:integration  # integración REAL contra un Supabase de prueba (ver más abajo)
-npm run e2e:demo          # E2E Playwright contra la app en demo levantada (e2e/; también e2e:supabase, e2e:instagram)
+npm run e2e:demo          # E2E Playwright contra la app en demo levantada (e2e/; también e2e:supabase, e2e:instagram, e2e:api)
 node scripts/generate-icons.cjs        # re-rasteriza íconos PWA desde public/icons/icon.svg
 node scripts/generate-demo-avatars.mjs # regenera avatares SVG del demo
 node scripts/capture-landing-shots.cjs # re-captura las pantallas reales de la landing (app en demo corriendo)
@@ -49,6 +49,7 @@ src/
       instagram/          # Vuelta del login con Instagram: canjea #token_hash por la sesión (verifyOtp)
     api/instagram/        # OAuth de Instagram (SOLO servidor): start, callback, media (listar/importar), DELETE, data-deletion
     api/csp-report/       # Reportes de violaciones de la CSP (solo log)
+    api/v1/               # API para ticketeras (SOLO servidor): events, events/[eventId]/codes(/[code]), qr/[code], openapi.json
     onboarding/           # Alta del perfil persistente en 4 pasos (guarda progresivamente)
     profile/              # "Así te ven" + completitud · profile/edit (editor completo)
     settings/privacy/     # Lista negra por teléfono + perfiles bloqueados
@@ -84,7 +85,7 @@ src/
     share/ShareSheet.tsx  # QR + compartir nativo + WhatsApp + copiar + PNG para CUALQUIER link (useShare, ShareButton)
     social/               # SocialLoginButtons, InstagramPhotoPicker, InstagramField (+ useInstagramReturn), InstagramCallback
     landing/Landing.tsx   # Secciones de la landing
-    admin/                # AdminChrome (nav por permisos, NoAccess, badge de rol), TeamPanel, SecurityPanel, PrintCodes, AdminHeader, Panel, downloadCSV
+    admin/                # AdminChrome (nav por permisos, NoAccess, badge de rol), TeamPanel, SecurityPanel, ApiKeysPanel, PrintCodes, AdminHeader, Panel, downloadCSV
     venue/VenueMap.tsx    # Plano interactivo (zoom/paneo, sectores, pines)
     event/                # LineupBanner, MoodPicker
   lib/
@@ -113,11 +114,13 @@ src/
     social/client.ts      # Google (signInWithOAuth), Instagram (start/importar/desconectar), flags SOCIAL, IG_ERRORS
     instagram/oauth.ts    # Helpers puros del OAuth (state firmado, signed_request, parseo Graph) — testeados
     instagram/server.ts   # Tokens, Graph API, sesión por magic link (service role). Solo servidor
+    api/v1.ts             # API v1: auth por clave (SHA-256), validación, serialización, RPCs api_* (service role) — testeado
+    api/openapi.ts        # Especificación OpenAPI 3.1 (mantener en sync con v1.ts)
     media/compress.ts     # Compresión WebP, color dominante, transcodificación del loop (sin audio)
     media/mediaStore.ts   # Blobs en IndexedDB (`idb:<uuid>`) para el Modo Demo
     media/upload.ts       # uploadMedia(): Supabase Storage si hay sesión, si no IndexedDB
 .claude/skills/           # Skills de Claude Code (auditorías, QA, diseño, seguridad); ver su README.md
-docs/                     # Documentación v1: producto (funcionalidades, guías, demo), técnica y operaciones
+docs/                     # Documentación: producto, técnica, operaciones y api/ (guía para ticketeras)
 e2e/                      # E2E Playwright (demo, Supabase, Instagram con API imitada) + env.cjs + run.cjs
 CHANGELOG.md              # Historial de versiones (SemVer); pendientes conocidos
 supabase/schema.sql       # Tablas, índices, RLS, RPCs, triggers, realtime, storage
@@ -210,7 +213,12 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
     descargan por `/api/instagram/media` (solo hosts de Meta) y pasan por `compressImage → uploadMedia`.
     `RougeContext` publica `signedIn` recién cuando cargó el estado de ESE usuario (evita decidir "sin perfil" antes de tiempo).
     Botones visibles con `NEXT_PUBLIC_AUTH_GOOGLE=1` / `NEXT_PUBLIC_AUTH_INSTAGRAM=1`; en demo se simulan.
-18. **Seguridad (no romper).** Helpers de permisos SQL en el schema `private` (no expuesto por la API): referenciarlos
+18. **API v1 (clientes empresariales).** Route handlers en `src/app/api/v1/*` que solo traducen HTTP ⇄ RPC: toda regla
+    vive en SQL (`api_authorize`, `api_issue_codes`, `api_revoke_code`, `api_key_events`), ejecutables SOLO por
+    `service_role` (cerradas para `public`, `anon` y `authenticated`). Las claves se crean con `create_api_key` (devuelve
+    la clave UNA vez; se guarda su SHA-256) y el servidor las busca por hash. Respuestas `{ data }` / `{ error: { code,
+    message } }`. Cambios de la API ⇒ actualizar `openapi.ts`, `docs/api/README.md`, `v1.test.ts` y `e2e/api.cjs`.
+19. **Seguridad (no romper).** Helpers de permisos SQL en el schema `private` (no expuesto por la API): referenciarlos
     como `private.<helper>(…)` y nunca crear helpers con ids arbitrarios en `public`. Cada tabla nueva: RLS + `revoke` +
     `grant` solo de las columnas que el cliente escribe; lo sensible (estados, totales, dueños, pines) va por RPC. Toda
     política o RPC nueva suma su ataque en `src/lib/store/schema.security.test.ts`. La CSP está en
@@ -270,6 +278,9 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
   acepta el código corto o el QR completo `ROUGE:ORDER:<id>:<código>`.
 - **Sorteos:** la ruleta es visual; el ganador real lo define `drawRaffle` sobre `raffleEligible`
   (en SQL `draw_raffle` con `random()`), y recibe un QR `raffle_prize`.
+- **Códigos de acceso:** 10 caracteres (`new_access_code` / `ACCESS_CODE_LENGTH`). `external_ref` único por evento
+  (idempotencia de la API). Un código anulado (`revoked_at`) es inválido para entrar; uno usado no se anula.
+  Claves de API: alcance por evento o todos los de quien la crea; pierden acceso si esa persona deja de ser dueño/a o producción.
 - **Roles:** dueño/a y producción operan todo (eventos, accesos, CRM, blasts, perks, sorteos, menú); solo dueño/a
   suma/quita equipo y quien creó el evento no se puede quitar. Barra: comandas + ventanilla (canjea pickup y QRs de
   perk) + LED. Mozo/a: comandas. Seguridad: resumen con alertas de rescate (`eventRescueAlerts`) y LED, sin ventas ni
@@ -340,6 +351,7 @@ diseño), gana la regla de ROUGE.
 - [x] **Fase 5** — `/admin`: eventos y códigos, CRM + CSV, Text Blasts, perks y sorteos, Kanban de barra, Pantalla LED.
 - [x] **Fase 6** — Roles de equipo (login por tipo de usuario, permisos en cliente y SQL), QR para todo link, landing pública.
 - [x] **Fase 7** — Login con Google e Instagram, importar fotos del feed e Instagram (verificado) en el perfil.
+- [x] **Fase 8** — API v1 para ticketeras: claves, un código por entrada, anulación, check-in y QR para el mail.
 
 ## Convenciones
 
