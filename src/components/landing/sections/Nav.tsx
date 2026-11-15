@@ -17,7 +17,7 @@ export const NAV_LINKS = [
 
 /** Navbar flotante glass: se compacta al bajar y las anclas usan el scroll suave de Lenis. */
 export function Nav() {
-  const { appHref, staffHref, staffClick } = useEntry();
+  const { appHref, staffHref } = useEntry();
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
 
@@ -59,10 +59,9 @@ export function Nav() {
         <div className="ml-auto flex items-center gap-2">
           <Link
             href={staffHref("/admin")}
-            onClick={staffClick("/admin")}
             className="hidden min-h-[40px] items-center rounded-xl border border-vip/40 px-3 font-display text-sm font-semibold text-vip transition hover:bg-vip/10 sm:inline-flex"
           >
-            Demo Organizadores
+            Soy organizador
           </Link>
           <Link href={appHref} className="inline-flex min-h-[40px] items-center rounded-xl bg-rouge px-3 font-display text-sm font-semibold text-white shadow-glow-rouge transition hover:bg-rouge-hover">
             Entrar a un Evento
@@ -86,8 +85,8 @@ export function Nav() {
                 {l.label}
               </button>
             ))}
-            <Link href={staffHref("/admin")} onClick={staffClick("/admin")} className="flex min-h-touch items-center rounded-xl px-3 font-display font-semibold text-vip hover:bg-white/5">
-              Demo Organizadores
+            <Link href={staffHref("/admin")} className="flex min-h-touch items-center rounded-xl px-3 font-display font-semibold text-vip hover:bg-white/5">
+              Soy organizador
             </Link>
           </motion.div>
         )}

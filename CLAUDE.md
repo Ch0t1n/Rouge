@@ -42,7 +42,8 @@ node scripts/capture-landing-shots.cjs # capturas reales de la app en public/lan
 src/
   app/                    # Rutas (App Router)
     layout.tsx            # Fuentes, metadata PWA, RougeProvider, AppShell
-    page.tsx              # Landing comercial 3D a ancho completo (components/landing)
+    page.tsx              # Landing comercial 3D a ancho completo (components/landing). SIN nada de la demo: eso vive en /demo
+    demo/                 # Demo para anfitriones (solo Modo Demo, noindex): hub, abrir?rol=&a=, presentador (iframes lado a lado)
     app/                  # Home del asistente (hub del evento) — start_url de la PWA
     login/                # Login por tipo de usuario: Asistente / Equipo. Supabase: magic link, Google, Instagram; demo: persona/rol
       instagram/          # Vuelta del login con Instagram: canjea #token_hash por la sesión (verifyOtp)
@@ -82,6 +83,7 @@ src/
     perks/                # QrBlock (QR alto contraste)
     share/ShareSheet.tsx  # QR + compartir nativo + WhatsApp + copiar + PNG para CUALQUIER link (useShare, ShareButton)
     social/               # SocialLoginButtons, InstagramPhotoPicker, InstagramField (+ useInstagramReturn), InstagramCallback
+    demo/                 # DemoHub (guion + vistas por rol), DemoOpen, Presenter (teléfono + panel sincronizados)
     landing/              # Landing 3D: Landing.tsx (composición), core/ (Lenis+ScrollTrigger, scrollStore, entry: destinos de CTAs),
                           # fx/ (Cursor, Magnetic, SplitReveal, TiltCard), three/ (Scene R3F + choreography), sections/ (8 secciones)
     admin/                # AdminChrome (nav por permisos, NoAccess, badge de rol), TeamPanel, SecurityPanel, ApiKeysPanel, PrintCodes, AdminHeader, Panel, downloadCSV
@@ -99,6 +101,7 @@ src/
       profile.ts          # Validaciones de perfil, parser de Spotify, máscara de teléfono, completitud
       analytics.ts        # Métricas B2B, CRM, Smart Tags, liveWallData()
       engine.test.ts      # Tests de invariantes de negocio
+    demo/script.ts        # Guion de la demo (7 pasos), roles demo y openAs(rol, ruta)
     mock/seed.ts          # Motor de Mock Data (fechas relativas a "ahora")
     store/RougeContext.tsx# Estado global: Modo Demo (localStorage) o Supabase (sesión + carga + Realtime); exec()
     store/commands.ts     # Comandos: regla local del motor + contraparte remota (RPC/tabla) de CADA acción
@@ -179,7 +182,9 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
    Con Supabase, las filas llegan por Realtime y el componente no cambia. Máximo 2 banners a la vista:
    **nunca** tapar acciones críticas (el rescate se confirma en línea, no con banner persistente).
 10. **Persona por pestaña (demo).** La persona activa se guarda en `sessionStorage`: cada pestaña
-    simula un teléfono distinto aunque compartan el estado.
+    simula un teléfono distinto aunque compartan el estado. `window.name` = `rouge-persona:<id>` la fija por marco
+    (lo usan los iframes de `/demo/presentador`). `saveDemoState` nunca pisa una fiesta con otro `seeded_at`
+    (salvo `force` al reiniciar o re-sembrar). La landing no lleva atajos de demo: van en `/demo` (`lib/demo/script.ts`).
 11. **Admin.** Las páginas `page.tsx` solo exportan el componente por defecto (Next lo exige): helpers
     a `components/admin` o `lib`. Los avisos en `/admin` van arriba a la derecha. La Pantalla LED se
     dimensiona con `min(vw, vh)` para entrar en cualquier proyector (probado 1920×1080, 1280×720, 1024×768).

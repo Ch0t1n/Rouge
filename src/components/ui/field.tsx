@@ -134,7 +134,7 @@ export function Segmented<T extends string>({
             onClick={() => onChange(o.value)}
             className={cn(
               "min-h-touch rounded-2xl border px-3 text-sm font-semibold transition",
-              value === o.value ? "border-rouge/60 bg-rouge/12 text-primary" : "border-white/10 bg-white/[0.03] text-muted hover:text-primary",
+              value === o.value ? "border-rouge/60 bg-rouge/15 text-primary" : "border-white/10 bg-white/[0.03] text-muted hover:text-primary",
             )}
           >
             {o.label}

@@ -20,18 +20,20 @@ import { cn } from "@/lib/utils";
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? "/";
   const landing = pathname === "/";
-  const expanded = landing || pathname.startsWith("/admin");
+  // /demo: página para anfitriones (guion + modo presentador), a ancho completo y pública.
+  const demoPage = pathname === "/demo" || pathname.startsWith("/demo/");
+  const expanded = landing || demoPage || pathname.startsWith("/admin");
   const withNav = NAV_ROUTES.includes(pathname);
   const { state, mode, signedIn } = useRouge();
   const router = useRouter();
   // Supabase: sin sesión solo se ven las rutas públicas; el resto pasa primero por el login.
-  const isPublic = landing || ["/login", "/join", "/offline"].some((p) => pathname.startsWith(p));
+  const isPublic = landing || demoPage || ["/login", "/join", "/offline"].some((p) => pathname.startsWith(p));
   const needsLogin = mode === "supabase" && !signedIn && !isPublic;
   useEffect(() => {
     if (needsLogin) router.replace(`/login?next=${encodeURIComponent(pathname)}`);
   }, [needsLogin, pathname, router]);
   // Rutas que no dependen de un evento activo (perfil, ingreso, chats 1:1, alta de eventos…)
-  const eventFree = landing || ["/login", "/onboarding", "/join", "/profile", "/settings", "/u/", "/chat", "/inbox", "/offline", "/admin/events"].some((p) => pathname.startsWith(p));
+  const eventFree = landing || demoPage || ["/login", "/onboarding", "/join", "/profile", "/settings", "/u/", "/chat", "/inbox", "/offline", "/admin/events"].some((p) => pathname.startsWith(p));
   const missingEvent = !eventFree && !activeEvent(state);
 
   return (
@@ -63,7 +65,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 function NoEvent({ admin }: { admin: boolean }) {
   return (
     <main className="safe-top flex min-h-dvh flex-col items-center justify-center gap-3 px-8 text-center">
-      <span className="grid size-16 place-items-center rounded-full bg-rouge/12 text-rouge">
+      <span className="grid size-16 place-items-center rounded-full bg-rouge/15 text-rouge">
         <CalendarX2 className="size-7" />
       </span>
       <h1 className="text-2xl">{admin ? "Todavía no hay eventos" : "No hay ninguna fiesta activa"}</h1>

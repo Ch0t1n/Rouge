@@ -37,7 +37,7 @@ export function GenrePicker({ value, onChange, highlight = [] }: { value: MusicG
               onClick={() => toggle(g)}
               className={cn(
                 "inline-flex min-h-touch items-center gap-1.5 rounded-full border px-4 font-display text-sm font-semibold transition active:scale-95 disabled:opacity-35",
-                on ? "border-rouge bg-rouge text-white shadow-glow-rouge" : "border-white/12 bg-white/[0.04] text-primary hover:border-white/25",
+                on ? "border-rouge bg-rouge text-white shadow-glow-rouge" : "border-white/15 bg-white/[0.04] text-primary hover:border-white/25",
                 !on && highlight.includes(g) && "border-rouge/50",
               )}
             >

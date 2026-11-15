@@ -2,6 +2,26 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y [SemVer](https://semver.org/lang/es/).
 
+## [1.3.0] — 2026-11-15
+
+### Agregado
+- **Demo en vivo para anfitriones** en `/demo` (no indexada): guion de 7 minutos con botones que abren el teléfono y
+  el panel con el rol justo, accesos a cada vista sin contraseñas y QR para compartir.
+- **Modo presentador** en `/demo/presentador`: teléfono y panel lado a lado en una sola pantalla, sincronizados, con
+  pasos del guion, cambio de rol, Pantalla LED y reinicio.
+- Persona por marco en el Modo Demo (`window.name`): cada pestaña o iframe puede ser una persona distinta.
+- `NEXT_PUBLIC_DEMO_URL`: en el sitio con datos reales, `/demo` manda al sitio de demostración.
+
+### Cambiado
+- La pantalla principal ya no tiene nada de la demo: "Tengo una entrada" (`/join`), "Soy organizador" (login de
+  equipo) y accesos reales en el pie; sin atajos para entrar como un rol ni la fiesta de ejemplo en el hero.
+
+### Corregido
+- Una pestaña vieja que se cerraba podía revivir la fiesta anterior después de "Reiniciar demo" (ahora nunca se
+  guarda encima de una fiesta más nueva).
+- Fondos tenues que no se veían (badges, ítem activo del menú del panel, chips y avisos): usaban una opacidad
+  `/12` que Tailwind no genera; ahora `/15`.
+
 ## [1.2.1] — 2026-11-15
 
 Revisión visual completa (81 combinaciones de pantalla × tamaño × rol, más el arranque).

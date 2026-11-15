@@ -38,7 +38,7 @@ export function InstagramCallback() {
 
   return (
     <main className="safe-top flex min-h-dvh flex-col items-center justify-center gap-4 px-8 text-center">
-      <span className="grid size-16 place-items-center rounded-2xl bg-rouge/12 text-rouge shadow-glow-rouge">
+      <span className="grid size-16 place-items-center rounded-2xl bg-rouge/15 text-rouge shadow-glow-rouge">
         <InstagramIcon className="size-8" />
       </span>
       {error ? (

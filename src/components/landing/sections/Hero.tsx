@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRef } from "react";
-import { ArrowDownRight, ArrowRight, Play } from "lucide-react";
+import { ArrowDownRight, ArrowRight, Ticket } from "lucide-react";
 import { gsap, prefersReducedMotion, useGSAP } from "../core/gsap";
 import { scrollState } from "../core/scrollStore";
 import { useEntry } from "../core/entry";
@@ -20,7 +20,7 @@ export function Hero() {
   const root = useRef<HTMLElement>(null);
   const pct = useRef<HTMLSpanElement>(null);
   const bar = useRef<HTMLSpanElement>(null);
-  const { appHref, staffHref, staffClick, eventName } = useEntry();
+  const { appHref, staffHref, eventName } = useEntry();
 
   useGSAP(
     () => {
@@ -84,14 +84,13 @@ export function Hero() {
         </p>
         <div data-hero-fade className="flex flex-wrap gap-3 lg:justify-end">
           <Magnetic>
-            <Link href={appHref} data-cursor="Play" className="group inline-flex min-h-[56px] items-center gap-3 rounded-full bg-rouge px-6 font-display text-base font-semibold text-white shadow-[0_0_40px_rgba(255,30,86,0.55)] transition hover:bg-rouge-hover">
-              <Play className="size-4 fill-white" /> Probar App en Vivo <span className="font-mono text-xs opacity-80">(Demo Fiesta)</span>
+            <Link href={appHref} data-cursor="Entrar" className="group inline-flex min-h-[56px] items-center gap-3 rounded-full bg-rouge px-6 font-display text-base font-semibold text-white shadow-[0_0_40px_rgba(255,30,86,0.55)] transition hover:bg-rouge-hover">
+              <Ticket className="size-4" /> Tengo una entrada
             </Link>
           </Magnetic>
           <Magnetic>
             <Link
               href={staffHref("/admin")}
-              onClick={staffClick("/admin")}
               data-cursor="Admin"
               className="inline-flex min-h-[56px] items-center gap-2 rounded-full border border-white/20 bg-white/5 px-6 font-display text-base font-semibold backdrop-blur-md transition hover:border-vip/60 hover:text-vip"
             >

@@ -102,7 +102,7 @@ export default function AdminOverviewPage() {
           <div key={label} className="glass rounded-3xl p-5">
             <div className="flex items-center justify-between">
               <p className="text-sm text-muted">{label}</p>
-              <span className={cn("grid size-9 place-items-center rounded-xl", { rouge: "bg-rouge/12 text-rouge", squad: "bg-squad/12 text-squad", vip: "bg-vip/12 text-vip" }[tone])}>
+              <span className={cn("grid size-9 place-items-center rounded-xl", { rouge: "bg-rouge/15 text-rouge", squad: "bg-squad/15 text-squad", vip: "bg-vip/15 text-vip" }[tone])}>
                 <Icon className="size-[18px]" />
               </span>
             </div>

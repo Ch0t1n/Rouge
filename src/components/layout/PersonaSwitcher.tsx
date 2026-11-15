@@ -86,7 +86,7 @@ export function PersonaSwitcher() {
                   }}
                   className={cn(
                     "flex min-h-touch w-full items-center gap-3 rounded-2xl p-2 text-left transition",
-                    active ? "bg-rouge/12 ring-1 ring-rouge/40" : "hover:bg-white/5",
+                    active ? "bg-rouge/15 ring-1 ring-rouge/40" : "hover:bg-white/5",
                   )}
                 >
                   <Avatar profile={p} size={40} />
@@ -122,7 +122,7 @@ export function PersonaSwitcher() {
                       }}
                       className="flex min-h-touch w-full items-center gap-3 rounded-2xl p-2 text-left transition hover:bg-white/5"
                     >
-                      <span className="grid size-10 place-items-center rounded-full bg-vip/12 text-lg" aria-hidden>
+                      <span className="grid size-10 place-items-center rounded-full bg-vip/15 text-lg" aria-hidden>
                         {ROLE_META[r].emoji}
                       </span>
                       <div className="min-w-0 flex-1">

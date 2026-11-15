@@ -67,7 +67,7 @@ export function AdminChrome({ children }: { children: ReactNode }) {
               key={href}
               href={href}
               aria-current={isActive(href) ? "page" : undefined}
-              className={cn("flex min-h-touch items-center gap-3 rounded-xl px-3 text-sm font-medium transition", isActive(href) ? "bg-vip/12 text-vip" : "text-muted hover:bg-white/5 hover:text-primary")}
+              className={cn("flex min-h-touch items-center gap-3 rounded-xl px-3 text-sm font-medium transition", isActive(href) ? "bg-vip/15 text-vip" : "text-muted hover:bg-white/5 hover:text-primary")}
             >
               <Icon className="size-[18px]" />
               {label}
@@ -100,7 +100,7 @@ export function AdminChrome({ children }: { children: ReactNode }) {
           <div className="flex items-center gap-3 px-4 pt-3">
             <Link href="/app" className="font-display text-xl font-bold text-rouge">ROUGE</Link>
             <div className="min-w-0 flex-1">{eventSelect}</div>
-            <Link href="/login?as=staff" aria-label={`${meta.label}: cambiar de rol`} className="flex min-h-touch shrink-0 items-center gap-1 rounded-full bg-vip/12 px-3 font-display text-xs font-semibold text-vip">
+            <Link href="/login?as=staff" aria-label={`${meta.label}: cambiar de rol`} className="flex min-h-touch shrink-0 items-center gap-1 rounded-full bg-vip/15 px-3 font-display text-xs font-semibold text-vip">
               <span aria-hidden>{meta.emoji}</span> {meta.label}
             </Link>
           </div>
@@ -138,7 +138,7 @@ function NoAccess() {
   return (
     <main className="grid min-h-screen place-items-center px-5">
       <div className="glass w-full max-w-md rounded-3xl p-8 text-center">
-        <span className="mx-auto grid size-14 place-items-center rounded-2xl bg-vip/12 text-vip">
+        <span className="mx-auto grid size-14 place-items-center rounded-2xl bg-vip/15 text-vip">
           <Lock className="size-6" />
         </span>
         {!signedIn ? (

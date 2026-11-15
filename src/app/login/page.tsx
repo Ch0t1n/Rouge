@@ -214,7 +214,7 @@ function DemoPicker({ tab, next }: { tab: Tab; next: string | null }) {
                 onClick={() => enter(p)}
                 className={cn("glass flex min-h-[72px] w-full items-center gap-4 rounded-3xl p-4 text-left transition hover:bg-white/10", p.id === state.current_user_id && "ring-1 ring-vip/60")}
               >
-                <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-vip/12 text-2xl" aria-hidden>
+                <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-vip/15 text-2xl" aria-hidden>
                   {ROLE_META[role].emoji}
                 </span>
                 <span className="min-w-0 flex-1">

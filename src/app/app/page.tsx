@@ -233,7 +233,7 @@ function Home() {
         </section>
 
         <Link href="/settings/privacy" className="glass flex min-h-touch items-center gap-3 rounded-2xl p-4 transition hover:bg-white/5">
-          <span className="grid size-10 place-items-center rounded-xl bg-squad/12 text-squad">
+          <span className="grid size-10 place-items-center rounded-xl bg-squad/15 text-squad">
             <ShieldCheck className="size-5" />
           </span>
           <div className="flex-1">
@@ -269,7 +269,7 @@ function Home() {
 }
 
 function StatTile({ href, icon, value, label, hint, tone }: { href: string; icon: React.ReactNode; value: number; label: string; hint: string; tone: "rouge" | "squad" | "vip" }) {
-  const color = { rouge: "text-rouge bg-rouge/12", squad: "text-squad bg-squad/12", vip: "text-vip bg-vip/12" }[tone];
+  const color = { rouge: "text-rouge bg-rouge/15", squad: "text-squad bg-squad/15", vip: "text-vip bg-vip/15" }[tone];
   return (
     <Link href={href} className="glass block rounded-2xl p-3.5 transition hover:bg-white/10 active:scale-[0.98]">
       <span className={cn("grid size-9 place-items-center rounded-xl [&_svg]:size-[18px]", color)}>{icon}</span>

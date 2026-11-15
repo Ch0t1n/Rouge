@@ -1,6 +1,6 @@
 # ROUGE
 
-**La noche, conectada.** PWA social y operativa para eventos, fiestas y boliches (B2B2C) · **v1.2.1**
+**La noche, conectada.** PWA social y operativa para eventos, fiestas y boliches (B2B2C) · **v1.3.0**
 
 El asistente entra al lobby privado del evento con un link o QR, conecta con gente afín, arma su **Squad** (con
 botón de rescate), se ubica en el **plano** con pines de 15 minutos y pide en la **Barra Express** sin fila. El
@@ -32,6 +32,9 @@ persiste en el navegador.
 
 En [vercel.com/new](https://vercel.com/new) importá este repo, rama `main`, **sin variables de entorno** y tocá Deploy:
 en 2–3 minutos queda una URL pública en Modo Demo que se actualiza sola con cada cambio en `main`.
+La demo para anfitriones está en **`/demo`** (guion, accesos por rol y **modo presentador** en `/demo/presentador`);
+la pantalla principal queda limpia para el público real. En el sitio de producción, cargá `NEXT_PUBLIC_DEMO_URL` con
+la URL de la demo para que `/demo` mande ahí.
 Detalle: [Puesta en producción → Demo pública](docs/operaciones/puesta-en-produccion.md#demo-pública).
 
 ## Conectar Supabase (producción)

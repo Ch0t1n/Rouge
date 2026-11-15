@@ -8,8 +8,8 @@ export const badgeVariants = cva(
     variants: {
       tone: {
         rouge: "bg-rouge/15 text-rouge ring-1 ring-inset ring-rouge/35",
-        squad: "bg-squad/12 text-squad ring-1 ring-inset ring-squad/35",
-        vip: "bg-vip/12 text-vip ring-1 ring-inset ring-vip/35",
+        squad: "bg-squad/15 text-squad ring-1 ring-inset ring-squad/35",
+        vip: "bg-vip/15 text-vip ring-1 ring-inset ring-vip/35",
         neutral: "bg-white/8 text-muted ring-1 ring-inset ring-white/10",
         solid: "bg-rouge text-white",
         live: "bg-rouge text-white shadow-glow-rouge",

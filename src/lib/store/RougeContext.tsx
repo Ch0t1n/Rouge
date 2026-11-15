@@ -42,8 +42,18 @@ const safe = <T,>(fn: () => T, fallback: T): T => {
     return fallback;
   }
 };
-const tabPersona = () => safe(() => sessionStorage.getItem(PERSONA_KEY), null);
-const rememberPersona = (id: UUID) => safe(() => sessionStorage.setItem(PERSONA_KEY, id), undefined);
+/**
+ * Persona por marco (demo): `window.name` es propio de cada pestaña E iframe y sobrevive a navegaciones.
+ * La usa el modo presentador (/demo/presentador): el teléfono y el panel lado a lado son personas distintas.
+ * Si no está fijada, manda la de la pestaña (sessionStorage), como siempre.
+ */
+export const FRAME_PERSONA_PREFIX = "rouge-persona:";
+const framePersona = () => safe(() => (window.name.startsWith(FRAME_PERSONA_PREFIX) ? window.name.slice(FRAME_PERSONA_PREFIX.length) : null), null);
+const tabPersona = () => framePersona() ?? safe(() => sessionStorage.getItem(PERSONA_KEY), null);
+const rememberPersona = (id: UUID) => {
+  if (framePersona() !== null) safe(() => (window.name = FRAME_PERSONA_PREFIX + id), undefined);
+  safe(() => sessionStorage.setItem(PERSONA_KEY, id), undefined);
+};
 
 export type DataMode = "demo" | "supabase";
 
@@ -109,7 +119,20 @@ function loadDemoState(now: number): RougeState {
   return persona ? { ...s, current_user_id: persona } : s;
 }
 
-const saveDemoState = (state: RougeState) => safe(() => localStorage.setItem(STORAGE_KEY, JSON.stringify(state)), undefined);
+/**
+ * Guarda el estado demo. Nunca pisa una fiesta más nueva: si otra pestaña/marco reinició la demo
+ * (otro `seeded_at`), una vista vieja que se cierra no la revive con su guardado de salida.
+ * `force` solo para el reinicio mismo.
+ */
+const saveDemoState = (state: RougeState, force = false) =>
+  safe(() => {
+    if (!force) {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      const seededAt = stored ? (JSON.parse(stored) as { seeded_at?: string }).seeded_at : undefined;
+      if (seededAt && seededAt !== state.seeded_at) return;
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }, undefined);
 
 /** Estado vacío (Supabase sin sesión o sin datos todavía). */
 function emptyState(userId: UUID = ""): RougeState {
@@ -211,6 +234,7 @@ export function RougeProvider({ children }: { children: ReactNode }) {
     if (mode === "demo") {
       const s = loadDemoState(Date.now());
       rememberPersona(s.current_user_id); // fija la persona de ESTA pestaña
+      saveDemoState(s, true); // si se re-sembró (versión nueva o fiesta vencida), esta pasa a ser la vigente
       commit(s);
       return;
     }
@@ -369,7 +393,7 @@ export function RougeProvider({ children }: { children: ReactNode }) {
     const fresh = createSeedState(Date.now());
     rememberPersona(fresh.current_user_id);
     commit(fresh);
-    saveDemoState(fresh);
+    saveDemoState(fresh, true);
   }, [commit]);
 
   const signOut = useCallback(async () => {

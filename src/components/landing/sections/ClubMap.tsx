@@ -114,7 +114,7 @@ export function ClubMap() {
     <section id="plano" data-stage="2" className="relative scroll-mt-20 px-4 py-28 sm:px-8">
       <div className="grid gap-8 lg:grid-cols-[1fr_auto] lg:items-end">
         <div>
-          <p className="font-mono text-xs uppercase tracking-[0.25em] text-squad">[ 02 {"//"} DEMO EN VIVO ]</p>
+          <p className="font-mono text-xs uppercase tracking-[0.25em] text-squad">[ 02 {"//"} PLANO INTERACTIVO ]</p>
           <SplitReveal lines={["TOCÁ", { text: "EL CLUB.", className: "text-squad text-glow-squad" }]} className="mt-4 font-display text-[16vw] font-bold uppercase leading-[0.84] tracking-tighter lg:text-[9vw]" />
         </div>
         <p className="max-w-sm text-muted lg:pb-4">Así ve el plano un asistente. Prendé y apagá capas, y tocá un sector para ver qué está pasando ahí ahora.</p>

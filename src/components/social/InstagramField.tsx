@@ -51,7 +51,7 @@ export function InstagramField({ value, onChange }: { value: string; onChange: (
   if (link)
     return (
       <div className="glass flex items-center gap-3 rounded-2xl p-3">
-        <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-rouge/12">
+        <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-rouge/15">
           <InstagramIcon className="size-5 text-rouge" />
         </span>
         <div className="min-w-0 flex-1">

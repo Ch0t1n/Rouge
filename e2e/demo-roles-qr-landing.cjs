@@ -22,8 +22,11 @@ const assert = (c, m) => { if (!c) throw new Error("✘ " + m); log("✔ " + m);
   assert((await p.getAttribute("h1", "aria-label")) === "No vayas a ciegas. Domina la noche.", "landing: hero");
   assert(await p.isVisible("#organizadores"), "landing: sección para organizadores");
   assert((await p.locator("[data-stage]").count()) >= 6, "landing: secciones coreografiadas de la escena 3D");
+  // Pantalla principal sin nada de demo: "Entrar a un Evento" lleva a ingresar el código de la entrada
+  const visible = await p.evaluate(() => document.body.innerText);
+  assert(!/demo/i.test(visible), "landing sin menciones a la demo");
   await p.click("header >> text=Entrar a un Evento");
-  await p.waitForURL("**/app");
+  await p.waitForURL("**/join");
   await p.goto(`${B}/login`);
 
   // Login como asistente → /app

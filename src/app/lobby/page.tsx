@@ -249,7 +249,7 @@ function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; chi
       type="button"
       aria-pressed={on}
       onClick={onClick}
-      className={cn("min-h-[40px] rounded-full border px-3.5 text-sm font-semibold transition", on ? "border-rouge bg-rouge/15 text-primary" : "border-white/12 bg-white/[0.04] text-primary/85")}
+      className={cn("min-h-[40px] rounded-full border px-3.5 text-sm font-semibold transition", on ? "border-rouge bg-rouge/15 text-primary" : "border-white/15 bg-white/[0.04] text-primary/85")}
     >
       {children}
     </button>
@@ -259,7 +259,7 @@ function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; chi
 function Empty({ icon, title, text, children }: { icon: React.ReactNode; title: string; text: string; children?: React.ReactNode }) {
   return (
     <main className="safe-top flex min-h-[80dvh] flex-col items-center justify-center gap-3 px-8 text-center">
-      <span className="grid size-16 place-items-center rounded-full bg-rouge/12 text-rouge">{icon}</span>
+      <span className="grid size-16 place-items-center rounded-full bg-rouge/15 text-rouge">{icon}</span>
       <h1 className="text-2xl">{title}</h1>
       <p className="text-sm text-muted">{text}</p>
       <div className="mt-3">{children}</div>

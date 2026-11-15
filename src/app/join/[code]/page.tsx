@@ -89,7 +89,7 @@ export default function JoinPage() {
     return (
       <Shell>
         <div className="flex flex-col items-center gap-3 pt-24 text-center">
-          <span className="grid size-16 place-items-center rounded-full bg-rouge/12 text-rouge">
+          <span className="grid size-16 place-items-center rounded-full bg-rouge/15 text-rouge">
             <Ticket className="size-7" />
           </span>
           <h1 className="text-2xl">Código inválido</h1>

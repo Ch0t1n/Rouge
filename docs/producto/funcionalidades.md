@@ -170,8 +170,8 @@ invitación al Squad, perfil e invitación al evento desde el inicio. `/admin/pr
 procedural de fondo que cambia con cada sección (núcleo de cromo → anillos de conexiones → grilla holográfica del
 plano con pines → cierre dorado/carmesí). Secciones:
 
-1. **Hero** "No vayas a ciegas. Domina la noche." con CTAs *Probar App en Vivo* (`/app` en demo; login o tu pantalla
-   en Supabase) y *Soy Organizador* (panel `/admin`).
+1. **Hero** "No vayas a ciegas. Domina la noche." con CTAs *Tengo una entrada* (`/join`, o tu pantalla si ya entraste)
+   y *Soy Organizador / Dueño de Club* (login de equipo → panel).
 2. **Marquesina** doble que acelera y cambia de sentido con el scroll.
 3. **Los 4 pilares** (lobby previo, Squads y seguridad, Pin-Drop 15 min, caducidad y privacidad) con un iPhone fijo
    que cambia de pantalla al bajar (en mobile, cada bloque trae su pantalla).
@@ -181,10 +181,11 @@ plano con pines → cierre dorado/carmesí). Secciones:
 6. **B2B**: comparación, pestañas del panel (CRM, Text Blast por zona, Pantalla LED) y **calculadora de ROI**
    (capacidad y precio del trago; supuestos visibles, estimación ilustrativa).
 7. **Planes** (Event Pass, Club Pro, Festival/Enterprise) y preguntas frecuentes.
-8. **Footer** monumental con reloj, accesos a `/app`, `/join`, `/admin`, `/admin/bar-pos`, `/admin/live-wall` y CTA.
+8. **Footer** monumental con reloj, accesos (tengo una entrada, entrar con mi cuenta, soy del equipo, organizar mi
+   evento) y CTA.
 
-En Modo Demo, los accesos al panel entran directo como el dueño/a o producción del evento demo (barra para
-comandas). En Supabase llevan al login de equipo con `next`. En desktop hay cursor propio magnético; respeta
+La pantalla principal es para el público real: **no tiene nada de la demo** (ni atajos para entrar como un rol ni la
+fiesta de ejemplo); eso vive en [`/demo`](#18-demo-en-vivo-para-anfitriones). En desktop hay cursor propio magnético; respeta
 "reducir movimiento" (sin Lenis ni animaciones pesadas) y, si el dispositivo no tiene WebGL, queda el fondo CSS.
 
 ## 15. PWA y mala señal
@@ -217,3 +218,18 @@ Para clientes empresariales que venden entradas con su propio sistema. Guía com
 - **Anular** códigos de entradas reembolsadas, **consultar estado** y **sincronizar check-ins** (`status=used&used_since`).
 - Especificación **OpenAPI** en `/api/v1/openapi.json`. En el panel, los códigos emitidos por API muestran su número
   de entrada, etiqueta y la marca *API*.
+
+## 18. Demo en vivo para anfitriones
+
+Página separada para mostrarle ROUGE a dueños de boliches y productoras: **`/demo`** (se comparte por link o QR; no se
+indexa en buscadores). Funciona en el sitio de demostración (Modo Demo); en el sitio con datos reales muestra un aviso
+con link a `NEXT_PUBLIC_DEMO_URL`.
+
+- **Guion de 7 minutos**: qué decir y qué tocar en cada paso, con un botón para abrir el teléfono y otro para abrir el
+  panel con el rol justo (dueña, seguridad, barra…), sin contraseñas.
+- **Abrir cualquier vista**: app de una asistente, una segunda asistente del mismo Squad, panel, barra, seguridad y
+  Pantalla LED, cada una en su pestaña y ya con la persona correcta (`/demo/abrir?rol=…&a=…`).
+- **Modo presentador** (`/demo/presentador`): el teléfono del asistente y el panel del equipo **lado a lado en una
+  sola pantalla**, sincronizados en vivo (ej. el rescate tocado en el teléfono aparece al instante en Seguridad).
+  Pasos con ←/→, cambio de rol del panel, Pantalla LED y **Reiniciar** la fiesta al estado inicial.
+- Pensado para notebook (y TV por HDMI). La sincronización es entre pestañas del mismo navegador.

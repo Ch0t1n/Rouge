@@ -30,9 +30,14 @@ Todo vive en el navegador de cada persona: no se rompe ni se ensucia aunque lo a
 
 ## Armado de la demo presencial
 
-- Una notebook con **dos ventanas lado a lado**: izquierda el "teléfono" (ventana angosta, como Sofía) y derecha el
-  panel (como Paula). Abrir cada una desde `/login` eligiendo la persona.
-- Si hay TV o proyector: una tercera ventana con `/admin/live-wall` por HDMI.
+Todo está en **`/demo`** del sitio de demostración (no en la pantalla principal, que queda para el público real):
+
+- **Modo presentador** (`/demo/presentador`): en una notebook, el teléfono de Sofía y el panel de Paula lado a lado en
+  una sola pantalla, sincronizados. Avanzá con ←/→ por el guion; cada paso pone la vista justa a cada lado y te
+  recuerda qué decir. Cambiá el rol del panel (Dueña, Producción, Barra, Mozo, Seguridad) o pasá a la Pantalla LED.
+- **Reiniciar** antes de cada reunión: la fiesta vuelve al estado inicial.
+- Si hay TV o proyector: desde `/demo`, *Pantalla LED* abre en otra pestaña para mandarla por HDMI.
+- Para dejarle el link al anfitrión: *Compartir* en `/demo` (link, WhatsApp o QR).
 
 ## Guion de 7 minutos
 

@@ -23,8 +23,8 @@ const PLANS = [
     tone: "vip" as const,
     highlight: true,
     features: ["Todo Event Pass", "Comandas de barra sin fila (Kanban + ventanilla)", "Delivery al Pin y a la Mesa VIP", "Text Blasts y Flash Promos ilimitados", "Pantalla Gigante LED y sorteos"],
-    cta: "Ver el panel en vivo",
-    next: "/admin",
+    cta: "Empezar con Club Pro",
+    next: "/admin/events",
   },
   {
     name: "Festival / Enterprise",
@@ -82,7 +82,7 @@ function Faq() {
 }
 
 export function Pricing() {
-  const { staffHref, staffClick } = useEntry();
+  const { staffHref } = useEntry();
   return (
     <section id="planes" data-stage="3" className="relative scroll-mt-20 px-4 py-28 sm:px-8">
       <p className="font-mono text-xs uppercase tracking-[0.25em] text-muted">[ 05 {"//"} MODELOS DE CONTRATACIÓN ]</p>
@@ -110,7 +110,7 @@ export function Pricing() {
                     {p.cta} <ArrowRight className="size-4" />
                   </a>
                 ) : (
-                  <Link href={staffHref(p.next)} onClick={staffClick(p.next)} className={cn("inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl font-display font-semibold transition", t.btn)}>
+                  <Link href={staffHref(p.next)} className={cn("inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl font-display font-semibold transition", t.btn)}>
                     {p.cta} <ArrowRight className="size-4" />
                   </Link>
                 )}
