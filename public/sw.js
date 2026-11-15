@@ -4,7 +4,7 @@
  * - Estáticos (_next/static, íconos, avatares, fuentes): cache-first.
  * - Nunca cachea llamadas a Supabase ni POST.
  */
-const VERSION = "rouge-v2";
+const VERSION = "rouge-v3";
 const SHELL = ["/", "/app", "/offline", "/manifest.json", "/icons/icon-192.png", "/icons/icon.svg"];
 
 self.addEventListener("install", (event) => {

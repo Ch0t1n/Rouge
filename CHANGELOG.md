@@ -2,7 +2,9 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y [SemVer](https://semver.org/lang/es/).
 
-## [Sin publicar]
+## [1.2.0] — 2026-11-15
+
+Primera versión publicada en producción.
 
 ### Cambiado
 - **Landing comercial 3D** en `/` (reemplaza la anterior): escena WebGL procedural con React Three Fiber que se
@@ -14,6 +16,7 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 ### Agregado
 - Dependencias: `three`, `@react-three/fiber`, `@react-three/drei`, `gsap`, `@gsap/react`, `lenis`, `framer-motion`
   (solo se cargan en la landing).
+- Service Worker `rouge-v3`: al publicar, los teléfonos descartan la caché anterior.
 
 ## [1.1.0] — 2026-11-15
 
