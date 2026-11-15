@@ -38,6 +38,9 @@ Este documento resume qué se guarda, quién lo ve y cómo se protege.
   - las fotos se descargan solo desde hosts de Meta (no es un proxy abierto) y se re-suben a nuestro Storage;
   - el token de sesión del login viaja en el **fragmento** de la URL (no llega a servidores ni logs) y se borra del historial;
   - callback de desautorización / borrado de datos con `signed_request` verificado (`/api/instagram/data-deletion`).
+- **API para ticketeras:** claves guardadas solo como SHA-256 (se muestran una vez), revocables, con alcance por evento
+  y que pierden acceso si quien las creó sale del equipo. Las funciones `api_*` solo las ejecuta el servidor. El QR
+  público no consulta la base (no revela si un código existe). Los códigos tienen ≈ 2^50 combinaciones.
 - **Claves:** la *service role key* solo vive en el servidor (`SUPABASE_SERVICE_ROLE_KEY`, nunca con prefijo `NEXT_PUBLIC_`).
 - **Redirecciones internas:** los parámetros `next` se validan como rutas internas (sin open redirects).
 - **Storage:** cada usuario escribe solo en su carpeta; los planos solo Dueño/a o Producción.
@@ -48,6 +51,8 @@ Este documento resume qué se guarda, quién lo ve y cómo se protege.
   incluyen UUID (no adivinables), pero no hay control por conversación. Mejora sugerida: URLs firmadas.
 - **Fotos de perfil** son públicas por URL (necesario para mostrarlas rápido con mala señal).
 - **Instagram:** solo cuentas profesionales; el @ escrito a mano no se verifica (se muestra como "sin verificar").
+- **API sin límite de frecuencia propio:** hay topes por request (1000 códigos, 500 por página); un rate limit por clave
+  (ej. en el borde/CDN) es una mejora recomendada antes de abrirla a muchos clientes.
 - **Moderación:** no hay reportes de contenido ni moderación de fotos en la v1 (solo bloqueo).
 - **Verificación de edad:** es declarativa (fecha de nacimiento +18).
 

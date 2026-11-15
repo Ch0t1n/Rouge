@@ -132,6 +132,36 @@ create table if not exists public.event_invite_codes (
   constraint invite_used_chk check (is_used = (used_by_user_id is not null or used_at is not null))
 );
 
+-- [API v1] Códigos emitidos por ticketeras: referencia de su entrada (idempotencia), etiqueta y anulación.
+alter table public.event_invite_codes add column if not exists external_ref text check (external_ref is null or char_length(external_ref) between 1 and 120);
+alter table public.event_invite_codes add column if not exists label text check (label is null or char_length(label) <= 60);
+alter table public.event_invite_codes add column if not exists source text not null default 'panel' check (source in ('panel', 'api'));
+alter table public.event_invite_codes add column if not exists api_key_id uuid;
+alter table public.event_invite_codes add column if not exists revoked_at timestamptz;
+do $$ begin
+  alter table public.event_invite_codes add constraint invite_revoked_chk check (not (is_used and revoked_at is not null));
+exception when duplicate_object then null; end $$;
+create unique index if not exists invite_codes_external_ref_uq on public.event_invite_codes (event_id, external_ref) where external_ref is not null;
+create index if not exists invite_codes_event_created_idx on public.event_invite_codes (event_id, created_at, id);
+
+-- [API v1] Claves de API para clientes empresariales (ticketeras, productoras). La clave completa se muestra
+-- UNA vez; acá solo queda su SHA-256. event_id null = todos los eventos que administra quien la creó.
+create table if not exists public.api_keys (
+  id            uuid primary key default gen_random_uuid(),
+  name          text not null check (char_length(name) between 1 and 60),
+  prefix        text not null unique,
+  key_hash      text not null unique,
+  created_by    uuid not null references public.profiles(id) on delete cascade,
+  event_id      uuid references public.events(id) on delete cascade,
+  scopes        text[] not null default '{codes:read,codes:write}' check (scopes <@ array['codes:read', 'codes:write'] and cardinality(scopes) > 0),
+  last_used_at  timestamptz,
+  revoked_at    timestamptz,
+  created_at    timestamptz not null default now()
+);
+do $$ begin
+  alter table public.event_invite_codes add constraint invite_api_key_fk foreign key (api_key_id) references public.api_keys(id) on delete set null;
+exception when duplicate_object then null; end $$;
+
 create table if not exists public.event_attendees (
   id                       uuid primary key default gen_random_uuid(),
   event_id                 uuid not null references public.events(id) on delete cascade,
@@ -469,6 +499,7 @@ $$;
 -- ════════════════════════════════════════════════════════════════════════
 alter table public.profiles            enable row level security;
 alter table public.instagram_accounts  enable row level security;
+alter table public.api_keys            enable row level security;
 alter table public.user_blocks         enable row level security;
 alter table public.events              enable row level security;
 alter table public.event_staff         enable row level security;
@@ -560,6 +591,12 @@ drop policy if exists staff_manage on public.event_staff;
 create policy staff_manage on public.event_staff for all to authenticated
   using (public.has_staff_role(event_id, array['owner']::staff_role_t[]))
   with check (public.has_staff_role(event_id, array['owner']::staff_role_t[]));
+
+-- API KEYS ── cada quien ve sus claves (nunca el hash); se crean y revocan por RPC.
+revoke all on public.api_keys from anon, authenticated;
+grant select (id, name, prefix, created_by, event_id, scopes, last_used_at, revoked_at, created_at) on public.api_keys to authenticated;
+drop policy if exists api_keys_own on public.api_keys;
+create policy api_keys_own on public.api_keys for select to authenticated using (created_by = auth.uid());
 
 -- INVITE CODES ── solo staff (el canje va por la RPC join_event).
 drop policy if exists codes_staff on public.event_invite_codes;
@@ -752,7 +789,7 @@ begin
   select * into v_event from public.events where upper(master_invite_code) = upper(p_code) or slug = lower(p_code);
   if found then v_via := 'master_link';
   else
-    select * into v_code from public.event_invite_codes where upper(code) = upper(p_code) for update;
+    select * into v_code from public.event_invite_codes where upper(code) = upper(p_code) and revoked_at is null for update;
     if found then
       select * into v_event from public.events where id = v_code.event_id;
       v_via := 'single_use_code';
@@ -798,7 +835,7 @@ begin
   select * into v_event from public.events where upper(master_invite_code) = upper(trim(p_code)) or slug = lower(trim(p_code));
   if found then v_via := 'master_link';
   else
-    select * into v_code from public.event_invite_codes where upper(code) = upper(trim(p_code));
+    select * into v_code from public.event_invite_codes where upper(code) = upper(trim(p_code)) and revoked_at is null;
     if found then
       select * into v_event from public.events where id = v_code.event_id;
       v_via := 'single_use_code';
@@ -1312,6 +1349,13 @@ begin
 end $$;
 
 -- Generador de códigos únicos de 1 uso (lote)
+-- Código de acceso: 10 caracteres de un alfabeto de 32 sin 0/O/1/I (≈ 2^50 combinaciones; sin sesgo: 256 % 32 = 0).
+create or replace function public.new_access_code(p_len int default 10)
+returns text language sql volatile set search_path = public, extensions as $$
+  select string_agg(substr('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', (get_byte(r.b, i) % 32) + 1, 1), '' order by i)
+  from (select gen_random_bytes(p_len) as b) r, generate_series(0, p_len - 1) i;
+$$;
+
 create or replace function public.generate_invite_codes(p_event uuid, p_count int)
 returns setof public.event_invite_codes language plpgsql security definer set search_path = public, extensions as $$
 begin
@@ -1320,7 +1364,7 @@ begin
   return query
   with ins as (
     insert into public.event_invite_codes (event_id, code)
-    select p_event, upper(encode(gen_random_bytes(4), 'hex')) from generate_series(1, p_count)
+    select p_event, public.new_access_code() from generate_series(1, p_count)
     on conflict (code) do nothing
     returning *
   ) select * from ins;
@@ -1347,6 +1391,116 @@ begin
   return v_user;
 end $$;
 
+-- ═══ API v1 para clientes empresariales ═══════════════════════════════════════
+-- Crear clave (dueño/a o producción). Devuelve la clave completa UNA sola vez.
+create or replace function public.create_api_key(p_name text, p_event uuid default null, p_scopes text[] default null)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare v_uid uuid := auth.uid(); v_key text; v_id uuid; v_prefix text;
+begin
+  if v_uid is null then raise exception 'not_authenticated'; end if;
+  if p_event is not null and not public.is_event_manager(p_event) then raise exception 'forbidden'; end if;
+  if p_event is null and not exists (
+    select 1 from public.events e where e.created_by = v_uid
+    union all select 1 from public.event_staff s where s.user_id = v_uid and s.role in ('owner', 'manager')
+  ) then raise exception 'forbidden'; end if;
+  if char_length(coalesce(trim(p_name), '')) = 0 then raise exception 'invalid_name'; end if;
+  v_prefix := 'rk_live_' || encode(gen_random_bytes(5), 'hex');
+  v_key := v_prefix || '_' || encode(gen_random_bytes(24), 'hex');
+  insert into public.api_keys (name, prefix, key_hash, created_by, event_id, scopes)
+  values (trim(p_name), v_prefix, encode(digest(v_key, 'sha256'), 'hex'), v_uid, p_event, coalesce(p_scopes, array['codes:read', 'codes:write']))
+  returning id into v_id;
+  return jsonb_build_object('id', v_id, 'key', v_key, 'prefix', v_prefix);
+end $$;
+
+create or replace function public.revoke_api_key(p_id uuid)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  update public.api_keys set revoked_at = coalesce(revoked_at, now()) where id = p_id and created_by = auth.uid();
+  if not found then raise exception 'not_found'; end if;
+end $$;
+
+-- ¿Esta clave puede usar este evento con este permiso? (clave activa, alcance del evento y quien la creó
+-- sigue siendo dueño/a o producción: si lo sacan del equipo, sus claves dejan de funcionar).
+create or replace function public.api_authorize(p_key uuid, p_event uuid, p_scope text)
+returns boolean language sql stable security definer set search_path = public, extensions as $$
+  select exists (
+    select 1 from public.api_keys k
+    where k.id = p_key and k.revoked_at is null and p_scope = any(k.scopes)
+      and (k.event_id is null or k.event_id = p_event)
+      and public.is_event_manager(p_event, k.created_by)
+  );
+$$;
+
+-- Eventos accesibles por una clave.
+create or replace function public.api_key_events(p_key uuid)
+returns setof public.events language sql stable security definer set search_path = public, extensions as $$
+  select e.* from public.events e, public.api_keys k
+  where k.id = p_key and k.revoked_at is null and (k.event_id is null or k.event_id = e.id)
+    and public.is_event_manager(e.id, k.created_by)
+  order by e.starts_at;
+$$;
+
+-- Emitir códigos: por cantidad, o uno por entrada con su external_ref (idempotente: reintentar devuelve el mismo código).
+create or replace function public.api_issue_codes(p_key uuid, p_event uuid, p_count int default null, p_tickets jsonb default null, p_label text default null)
+returns table (id uuid, code text, external_ref text, label text, is_used boolean, used_at timestamptz, revoked_at timestamptz, created_at timestamptz, created boolean)
+language plpgsql security definer set search_path = public, extensions as $$
+#variable_conflict use_column
+declare v_n int;
+begin
+  if not public.api_authorize(p_key, p_event, 'codes:write') then raise exception 'forbidden'; end if;
+  if p_tickets is not null then
+    if jsonb_typeof(p_tickets) <> 'array' then raise exception 'invalid_tickets'; end if;
+    v_n := jsonb_array_length(p_tickets);
+    if v_n < 1 or v_n > 1000 then raise exception 'invalid_count'; end if;
+    if exists (select 1 from jsonb_array_elements(p_tickets) t
+               where jsonb_typeof(t) <> 'object' or char_length(coalesce(t->>'external_ref', '')) not between 1 and 120
+                  or char_length(coalesce(t->>'label', p_label, '')) > 60) then raise exception 'invalid_tickets'; end if;
+    if (select count(distinct t->>'external_ref') from jsonb_array_elements(p_tickets) t) <> v_n then raise exception 'duplicate_external_ref'; end if;
+    return query
+    with inserted as (
+      insert into public.event_invite_codes as c (event_id, code, external_ref, label, source, api_key_id)
+      select p_event, public.new_access_code(), t->>'external_ref', coalesce(t->>'label', p_label), 'api', p_key
+      from jsonb_array_elements(p_tickets) t
+      on conflict (event_id, external_ref) where external_ref is not null do nothing
+      returning c.*
+    )
+    -- Las filas nuevas salen del CTE (la sentencia no ve sus propios inserts); las existentes, de la tabla.
+    select r.id, r.code, r.external_ref, r.label, r.is_used, r.used_at, r.revoked_at, r.created_at, r.created from (
+      select i.id, i.code, i.external_ref, i.label, i.is_used, i.used_at, i.revoked_at, i.created_at, true as created from inserted i
+      union all
+      select c.id, c.code, c.external_ref, c.label, c.is_used, c.used_at, c.revoked_at, c.created_at, false
+      from public.event_invite_codes c
+      where c.event_id = p_event and c.external_ref in (select t->>'external_ref' from jsonb_array_elements(p_tickets) t)
+        and c.id not in (select i.id from inserted i)
+    ) r order by r.created_at, r.id;
+  else
+    if p_count is null or p_count < 1 or p_count > 1000 then raise exception 'invalid_count'; end if;
+    if char_length(coalesce(p_label, '')) > 60 then raise exception 'invalid_tickets'; end if;
+    return query
+    with inserted as (
+      insert into public.event_invite_codes as c (event_id, code, label, source, api_key_id)
+      select p_event, public.new_access_code(), p_label, 'api', p_key from generate_series(1, p_count)
+      on conflict (code) do nothing
+      returning c.*
+    ) select i.id, i.code, i.external_ref, i.label, i.is_used, i.used_at, i.revoked_at, i.created_at, true from inserted i order by i.created_at, i.id;
+  end if;
+  update public.api_keys set last_used_at = now() where api_keys.id = p_key;
+end $$;
+
+-- Anular un código no usado (entrada reembolsada o cancelada). Idempotente.
+create or replace function public.api_revoke_code(p_key uuid, p_event uuid, p_code text)
+returns public.event_invite_codes language plpgsql security definer set search_path = public, extensions as $$
+declare v public.event_invite_codes;
+begin
+  if not public.api_authorize(p_key, p_event, 'codes:write') then raise exception 'forbidden'; end if;
+  select * into v from public.event_invite_codes c where c.event_id = p_event and upper(c.code) = upper(trim(p_code)) for update;
+  if not found then raise exception 'code_not_found'; end if;
+  if v.is_used then raise exception 'code_already_used'; end if;
+  update public.event_invite_codes c set revoked_at = coalesce(c.revoked_at, now()) where c.id = v.id returning * into v;
+  update public.api_keys set last_used_at = now() where api_keys.id = p_key;
+  return v;
+end $$;
+
 create or replace function public.purge_expired_pins()
 returns int language sql security definer set search_path = public, extensions as $$
   with d as (delete from public.map_pins where expires_at <= now() returning 1) select count(*)::int from d;
@@ -1355,9 +1509,18 @@ $$;
 -- Permisos de ejecución
 revoke execute on all functions in schema public from anon;
 grant execute on all functions in schema public to authenticated;
-revoke execute on function public.purge_expired_pins() from authenticated;
-revoke execute on function public.apply_squad_perk_rules(uuid) from authenticated;
+-- Postgres concede EXECUTE a PUBLIC por defecto: las funciones internas se cierran también para PUBLIC.
+revoke execute on function public.purge_expired_pins() from public, anon, authenticated;
+revoke execute on function public.apply_squad_perk_rules(uuid) from public, anon, authenticated;
 grant execute on function public.resolve_access_code(text) to anon;
+-- API v1: solo el servidor (route handlers con service role) usa estas funciones.
+do $$ declare f text; begin
+  foreach f in array array['public.api_authorize(uuid, uuid, text)', 'public.api_key_events(uuid)',
+                           'public.api_issue_codes(uuid, uuid, int, jsonb, text)', 'public.api_revoke_code(uuid, uuid, text)'] loop
+    execute format('revoke execute on function %s from public, anon, authenticated', f);
+    if exists (select 1 from pg_roles where rolname = 'service_role') then execute format('grant execute on function %s to service_role', f); end if;
+  end loop;
+end $$;
 
 -- ════════════════════════════════════════════════════════════════════════
 -- REALTIME (chat, pines, alertas, blasts, comandas)

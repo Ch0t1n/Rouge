@@ -24,6 +24,9 @@ su cuenta), elegí el rol y tocá **Sumar**. Para cambiar el rol usá el selecto
    - **Link maestro + QR** para redes, flyers y listas (respeta el cupo).
    - **Códigos de 1 uso** en lotes para entregar con cada entrada: exportalos en **CSV** para la ticketera o el
      mailing, o **imprimí los QRs** (*Imprimir QRs*) para pulseras o entradas físicas.
+   - **Con ticketera propia:** creá una clave en *API para ticketeras* y pasale la [guía de la API](../api/README.md):
+     tu sistema genera un código por entrada y lo manda en el mail con su QR. Si reembolsás una entrada, el código se
+     anula (también podés anularlo a mano con 🚫 en la tabla de códigos).
 3. **Perks:** configurá reglas de QR Drop (ej. "Squad de 4 antes de la 01:00 → trago de bienvenida").
 4. **Equipo:** sumá a producción, barra, mozos y seguridad.
 5. **Comunicación:** publicá el link maestro y explicá en una línea qué gana el público (no perder al grupo, pedir sin fila).

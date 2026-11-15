@@ -13,7 +13,8 @@ TypeScript (`src/lib/types.ts`) son su espejo 1:1.
 | `user_blocks` | Lista negra por perfil o por teléfono. |
 | `events` | Evento: horarios, ventana del lobby, cupo, plano, line-up, link maestro, creador. |
 | `event_staff` | Equipo del evento y su rol (`owner`, `manager`, `bartender`, `waiter`, `security`). |
-| `event_invite_codes` | Códigos de 1 uso. |
+| `event_invite_codes` | Códigos de 1 uso: entrada externa (`external_ref`, única por evento), etiqueta, origen (panel / API), anulación. |
+| `api_keys` | Claves de la API v1 (solo el SHA-256; nombre, prefijo visible, alcance de evento, permisos, último uso, revocada). |
 | `event_attendees` | Asistencia: mood, Modo Solo Amigos, Rompehielos usado, gasto, sectores visitados. |
 | `connections` | Conectar / Rompehielos (con trago adjunto) y su estado. |
 | `squads` · `squad_members` | Squads, Punto Base, Mesa VIP; integrantes y estado de seguridad. |
@@ -60,6 +61,18 @@ Toda operación sensible pasa por una función `security definer` que valida la 
 | `redeem_pickup_code(event, code)` | Dueño/a, Producción, Barra, Mozo/a | Entrega en la ventanilla (solo si está lista). |
 | `redeem_perk(qr)` | Dueño/a, Producción, Barra | Canje de QR de perk. |
 | `set_staff_role(event, username, role)` | Dueño/a | Sumar, cambiar o quitar equipo. |
+| `create_api_key(name, event, scopes)` · `revoke_api_key(id)` | Dueño/a, Producción | Claves de la API (la clave completa vuelve una sola vez). |
+
+**API v1 (solo servidor, `service_role`)** — cerradas para `public`, `anon` y `authenticated`:
+
+| RPC | Para qué |
+|---|---|
+| `api_authorize(key, event, scope)` | Clave activa + alcance + quien la creó sigue siendo dueño/a o producción. |
+| `api_key_events(key)` | Eventos que puede usar una clave. |
+| `api_issue_codes(key, event, count, tickets, label)` | Emite códigos por cantidad o uno por entrada (idempotente por `external_ref`). |
+| `api_revoke_code(key, event, code)` | Anula un código no usado. |
+
+`new_access_code()` genera los códigos (10 caracteres, alfabeto de 32 sin 0/O/1/I).
 
 **Helpers de permisos:** `is_blocked`, `is_event_attendee`, `is_event_staff`, `has_staff_role`, `is_event_manager`,
 `can_operate_bar`, `is_squad_member`, `are_squadmates`, `is_match`, `can_see_pin`, `lobby_is_open`.
@@ -90,6 +103,8 @@ RLS: cada usuario solo recibe lo que puede ver.
 - RPCs que devuelven filas: `select * from fn(...)`, nunca `select (fn(...)).*`.
 - Columnas nuevas en tablas existentes: `alter table ... add column if not exists`.
 - Tabla nueva ⇒ actualizar `types.ts`, `RougeState`, `seed.ts`, `sync.ts` y `schema.sql`.
+- Postgres concede `EXECUTE` a `PUBLIC` por defecto: una función que no debe usar el cliente se cierra con
+  `revoke execute ... from public, anon, authenticated` (ver el final de `schema.sql`).
 - Antes de cada cambio: `npm test` (contrato) y `npm run test:integration` contra un Supabase de prueba.
 - `supabase/seed.sql` (opcional) crea el evento de prueba `/join/bresh-sabado`, su menú y una regla de QR, con fechas
   relativas a `now()`.

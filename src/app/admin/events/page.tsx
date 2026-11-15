@@ -2,7 +2,7 @@
 
 import * as C from "@/lib/store/commands";
 import { useMemo, useRef, useState } from "react";
-import { Copy, Download, ImagePlus, Link2, Plus, Printer, QrCode, Save, Trash2 } from "lucide-react";
+import { Ban, Copy, Download, ImagePlus, Link2, Plus, Printer, QrCode, Save, Trash2 } from "lucide-react";
 import Link from "next/link";
 import type { LineupSlot, RougeEvent } from "@/lib/types";
 import { generateInviteCodes, upsertEvent } from "@/lib/engine/actions";
@@ -14,6 +14,7 @@ import { cn, formatDateTime, toCSV, uid } from "@/lib/utils";
 import { AdminHeader, downloadCSV, Panel } from "@/components/admin/AdminChrome";
 import { useShare } from "@/components/share/ShareSheet";
 import { TeamPanel } from "@/components/admin/TeamPanel";
+import { ApiKeysPanel } from "@/components/admin/ApiKeysPanel";
 import { can } from "@/lib/engine/roles";
 import { VenueMap } from "@/components/venue/VenueMap";
 import { VENUE_LAYOUT } from "@/lib/mock/seed";
@@ -65,6 +66,11 @@ export default function AdminEventsPage() {
       </div>
       <EventEditor key={editing} event={event} onSaved={(id) => { setEditing(id); setActiveEvent(id); }} />
       {event && <AccessPanel event={event} />}
+      {event && (
+        <div className="grid gap-6 xl:grid-cols-3">
+          <ApiKeysPanel event={event} />
+        </div>
+      )}
       {event && can(state, event.id, state.current_user_id, "admin.team") && <TeamPanel event={event} />}
     </main>
   );
@@ -210,11 +216,12 @@ function AccessPanel({ event }: { event: RougeEvent }) {
   const { state, exec, notify } = useRouge();
   const [count, setCount] = useState(50);
   const share = useShare();
-  const [filter, setFilter] = useState<"all" | "free" | "used">("all");
+  const [filter, setFilter] = useState<"all" | "free" | "used" | "revoked">("all");
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const masterLink = `${origin}/join/${event.slug}`;
   const codes = state.event_invite_codes.filter((c) => c.event_id === event.id).sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
-  const shown = codes.filter((c) => (filter === "all" ? true : filter === "free" ? !c.is_used : c.is_used));
+  const isFree = (c: (typeof codes)[number]) => !c.is_used && !c.revoked_at;
+  const shown = codes.filter((c) => (filter === "all" ? true : filter === "free" ? isFree(c) : filter === "used" ? c.is_used : !!c.revoked_at));
   const attendees = state.event_attendees.filter((a) => a.event_id === event.id).length;
 
   const copy = async (text: string, label = "Copiado") => {
@@ -229,7 +236,11 @@ function AccessPanel({ event }: { event: RougeEvent }) {
         codes.map((c) => ({
           codigo: c.code,
           link: `${origin}/join/${c.code}`,
-          estado: c.is_used ? "usado" : "disponible",
+          qr: `${origin}/api/v1/qr/${c.code}`,
+          entrada: c.external_ref ?? "",
+          etiqueta: c.label ?? "",
+          origen: c.source === "api" ? "API" : "panel",
+          estado: c.is_used ? "usado" : c.revoked_at ? "anulado" : "disponible",
           usado_por: c.used_by_user_id ? `@${state.profiles.find((p) => p.id === c.used_by_user_id)?.username ?? ""}` : "",
           usado_el: c.used_at ?? "",
         })),
@@ -264,7 +275,7 @@ function AccessPanel({ event }: { event: RougeEvent }) {
         className="xl:col-span-2"
         action={
           <div className="flex gap-2">
-            <Link href={`/admin/print-codes?event=${event.id}`} className={cn(buttonVariants({ size: "sm", variant: "glass" }), !codes.some((c) => !c.is_used) && "pointer-events-none opacity-40")}>
+            <Link href={`/admin/print-codes?event=${event.id}`} className={cn(buttonVariants({ size: "sm", variant: "glass" }), !codes.some(isFree) && "pointer-events-none opacity-40")}>
               <Printer /> Imprimir QRs
             </Link>
             <Button size="sm" variant="glass" onClick={exportCodes} disabled={!codes.length}>
@@ -287,9 +298,9 @@ function AccessPanel({ event }: { event: RougeEvent }) {
             <Link2 /> Generar lote
           </Button>
           <div className="ml-auto flex gap-1">
-            {(["all", "free", "used"] as const).map((f) => (
+            {(["all", "free", "used", "revoked"] as const).map((f) => (
               <button key={f} type="button" onClick={() => setFilter(f)} className={cn("min-h-[40px] rounded-full px-3 text-xs font-semibold", filter === f ? "bg-vip text-background" : "bg-white/[0.05] text-muted")}>
-                {f === "all" ? `Todos · ${codes.length}` : f === "free" ? `Libres · ${codes.filter((c) => !c.is_used).length}` : `Usados · ${codes.filter((c) => c.is_used).length}`}
+                {f === "all" ? `Todos · ${codes.length}` : f === "free" ? `Libres · ${codes.filter(isFree).length}` : f === "used" ? `Usados · ${codes.filter((c) => c.is_used).length}` : `Anulados · ${codes.filter((c) => c.revoked_at).length}`}
               </button>
             ))}
           </div>
@@ -299,6 +310,7 @@ function AccessPanel({ event }: { event: RougeEvent }) {
             <thead className="sticky top-0 bg-surface text-left text-xs uppercase tracking-wider text-muted">
               <tr>
                 <th className="px-4 py-2 font-semibold">Código</th>
+                <th className="px-4 py-2 font-semibold">Entrada</th>
                 <th className="px-4 py-2 font-semibold">Estado</th>
                 <th className="px-4 py-2 font-semibold">Usado por</th>
                 <th className="px-4 py-2" />
@@ -308,10 +320,28 @@ function AccessPanel({ event }: { event: RougeEvent }) {
               {shown.slice(0, 300).map((c) => (
                 <tr key={c.id} className="border-t border-white/5">
                   <td className="px-4 py-2 font-display font-semibold tracking-wider">{c.code}</td>
-                  <td className="px-4 py-2">{c.is_used ? <Badge>Usado</Badge> : <Badge tone="squad">Libre</Badge>}</td>
+                  <td className="px-4 py-2 text-xs text-muted">
+                    {c.external_ref ?? "—"}
+                    {c.label && <span className="ml-1 text-primary/80">· {c.label}</span>}
+                    {c.source === "api" && <Badge tone="vip" className="ml-1.5">API</Badge>}
+                  </td>
+                  <td className="px-4 py-2">{c.is_used ? <Badge>Usado</Badge> : c.revoked_at ? <Badge tone="rouge">Anulado</Badge> : <Badge tone="squad">Libre</Badge>}</td>
                   <td className="px-4 py-2 text-muted">{c.used_by_user_id ? `@${state.profiles.find((p) => p.id === c.used_by_user_id)?.username ?? "—"}` : "—"}</td>
                   <td className="whitespace-nowrap px-2 py-1 text-right">
-                    {!c.is_used && (
+                    {isFree(c) && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`Anular ${c.code}`}
+                        onClick={async () => {
+                          const r = await exec(C.revokeInviteCode(c));
+                          if (r.ok) notify({ tone: "info", title: `Código ${c.code} anulado`, description: "Ya no sirve para entrar (ej. entrada reembolsada)." });
+                        }}
+                      >
+                        <Ban />
+                      </Button>
+                    )}
+                    {isFree(c) && (
                       <Button
                         size="sm"
                         variant="ghost"

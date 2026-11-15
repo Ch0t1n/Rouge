@@ -124,6 +124,7 @@ function emptyState(userId: UUID = ""): RougeState {
     events: [],
     event_staff: [],
     event_invite_codes: [],
+    api_keys: [],
     event_attendees: [],
     connections: [],
     squads: [],

@@ -311,6 +311,51 @@ describe.skipIf(!URL || !ANON || !SERVICE)("Supabase real: flujo completo con RL
     expect((await snap(nuevo)).profiles.find((x) => x.id === nuevo.id)).toMatchObject({ instagram_username: ig2, instagram_verified: true });
   });
 
+  it("API v1: claves, códigos por entrada idempotentes, anulación y funciones cerradas para clientes", async () => {
+    const { hashApiKey } = await import("@/lib/api/v1");
+    // La dueña (staff) crea una clave para el evento: la clave completa vuelve UNA vez
+    const created = await act(staff, C.createApiKey(`Ticketera ${RUN}`, EV));
+    expect(created.secret).toMatch(/^rk_live_[0-9a-f]{10}_[0-9a-f]{48}$/);
+    const mine = await snap(staff);
+    expect(mine.api_keys.find((k) => k.id === created.key.id)).toMatchObject({ prefix: created.key.prefix, event_id: EV, revoked_at: null });
+    // El hash no es legible desde el cliente (privilegios por columna)
+    const { error: hashErr } = await staff.sb.from("api_keys").select("key_hash").eq("id", created.key.id);
+    expect(hashErr).not.toBeNull();
+    // Un asistente no puede crear claves ni usar las funciones de la API
+    expect(await rejects(cami, C.createApiKey("x", EV), created, await snap(cami))).toMatchObject({ message: "forbidden" });
+    for (const [fn, args] of [
+      ["api_issue_codes", { p_key: created.key.id, p_event: EV, p_count: 1 }],
+      ["api_authorize", { p_key: created.key.id, p_event: EV, p_scope: "codes:read" }],
+      ["api_revoke_code", { p_key: created.key.id, p_event: EV, p_code: "X" }],
+    ] as const) {
+      expect((await cami.sb.rpc(fn, args)).error, fn).not.toBeNull();
+    }
+    // El servidor (service role) autentica por hash y emite un código por entrada, idempotente
+    const { data: key } = await admin.from("api_keys").select("id").eq("key_hash", hashApiKey(created.secret)).single();
+    expect(key?.id).toBe(created.key.id);
+    const tickets = [{ external_ref: `ORD-${RUN}-1`, label: "VIP" }, { external_ref: `ORD-${RUN}-2` }];
+    const first = await admin.rpc("api_issue_codes", { p_key: key!.id, p_event: EV, p_tickets: tickets, p_label: "General" });
+    expect(first.error).toBeNull();
+    expect(first.data).toHaveLength(2);
+    expect(first.data.every((r: { created: boolean; code: string }) => r.created && /^[A-HJ-NP-Z2-9]{10}$/.test(r.code))).toBe(true);
+    const again = await admin.rpc("api_issue_codes", { p_key: key!.id, p_event: EV, p_tickets: tickets });
+    expect(again.data.map((r: { code: string }) => r.code).sort()).toEqual(first.data.map((r: { code: string }) => r.code).sort());
+    expect(again.data.every((r: { created: boolean }) => !r.created)).toBe(true);
+    // Un asistente entra con el código de su entrada; el otro se anula (reembolso) y deja de servir
+    const [used, refunded] = first.data as { code: string }[];
+    const comprador = await actor(admin, "comprador");
+    await act(comprador, C.upsertProfile(comprador.id, { username: `compra.${RUN}`.slice(0, 20), full_name: "Comprador", birth_date: "1996-06-06", phone: phone(40) }));
+    await act(comprador, C.joinEvent(comprador.id, used.code, "open_to_meet", EV));
+    const rv = await admin.rpc("api_revoke_code", { p_key: key!.id, p_event: EV, p_code: refunded.code });
+    expect(rv.data.revoked_at).toBeTruthy();
+    expect((await admin.rpc("api_revoke_code", { p_key: key!.id, p_event: EV, p_code: used.code })).error?.message).toBe("code_already_used");
+    const anonSb = createClient(URL!, ANON!, opts);
+    expect((await anonSb.rpc("resolve_access_code", { p_code: refunded.code })).data).toBeNull();
+    // Revocar la clave la deja sin acceso
+    await act(staff, C.revokeApiKey(created.key.id));
+    expect((await admin.rpc("api_authorize", { p_key: key!.id, p_event: EV, p_scope: "codes:read" })).data).toBe(false);
+  });
+
   it("storage: subo a mi carpeta, no a la de otra persona", async () => {
     const blob = new Blob([new Uint8Array([82, 73, 70, 70])], { type: "image/webp" });
     const ok = await sofi.sb.storage.from("profile-media").upload(`${sofi.id}/test-${RUN}.webp`, blob, { contentType: "image/webp" });

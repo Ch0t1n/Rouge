@@ -3,6 +3,7 @@
  *   node e2e/run.cjs demo        → app en Modo Demo
  *   node e2e/run.cjs supabase    → app conectada a un Supabase de prueba (+ Mailpit)
  *   node e2e/run.cjs instagram   → app con Instagram apuntando al mock (lo levanta este script)
+ *   node e2e/run.cjs api         → API v1 por HTTP (app con Supabase + SUPABASE_SERVICE_ROLE_KEY)
  */
 const { spawn, spawnSync } = require("child_process");
 const path = require("path");
@@ -11,6 +12,7 @@ const SUITES = {
   demo: ["demo-onboarding.cjs", "demo-lobby.cjs", "demo-squad-bar.cjs", "demo-admin.cjs", "demo-roles-qr-landing.cjs"],
   supabase: ["supabase-flow.cjs"],
   instagram: ["supabase-instagram.cjs"],
+  api: ["api.cjs"],
 };
 
 const which = process.argv[2];

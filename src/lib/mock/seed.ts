@@ -33,7 +33,7 @@ import type {
   VenueLayout,
 } from "@/lib/types";
 
-export const STATE_VERSION = 4;
+export const STATE_VERSION = 5;
 
 // IDs estables → los links de demo (/join/..., /u/...) no cambian entre re-siembras.
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -257,6 +257,12 @@ export function createSeedState(now = Date.now()): RougeState {
       is_used: used,
       used_by_user_id: used ? id(i + 2) : null,
       used_at: used ? t(START - 30 + i * 5) : null,
+      // Los últimos 6 los emitió la ticketera por API (con su número de entrada).
+      external_ref: i >= 18 ? `TKT-${48210 + i}` : null,
+      label: i >= 18 ? (i % 2 ? "VIP" : "General") : null,
+      source: i >= 18 ? "api" : "panel",
+      api_key_id: null,
+      revoked_at: null,
       created_at: t(-60 * 24 * 3),
     };
   });
@@ -517,6 +523,7 @@ export function createSeedState(now = Date.now()): RougeState {
     events: [event],
     event_staff: STAFF.map<EventStaff>((m) => ({ event_id: event.id, user_id: m.id, role: m.role, created_at: t(-60 * 24 * 5) })),
     event_invite_codes: invite_codes,
+    api_keys: [],
     event_attendees: attendees,
     connections,
     squads,

@@ -38,12 +38,12 @@ Listo: la app arranca en Modo Demo. Se actualiza sola con cada push a la rama el
 |---|---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | Sí | Navegador | *Project Settings → API → Project URL* |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Sí | Navegador | *Project Settings → API → anon public* |
-| `NEXT_PUBLIC_APP_URL` | Con Instagram | Servidor | `https://app.tudominio.com` (arma la URL de vuelta del OAuth) |
+| `NEXT_PUBLIC_APP_URL` | Con Instagram o API | Servidor | `https://app.tudominio.com` (vuelta del OAuth y links/QR que devuelve la API) |
 | `NEXT_PUBLIC_AUTH_GOOGLE` | No | Navegador | `1` para mostrar "Continuar con Google" |
 | `NEXT_PUBLIC_AUTH_INSTAGRAM` | No | Navegador | `1` para mostrar Instagram (login, conectar e importar fotos) |
 | `INSTAGRAM_APP_ID` | Con Instagram | Servidor | App de Meta |
 | `INSTAGRAM_APP_SECRET` | Con Instagram | Servidor | App de Meta (secreto) |
-| `SUPABASE_SERVICE_ROLE_KEY` | Con Instagram | **Solo servidor** | *Project Settings → API → service_role*. Nunca con prefijo `NEXT_PUBLIC_`. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Con Instagram o API | **Solo servidor** | *Project Settings → API → service_role*. Nunca con prefijo `NEXT_PUBLIC_`. |
 
 Opcionales (tests o casos especiales): `INSTAGRAM_OAUTH_URL`, `INSTAGRAM_TOKEN_URL`, `INSTAGRAM_GRAPH_URL`,
 `INSTAGRAM_MEDIA_HOSTS`, `INSTAGRAM_PLACEHOLDER_EMAIL_DOMAIN`.
@@ -75,7 +75,12 @@ Opcionales (tests o casos especiales): `INSTAGRAM_OAUTH_URL`, `INSTAGRAM_TOKEN_U
 
 > Solo cuentas **profesionales** (Creador o Empresa) pueden conectarse. Las personales pueden escribir su @ a mano.
 
-### 5. Dominio y verificación final
+### 5. API para ticketeras
+
+Con `SUPABASE_SERVICE_ROLE_KEY` y `NEXT_PUBLIC_APP_URL` cargadas, la API queda en `https://app.tudominio.com/api/v1`.
+Cada organizador crea sus claves desde el panel. Guía para pasarle a la ticketera: [docs/api](../api/README.md).
+
+### 6. Dominio y verificación final
 
 1. Asignar `app.tudominio.com` en Vercel.
 2. Recorrer el [checklist de lanzamiento](./checklist-lanzamiento-v1.md).

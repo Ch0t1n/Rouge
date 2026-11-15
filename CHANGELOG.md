@@ -2,6 +2,29 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y [SemVer](https://semver.org/lang/es/).
 
+## [1.1.0] — 2026-11-15
+
+### Agregado
+- **API v1 para ticketeras y productoras** (`/api/v1`, guía en [docs/api](docs/api/README.md), OpenAPI en
+  `/api/v1/openapi.json`): claves por organizador (por evento o todos sus eventos, SHA-256, revocables), un código por
+  entrada idempotente por `external_ref`, códigos por cantidad, listado con filtros y cursor, estado y check-in
+  (`status=used&used_since`), anulación por reembolso y QR en PNG/SVG para el mail de la entrada.
+- Panel: *API para ticketeras* (crear/revocar claves, ejemplo listo para copiar) y tabla de códigos con número de
+  entrada, etiqueta, origen, filtro de anulados, botón para anular y CSV ampliado.
+
+### Cambiado
+- Los códigos de 1 uso nuevos tienen 10 caracteres (≈ 2^50 combinaciones) del mismo alfabeto sin 0/O/1/I. Los
+  existentes siguen funcionando.
+- Un código anulado es inválido para entrar (panel, API y `join_event`).
+
+### Corregido
+- La carga del estado pedía todos los perfiles en una sola URL (`in (...)`): con ~100 personas el gateway la
+  rechazaba y el panel quedaba sin datos. Ahora se piden por tandas de 60.
+
+### Seguridad
+- Funciones internas (`purge_expired_pins`, `apply_squad_perk_rules` y las `api_*`) cerradas también para `PUBLIC`
+  (Postgres concede `EXECUTE` a `PUBLIC` por defecto).
+
 ## [1.0.0] — 2026-11-15
 
 Primera versión. Catálogo completo en [docs/producto/funcionalidades.md](docs/producto/funcionalidades.md).

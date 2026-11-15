@@ -47,7 +47,7 @@ export default function AdminOverviewPage() {
   ] as const;
 
   const modules = [
-    { href: "/admin/events", label: "Eventos y accesos", sub: `${codes.filter((c) => !c.is_used).length} códigos libres`, icon: CalendarCog },
+    { href: "/admin/events", label: "Eventos y accesos", sub: `${codes.filter((c) => !c.is_used && !c.revoked_at).length} códigos libres`, icon: CalendarCog },
     { href: "/admin/blasts", label: "Text Blast / Flash Promo", sub: "Avisos push segmentados", icon: Megaphone },
     { href: "/admin/perks", label: "Perks y sorteo en vivo", sub: `${state.raffles.filter((r) => r.event_id === event.id && !r.winner_user_id).length} sorteos pendientes`, icon: Gift },
     { href: "/admin/bar-pos", label: "Comandas de barra", sub: `${m.openOrders} pedidos abiertos`, icon: Martini },
