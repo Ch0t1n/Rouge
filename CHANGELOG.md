@@ -2,6 +2,13 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y [SemVer](https://semver.org/lang/es/).
 
+## [Sin publicar]
+
+### Herramientas
+- 14 skills de Claude Code en `.claude/skills/` (de `rampstackco/claude-skills`, MIT) para revisar código,
+  seguridad, accesibilidad, rendimiento, QA, tests, diseño, formularios, onboarding, media, dependencias y
+  monitoreo. Las reglas para usarlas en ROUGE están en `CLAUDE.md` → "Skills y pulido seguro".
+
 ## [1.0.0] — 2026-11-15
 
 Primera versión. Catálogo completo en [docs/producto/funcionalidades.md](docs/producto/funcionalidades.md).

@@ -112,6 +112,7 @@ src/
     media/compress.ts     # Compresión WebP, color dominante, transcodificación del loop (sin audio)
     media/mediaStore.ts   # Blobs en IndexedDB (`idb:<uuid>`) para el Modo Demo
     media/upload.ts       # uploadMedia(): Supabase Storage si hay sesión, si no IndexedDB
+.claude/skills/           # Skills de Claude Code (auditorías, QA, diseño, seguridad); ver su README.md
 docs/                     # Documentación v1: producto (funcionalidades, guías, demo), técnica y operaciones
 e2e/                      # E2E Playwright (demo, Supabase, Instagram con API imitada) + env.cjs + run.cjs
 CHANGELOG.md              # Historial de versiones (SemVer); pendientes conocidos
@@ -285,6 +286,39 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
 - **Ergonomía:** botones ≥ 44px (`min-h-touch`), modales `BottomSheet`, una mano.
 - No inventar colores nuevos: si hace falta un estado, usar opacidades de los tokens.
 - Respetar `prefers-reduced-motion` (ya global en `globals.css`).
+
+## Skills y pulido seguro
+
+En `.claude/skills/` hay 14 skills importadas de `rampstackco/claude-skills` (MIT). La procedencia, la revisión de
+seguridad y la política para sumar más están en `.claude/skills/README.md`. Son guías genéricas: **este archivo
+manda**. Si una skill sugiere algo que contradice una regla de arriba (motor puro, RLS, privacidad, tokens de
+diseño), gana la regla de ROUGE.
+
+**Cuándo usar cada una en ROUGE**
+
+| Tarea | Skill | Lo que importa en ROUGE |
+|---|---|---|
+| Revisar un diff o PR, debuggear | `code-review-web` | Regla de negocio fuera de `engine/` o UI que llama al motor sin `exec(C.…)` = bloqueante. Comando sin contraparte en `schema.sql` ni en `commands.test.ts` = bloqueante. |
+| Seguridad / pre-lanzamiento | `security-baseline` | RLS en toda tabla, `security definer` con `search_path`, service role solo en `/api/*`, nada secreto con `NEXT_PUBLIC_`. CSP en `next.config.ts`: probarla en modo *Report-Only* antes (Spotify, Supabase, Meta y blobs de IndexedDB). |
+| Accesibilidad | `accessibility-audit`, `frontend-component-build` | `min-h-touch` (44px), foco y ESC en `BottomSheet`, `aria-live` en `Toaster`/`LiveNotifications`, `prefers-reduced-motion`. El rescate tiene que andar con una mano, con lector de pantalla y sin banners encima. |
+| Rendimiento | `performance-optimization`, `media-asset-management` | Pensar en baja señal: `compressImage()` antes de subir, `blur_color` como placeholder, Spotify lazy, SW cache-first. Nunca data URLs en el estado. |
+| UI nueva o pulido visual | `design-standards`, `design-system` | Solo tokens de "Velvet & Laser" (sin colores nuevos). Verificar contraste AA de `text-muted` sobre `surface`. Probar a 375px dentro del shell `max-w-md`, y `/admin` también en desktop. |
+| Formularios | `form-strategy`, `onboarding-wizard-design` | Validar en el motor (mismo mensaje en demo y Supabase) y en SQL; `type`/`autocomplete` correctos; input ≥16px (sin zoom en iOS). El onboarding guarda de a poco y nunca pierde lo cargado. |
+| Tests de una feature o bug | `test-case-authoring`, `qa-testing` | Nivel más bajo que alcance: invariantes en `engine.test.ts`, contrato en `commands.test.ts`, RLS en integración, flujo en `e2e/`. Evidencia = salida real del runner. |
+| Dependencias | `dependency-management` | Por defecto no agregar paquetes. Si hace falta, checklist de la skill + impacto en bundle + `npm audit`. |
+| Operación de la noche | `monitoring-and-alerting` | Rutas críticas: ingreso, rescate, pedidos de barra y Realtime. Ver `docs/operaciones/checklist-lanzamiento-v1.md`. |
+
+**Reglas para pulir sin romper**
+
+- Un cambio por vez y con alcance claro. Los refactors grandes van en su propio commit, nunca mezclados con fixes.
+- Antes de tocar algo, leer su test. Después: `npm run typecheck && npm test && npm run build`. Si tocaste
+  `schema.sql` o `commands.ts`, también `npm run test:integration` (o decir que no se pudo correr y por qué).
+- Nunca cambiar una aserción, un valor esperado o un fixture para que un test pase, salvo que el valor esperado
+  estuviera mal (y decirlo).
+- Las auditorías (a11y, rendimiento, seguridad) se entregan como hallazgos priorizados. Si falta una medición
+  (Lighthouse, lector de pantalla, dispositivo real), se dice que falta: no se inventan números.
+- Mejoras de UX no pueden quitar salvaguardas: bloqueos mutuos, mensaje genérico "no disponible", teléfono
+  privado, audiencia manual de pines, rescate en 1 toque.
 
 ## Roadmap
 
