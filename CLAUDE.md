@@ -40,6 +40,7 @@ node scripts/capture-landing-shots.cjs # re-captura las pantallas reales de la l
 
 ```
 src/
+  proxy.ts                # CSP con nonce por request (Next 16: "proxy" = ex middleware)
   app/                    # Rutas (App Router)
     layout.tsx            # Fuentes, metadata PWA, RougeProvider, AppShell
     page.tsx              # Landing pública a ancho completo (capturas reales en public/landing)
@@ -47,6 +48,7 @@ src/
     login/                # Login por tipo de usuario: Asistente / Equipo. Supabase: magic link, Google, Instagram; demo: persona/rol
       instagram/          # Vuelta del login con Instagram: canjea #token_hash por la sesión (verifyOtp)
     api/instagram/        # OAuth de Instagram (SOLO servidor): start, callback, media (listar/importar), DELETE, data-deletion
+    api/csp-report/       # Reportes de violaciones de la CSP (solo log)
     onboarding/           # Alta del perfil persistente en 4 pasos (guarda progresivamente)
     profile/              # "Así te ven" + completitud · profile/edit (editor completo)
     settings/privacy/     # Lista negra por teléfono + perfiles bloqueados
@@ -97,11 +99,13 @@ src/
       profile.ts          # Validaciones de perfil, parser de Spotify, máscara de teléfono, completitud
       analytics.ts        # Métricas B2B, CRM, Smart Tags, liveWallData()
       engine.test.ts      # Tests de invariantes de negocio
+    security/             # headers.ts (CSP + headers), paths.ts (redirecciones/links seguros), rateLimit.ts, api.ts
     mock/seed.ts          # Motor de Mock Data (fechas relativas a "ahora")
     store/RougeContext.tsx# Estado global: Modo Demo (localStorage) o Supabase (sesión + carga + Realtime); exec()
     store/commands.ts     # Comandos: regla local del motor + contraparte remota (RPC/tabla) de CADA acción
     store/commands.test.ts# Contrato cliente ↔ schema.sql (RPCs, parámetros, tablas, columnas, cargador)
     store/supabase.integration.test.ts # Flujo completo con usuarios reales, RLS, Realtime y Storage (se saltea sin credenciales)
+    store/schema.security.test.ts      # schema.sql real en PGlite + ~50 ataques a RLS/RPCs (corre en npm test)
     store/hooks.ts        # useRequireProfile() → /login (Supabase sin sesión) o /onboarding (sin perfil)
     supabase/sync.ts      # fetchRemoteState() (RLS) + subscribeRealtime()
     supabase/errors.ts    # friendlyError(): excepciones de RPC/RLS → mensajes en español
@@ -206,6 +210,13 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
     descargan por `/api/instagram/media` (solo hosts de Meta) y pasan por `compressImage → uploadMedia`.
     `RougeContext` publica `signedIn` recién cuando cargó el estado de ESE usuario (evita decidir "sin perfil" antes de tiempo).
     Botones visibles con `NEXT_PUBLIC_AUTH_GOOGLE=1` / `NEXT_PUBLIC_AUTH_INSTAGRAM=1`; en demo se simulan.
+18. **Seguridad (no romper).** Helpers de permisos SQL en el schema `private` (no expuesto por la API): referenciarlos
+    como `private.<helper>(…)` y nunca crear helpers con ids arbitrarios en `public`. Cada tabla nueva: RLS + `revoke` +
+    `grant` solo de las columnas que el cliente escribe; lo sensible (estados, totales, dueños, pines) va por RPC. Toda
+    política o RPC nueva suma su ataque en `src/lib/store/schema.security.test.ts`. La CSP está en
+    `src/lib/security/headers.ts`: un origen externo nuevo se agrega ahí con su motivo (sin `*` ni CDNs). El root layout es
+    dinámico por el nonce. Redirecciones con `safeNext`/`safeInternalPath` (`src/lib/security/paths.ts`); links que vienen de
+    datos (blasts) con `isSafeCtaLink`. Rutas `/api/*` nuevas: `rateLimited()` + `readJsonBody()` (`src/lib/security/api.ts`).
 8. **Guardado sincrónico.** `run()` persiste en el acto (y hay flush en `pagehide`): una acción
    nunca se pierde por cerrar la PWA o navegar inmediatamente.
 

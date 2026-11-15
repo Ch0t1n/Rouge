@@ -22,3 +22,6 @@ npm-debug.log*
 
 # e2e
 /e2e/.out/
+
+# scripts de terceros servidos localmente (scripts/copy-vendor.cjs)
+/public/vendor/

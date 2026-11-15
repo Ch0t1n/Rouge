@@ -44,6 +44,12 @@ const MESSAGES: Record<string, string> = {
   ig_not_connected: "Conectá tu Instagram primero.",
   ig_token_invalid: "Tu conexión con Instagram venció. Volvé a conectarla.",
   ig_api_error: "Instagram no respondió. Probá en un rato.",
+  too_many_attempts: "Probaste demasiados códigos. Esperá 15 minutos e intentá de nuevo.",
+  slow_down: "Vas muy rápido. Esperá unos minutos antes de mandar más solicitudes.",
+  invalid_blast: "Revisá el aviso: título (hasta 80), mensaje (hasta 280) y duración de la Flash Promo.",
+  invalid_cta_link: "El link del botón tiene que ser una sección de ROUGE (por ejemplo /bar) o una dirección https://.",
+  invalid_song: "Escribí el nombre del tema.",
+  rate_limited: "Demasiados intentos seguidos. Esperá un minuto.",
 };
 
 export interface SupabaseLikeError {

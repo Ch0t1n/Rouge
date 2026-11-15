@@ -104,6 +104,8 @@ const assert = (c, m) => { if (!c) throw new Error("✘ " + m); log("✔ " + m);
   await p.screenshot({ path: `${SP}/roles-team.png`, fullPage: true });
   await p.click("text=Imprimir QRs");
   await p.waitForURL("**/admin/print-codes**");
+  // Las páginas se renderizan por request (CSP con nonce): esperar a que la hoja pinte antes de contar.
+  await p.waitForSelector("main ul > li svg", { timeout: 15000 }).catch(() => {});
   const cards = await p.locator("main ul > li svg").count();
   assert(cards >= 12, `hoja imprimible con ${cards} QRs`);
   await p.screenshot({ path: `${SP}/print-codes.png` });

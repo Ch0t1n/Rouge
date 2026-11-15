@@ -25,6 +25,17 @@ Marcar antes del primer evento real.
 - [ ] Integración real (`npm run test:integration`) pasando contra staging.
 - [ ] Alguien de guardia con acceso a Vercel y Supabase durante el evento.
 
+## Seguridad
+
+- [ ] **2FA** en todas las cuentas con poder: Vercel, Supabase, GitHub, Meta for Developers, Google Cloud y el registrador del dominio.
+- [ ] `NEXT_PUBLIC_APP_URL` e `INSTAGRAM_TOKEN_KEY` cargadas en producción (ver puesta en producción).
+- [ ] Headers verificados en el dominio final (CSP con nonce, HSTS, `X-Frame-Options`, `Permissions-Policy`).
+- [ ] Supabase → *Authentication → Rate Limits* revisados (envío de magic links por hora) y *Attack Protection* (CAPTCHA) si hay abuso.
+- [ ] Supabase → *API → Exposed schemas*: solo `public` (y `graphql_public`); **nunca** `private`.
+- [ ] Regla de límite en *Vercel → Firewall* para `/api/instagram/*` antes de un evento grande.
+- [ ] `public/.well-known/security.txt` publicado con un email de contacto real para reportes de seguridad.
+- [ ] `npm audit --omit=dev` sin vulnerabilidades en el commit que se despliega.
+
 ## Login social
 
 - [ ] Google: pantalla de consentimiento publicada, credenciales en Supabase, `NEXT_PUBLIC_AUTH_GOOGLE=1`, probado.

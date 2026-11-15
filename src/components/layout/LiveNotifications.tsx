@@ -14,6 +14,7 @@ import type { Toast } from "@/lib/store/RougeContext";
 import { blastsFor } from "@/lib/engine/actions";
 import { getProfile, ordersOf, pendingSquadInvites, perksOf, squadMessages, squadOf } from "@/lib/engine/selectors";
 import { useRouge } from "@/lib/store/RougeContext";
+import { isSafeCtaLink } from "@/lib/security/paths";
 
 type Notice = { key: string; toast: Omit<Toast, "id"> };
 
@@ -24,7 +25,7 @@ function noticesFor(s: RougeState, meId: UUID, now: number): Notice[] {
 
   for (const b of blastsFor(s, eventId, meId, now)) {
     if (b.expires_at && +new Date(b.expires_at) < now) continue;
-    out.push({ key: `blast:${b.id}`, toast: { tone: b.is_flash_promo ? "vip" : "info", title: b.title, description: b.message, duration: 9000, cta: b.cta_label && b.cta_link ? { label: b.cta_label, href: b.cta_link } : undefined } });
+    out.push({ key: `blast:${b.id}`, toast: { tone: b.is_flash_promo ? "vip" : "info", title: b.title, description: b.message, duration: 9000, cta: b.cta_label && isSafeCtaLink(b.cta_link) ? { label: b.cta_label, href: b.cta_link } : undefined } });
   }
 
   const sq = squadOf(s, eventId, meId);

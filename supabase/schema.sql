@@ -19,6 +19,13 @@ create extension if not exists pgcrypto with schema extensions;   -- gen_random_
 create extension if not exists citext with schema extensions;     -- usernames case-insensitive
 set search_path = public, extensions;
 
+-- Helpers de permisos y visibilidad: viven en `private`, que la API (PostgREST) NO expone. Así nadie puede
+-- llamarlos por /rpc con ids ajenos (p. ej. is_blocked(a, b) revelaría quién bloqueó a quién, o is_match quién
+-- hizo match con quién). Las políticas RLS y las RPCs los usan igual. NUNCA agregar `private` a "Exposed schemas".
+create schema if not exists private;
+revoke all on schema private from public, anon;
+grant usage on schema private to authenticated;
+
 -- ────────────────────────────────────────────────────────────────────────
 -- ENUMS
 -- ────────────────────────────────────────────────────────────────────────
@@ -150,6 +157,25 @@ create table if not exists public.event_attendees (
 
 alter table public.event_attendees add column if not exists visited_sectors text[] not null default '{}';
 
+-- [ext] Intentos fallidos de códigos de acceso (anti fuerza bruta de /join). Solo la usan join_event y
+-- resolve_access_code (security definer); ningún cliente la lee ni la escribe.
+create table if not exists public.access_code_failures (
+  key         text not null,                -- 'u:<user id>' o 'ip:<ip>'
+  failed_at   timestamptz not null default now()
+);
+create index if not exists idx_access_failures on public.access_code_failures (key, failed_at desc);
+
+-- Fotos y loop del perfil: solo URLs http(s) (nada de javascript:, data: ni objetos). NOT VALID: aplica a filas
+-- nuevas o editadas sin romper la carga de un esquema existente.
+do $$ begin
+  alter table public.profiles add constraint profiles_media_urls_chk check (
+    not jsonb_path_exists(photos, '$[*] ? (@.type() != "string")')
+    and not jsonb_path_exists(photos, '$[*] ? (!(@ like_regex "^https?://\\S+$"))')
+    and octet_length(photos::text) <= 10000
+    and (loop_video_url is null or (loop_video_url ~ '^https?://\S+$' and char_length(loop_video_url) <= 2048))
+  ) not valid;
+exception when duplicate_object then null; end $$;
+
 create table if not exists public.connections (
   id                    uuid primary key default gen_random_uuid(),
   event_id              uuid not null references public.events(id) on delete cascade,
@@ -169,7 +195,7 @@ create table if not exists public.squads (
   id                      uuid primary key default gen_random_uuid(),
   event_id                uuid not null references public.events(id) on delete cascade,
   name                    text not null check (char_length(name) between 1 and 32),
-  invite_code             text not null unique default ('SQ-' || upper(encode(gen_random_bytes(3), 'hex'))),
+  invite_code             text not null unique default ('SQ-' || upper(encode(gen_random_bytes(5), 'hex'))),
   has_vip_table_to_share  boolean not null default false,
   base_pin_x              double precision check (base_pin_x between 0 and 100),
   base_pin_y              double precision check (base_pin_y between 0 and 100),
@@ -177,6 +203,10 @@ create table if not exists public.squads (
   created_by              uuid not null references public.profiles(id) on delete cascade,
   created_at              timestamptz not null default now()
 );
+
+-- Códigos de Squad: 10 hex (1 billón de combinaciones). Un código de Squad da acceso al chat y a la ubicación
+-- del grupo, así que no puede ser adivinable por fuerza bruta. Los squads existentes conservan su código.
+alter table public.squads alter column invite_code set default ('SQ-' || upper(encode(gen_random_bytes(5), 'hex')));
 
 create table if not exists public.squad_members (
   id             uuid primary key default gen_random_uuid(),
@@ -370,11 +400,11 @@ create index if not exists idx_orders_user           on public.bar_orders (user_
 create index if not exists idx_songs_event           on public.song_requests (event_id);
 
 -- ════════════════════════════════════════════════════════════════════════
--- HELPERS (security definer: evitan recursión de RLS)
+-- HELPERS (security definer: evitan recursión de RLS) — en el schema `private`, fuera de la API
 -- ════════════════════════════════════════════════════════════════════════
 
 -- Invisibilidad mutua: bloqueo por id o por coincidencia de teléfono, en cualquier dirección.
-create or replace function public.is_blocked(a uuid, b uuid)
+create or replace function private.is_blocked(a uuid, b uuid)
 returns boolean language sql stable security definer set search_path = public, extensions as $$
   select exists (
     select 1
@@ -386,40 +416,40 @@ returns boolean language sql stable security definer set search_path = public, e
   );
 $$;
 
-create or replace function public.is_event_attendee(p_event uuid, p_user uuid default auth.uid())
+create or replace function private.is_event_attendee(p_event uuid, p_user uuid default auth.uid())
 returns boolean language sql stable security definer set search_path = public, extensions as $$
   select exists (select 1 from public.event_attendees where event_id = p_event and user_id = p_user);
 $$;
 
-create or replace function public.is_event_staff(p_event uuid, p_user uuid default auth.uid())
+create or replace function private.is_event_staff(p_event uuid, p_user uuid default auth.uid())
 returns boolean language sql stable security definer set search_path = public, extensions as $$
   select exists (select 1 from public.event_staff where event_id = p_event and user_id = p_user)
       or exists (select 1 from public.events where id = p_event and created_by = p_user);
 $$;
 
 -- Permisos por rol (espejo de src/lib/engine/roles.ts). Quien creó el evento es 'owner' aunque no tenga fila.
-create or replace function public.has_staff_role(p_event uuid, p_roles staff_role_t[], p_user uuid default auth.uid())
+create or replace function private.has_staff_role(p_event uuid, p_roles staff_role_t[], p_user uuid default auth.uid())
 returns boolean language sql stable security definer set search_path = public, extensions as $$
   select exists (select 1 from public.event_staff where event_id = p_event and user_id = p_user and role = any(p_roles))
       or ('owner' = any(p_roles) and exists (select 1 from public.events where id = p_event and created_by = p_user));
 $$;
 -- Dueño/a y producción: eventos, accesos, CRM, blasts, perks, sorteos y menú.
-create or replace function public.is_event_manager(p_event uuid, p_user uuid default auth.uid())
+create or replace function private.is_event_manager(p_event uuid, p_user uuid default auth.uid())
 returns boolean language sql stable security definer set search_path = public, extensions as $$
-  select public.has_staff_role(p_event, array['owner','manager']::staff_role_t[], p_user);
+  select private.has_staff_role(p_event, array['owner','manager']::staff_role_t[], p_user);
 $$;
 -- Quien opera comandas: dueño/a, producción, barra y mozos.
-create or replace function public.can_operate_bar(p_event uuid, p_user uuid default auth.uid())
+create or replace function private.can_operate_bar(p_event uuid, p_user uuid default auth.uid())
 returns boolean language sql stable security definer set search_path = public, extensions as $$
-  select public.has_staff_role(p_event, array['owner','manager','bartender','waiter']::staff_role_t[], p_user);
+  select private.has_staff_role(p_event, array['owner','manager','bartender','waiter']::staff_role_t[], p_user);
 $$;
 
-create or replace function public.is_squad_member(p_squad uuid, p_user uuid default auth.uid())
+create or replace function private.is_squad_member(p_squad uuid, p_user uuid default auth.uid())
 returns boolean language sql stable security definer set search_path = public, extensions as $$
   select exists (select 1 from public.squad_members where squad_id = p_squad and user_id = p_user and status = 'joined');
 $$;
 
-create or replace function public.user_squad(p_event uuid, p_user uuid)
+create or replace function private.user_squad(p_event uuid, p_user uuid)
 returns uuid language sql stable security definer set search_path = public, extensions as $$
   select sm.squad_id from public.squad_members sm
   join public.squads s on s.id = sm.squad_id
@@ -427,12 +457,12 @@ returns uuid language sql stable security definer set search_path = public, exte
   limit 1;
 $$;
 
-create or replace function public.are_squadmates(p_event uuid, a uuid, b uuid)
+create or replace function private.are_squadmates(p_event uuid, a uuid, b uuid)
 returns boolean language sql stable security definer set search_path = public, extensions as $$
-  select public.user_squad(p_event, a) is not null and public.user_squad(p_event, a) = public.user_squad(p_event, b);
+  select private.user_squad(p_event, a) is not null and private.user_squad(p_event, a) = private.user_squad(p_event, b);
 $$;
 
-create or replace function public.is_match(p_event uuid, a uuid, b uuid)
+create or replace function private.is_match(p_event uuid, a uuid, b uuid)
 returns boolean language sql stable security definer set search_path = public, extensions as $$
   select exists (
     select 1 from public.connections
@@ -441,24 +471,24 @@ returns boolean language sql stable security definer set search_path = public, e
   );
 $$;
 
-create or replace function public.squad_event(p_squad uuid)
+create or replace function private.squad_event(p_squad uuid)
 returns uuid language sql stable security definer set search_path = public, extensions as $$
   select event_id from public.squads where id = p_squad;
 $$;
 
-create or replace function public.lobby_is_open(p_event uuid)
+create or replace function private.lobby_is_open(p_event uuid)
 returns boolean language sql stable security definer set search_path = public, extensions as $$
   select exists (select 1 from public.events where id = p_event and now() >= lobby_opens_at and now() < lobby_expires_at);
 $$;
 
 -- Regla de visibilidad de pines (sin difusión implícita a matches).
-create or replace function public.can_see_pin(p public.map_pins, viewer uuid default auth.uid())
+create or replace function private.can_see_pin(p public.map_pins, viewer uuid default auth.uid())
 returns boolean language sql stable security definer set search_path = public, extensions as $$
   select p.expires_at > now() and (
     p.user_id = viewer or (
-      not public.is_blocked(viewer, p.user_id) and (
-        (p.share_with_squad and public.are_squadmates(p.event_id, viewer, p.user_id)) or
-        (viewer = any(p.shared_match_ids) and public.is_match(p.event_id, viewer, p.user_id))
+      not private.is_blocked(viewer, p.user_id) and (
+        (p.share_with_squad and private.are_squadmates(p.event_id, viewer, p.user_id)) or
+        (viewer = any(p.shared_match_ids) and private.is_match(p.event_id, viewer, p.user_id))
       )
     )
   );
@@ -487,11 +517,19 @@ alter table public.raffles             enable row level security;
 alter table public.song_requests       enable row level security;
 alter table public.bar_menu_items      enable row level security;
 alter table public.bar_orders          enable row level security;
+alter table public.access_code_failures enable row level security;  -- sin políticas: solo las RPCs
+
+-- Higiene de privilegios (defensa en profundidad, además de RLS):
+--  · anon no toca ninguna tabla salvo lo que se le concede explícitamente más abajo (columnas públicas de events);
+--  · TRUNCATE no respeta RLS: nadie desde la API lo necesita;
+--  · los pedidos de amistad/pedidos/QRs se modifican SOLO por RPCs (ver más abajo los revoke por tabla).
+revoke all on all tables in schema public from anon;
+revoke truncate, references, trigger on all tables in schema public from authenticated;
 
 -- PROFILES ── el teléfono NUNCA es legible por otros usuarios (column privileges).
 drop policy if exists profiles_select on public.profiles;
 create policy profiles_select on public.profiles for select to authenticated
-  using (id = auth.uid() or not public.is_blocked(auth.uid(), id));
+  using (id = auth.uid() or not private.is_blocked(auth.uid(), id));
 drop policy if exists profiles_insert on public.profiles;
 create policy profiles_insert on public.profiles for insert to authenticated with check (id = auth.uid());
 drop policy if exists profiles_update on public.profiles;
@@ -548,49 +586,65 @@ create policy events_select on public.events for select to anon, authenticated u
 drop policy if exists events_insert on public.events;
 create policy events_insert on public.events for insert to authenticated with check (created_by = auth.uid());
 drop policy if exists events_update on public.events;
-create policy events_update on public.events for update to authenticated using (public.is_event_manager(id)) with check (public.is_event_manager(id));
+create policy events_update on public.events for update to authenticated using (private.is_event_manager(id)) with check (private.is_event_manager(id));
+-- Producción edita el evento pero no puede cambiar quién lo creó (=dueño/a) ni el código maestro.
+revoke insert, update on public.events from authenticated;
+grant insert (id, slug, name, description, venue_name, venue_map_url, venue_layout_json, lineup_json, cover_url, starts_at, ends_at,
+              lobby_opens_at, lobby_expires_at, max_capacity, master_invite_code, created_by) on public.events to authenticated;
+grant update (slug, name, description, venue_name, venue_map_url, venue_layout_json, lineup_json, cover_url, starts_at, ends_at,
+              lobby_opens_at, lobby_expires_at, max_capacity) on public.events to authenticated;
 -- El código maestro no se expone a anónimos (la landing /join solo necesita datos públicos)
 revoke all on public.events from anon;
 grant select (id, slug, name, description, venue_name, cover_url, starts_at, ends_at, lobby_opens_at, lobby_expires_at, max_capacity)
   on public.events to anon;
 
 drop policy if exists staff_select on public.event_staff;
-create policy staff_select on public.event_staff for select to authenticated using (user_id = auth.uid() or public.is_event_staff(event_id));
+create policy staff_select on public.event_staff for select to authenticated using (user_id = auth.uid() or private.is_event_staff(event_id));
 drop policy if exists staff_manage on public.event_staff;
 create policy staff_manage on public.event_staff for all to authenticated
-  using (public.has_staff_role(event_id, array['owner']::staff_role_t[]))
-  with check (public.has_staff_role(event_id, array['owner']::staff_role_t[]));
+  using (private.has_staff_role(event_id, array['owner']::staff_role_t[]))
+  with check (private.has_staff_role(event_id, array['owner']::staff_role_t[]));
 
 -- INVITE CODES ── solo staff (el canje va por la RPC join_event).
 drop policy if exists codes_staff on public.event_invite_codes;
 create policy codes_staff on public.event_invite_codes for all to authenticated
-  using (public.is_event_manager(event_id)) with check (public.is_event_manager(event_id));
+  using (private.is_event_manager(event_id)) with check (private.is_event_manager(event_id));
 
 -- ATTENDEES ── veo a los asistentes de mis eventos sin bloqueo; ghost solo para mí, mi squad y mis matches.
 drop policy if exists attendees_select on public.event_attendees;
 create policy attendees_select on public.event_attendees for select to authenticated using (
   user_id = auth.uid()
-  or public.is_event_staff(event_id)
+  or private.is_event_staff(event_id)
   or (
-    public.is_event_attendee(event_id)
-    and not public.is_blocked(auth.uid(), user_id)
-    and (not ghost_mode or public.are_squadmates(event_id, auth.uid(), user_id) or public.is_match(event_id, auth.uid(), user_id))
+    private.is_event_attendee(event_id)
+    and not private.is_blocked(auth.uid(), user_id)
+    and (not ghost_mode or private.are_squadmates(event_id, auth.uid(), user_id) or private.is_match(event_id, auth.uid(), user_id))
   )
 );
 drop policy if exists attendees_update_self on public.event_attendees;
 create policy attendees_update_self on public.event_attendees for update to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid());
-revoke update on public.event_attendees from authenticated;
+revoke insert, update, delete on public.event_attendees from authenticated;
 grant update (mood_tag, ghost_mode, only_liked_can_icebreak, last_active_at) on public.event_attendees to authenticated;
+-- "Activo hace…" lo pone el servidor: un last_active_at en el futuro inflaba el ranking de la grilla.
+create or replace function public.tg_attendee_clamp_activity()
+returns trigger language plpgsql as $$
+begin
+  if new.last_active_at > now() then new.last_active_at := now(); end if;
+  return new;
+end $$;
+drop trigger if exists attendee_clamp_activity on public.event_attendees;
+create trigger attendee_clamp_activity before insert or update of last_active_at on public.event_attendees
+  for each row execute function public.tg_attendee_clamp_activity();
 
 -- CONNECTIONS ── las ven emisor y receptor; altas vía RPC; el receptor responde.
 drop policy if exists conn_select on public.connections;
 create policy conn_select on public.connections for select to authenticated
-  using ((sender_id = auth.uid() or receiver_id = auth.uid()) and not public.is_blocked(sender_id, receiver_id));
+  using ((sender_id = auth.uid() or receiver_id = auth.uid()) and not private.is_blocked(sender_id, receiver_id));
 drop policy if exists conn_respond on public.connections;
 create policy conn_respond on public.connections for update to authenticated
-  using (receiver_id = auth.uid() and status = 'pending')
-  with check (receiver_id = auth.uid());
+  using (receiver_id = auth.uid() and status = 'pending' and not private.is_blocked(sender_id, receiver_id))
+  with check (receiver_id = auth.uid() and status in ('accepted','rejected'));
 revoke update on public.connections from authenticated;
 grant update (status, responded_at) on public.connections to authenticated;
 
@@ -598,28 +652,30 @@ grant update (status, responded_at) on public.connections to authenticated;
 drop policy if exists squads_select on public.squads;
 create policy squads_select on public.squads for select to authenticated using (
   exists (select 1 from public.squad_members m where m.squad_id = squads.id and m.user_id = auth.uid())
-  or (has_vip_table_to_share and public.is_event_attendee(event_id))
-  or public.is_event_staff(event_id)
+  or (has_vip_table_to_share and private.is_event_attendee(event_id))
+  or private.is_event_staff(event_id)
 );
 drop policy if exists squads_update on public.squads;
 create policy squads_update on public.squads for update to authenticated
-  using (public.is_squad_member(id)) with check (public.is_squad_member(id));
+  using (private.is_squad_member(id)) with check (private.is_squad_member(id));
+-- Desde el cliente solo se cambia el nombre y si comparten Mesa VIP (Punto Base va por set_squad_base_pin;
+-- evento, código de invitación y creador no se tocan nunca).
+revoke update on public.squads from authenticated;
+grant update (name, has_vip_table_to_share) on public.squads to authenticated;
 
 drop policy if exists squad_members_select on public.squad_members;
 create policy squad_members_select on public.squad_members for select to authenticated
-  using (user_id = auth.uid() or public.is_squad_member(squad_id) or public.is_event_staff(public.squad_event(squad_id)));
+  using (user_id = auth.uid() or private.is_squad_member(squad_id) or private.is_event_staff(private.squad_event(squad_id)));
 drop policy if exists squad_members_leave on public.squad_members;
 create policy squad_members_leave on public.squad_members for delete to authenticated using (user_id = auth.uid());
 
 -- MAP PINS ── visibilidad por can_see_pin(); cada uno gestiona su pin.
 drop policy if exists pins_select on public.map_pins;
 create policy pins_select on public.map_pins for select to authenticated
-  using (public.can_see_pin(map_pins) or public.is_event_staff(event_id));
+  using (private.can_see_pin(map_pins) or private.is_event_staff(event_id));
+-- Altas SOLO por drop_pin / trigger_rescue: 1 pin activo, 15 min, audiencia filtrada a matches reales
+-- y sin alertas de rescate falsas (un insert directo podía saltear todo eso).
 drop policy if exists pins_insert on public.map_pins;
-create policy pins_insert on public.map_pins for insert to authenticated with check (
-  user_id = auth.uid() and public.is_event_attendee(event_id) and public.lobby_is_open(event_id)
-  and expires_at <= now() + interval '15 minutes 5 seconds'
-);
 drop policy if exists pins_delete on public.map_pins;
 create policy pins_delete on public.map_pins for delete to authenticated using (user_id = auth.uid());
 
@@ -630,73 +686,109 @@ create policy messages_select on public.messages for select to authenticated usi
     select 1 from public.connections c
     where c.id = connection_id and c.status = 'accepted'
       and (c.sender_id = auth.uid() or c.receiver_id = auth.uid())
-      and not public.is_blocked(c.sender_id, c.receiver_id)))
-  or (conversation_type = 'squad' and public.is_squad_member(squad_id))
+      and not private.is_blocked(c.sender_id, c.receiver_id)))
+  or (conversation_type = 'squad' and private.is_squad_member(squad_id))
 );
 drop policy if exists messages_insert on public.messages;
 create policy messages_insert on public.messages for insert to authenticated with check (
-  sender_id = auth.uid() and message_type <> 'system_alert' and (
+  sender_id = auth.uid() and message_type in ('text','image')
+  -- La foto tiene que ser MÍA y estar en nuestro Storage (chat-media/<mi id>/…): nada de URLs externas
+  -- que sirvan de píxel de rastreo (IP del otro) ni esquemas raros.
+  and (media_url is null or (message_type = 'image' and char_length(media_url) <= 2048
+       and media_url ~ ('^https?://[^/?#]+/storage/v1/object/(sign|public|authenticated)/chat-media/' || auth.uid()::text || '/')))
+  and (
     (conversation_type = 'direct' and exists (
       select 1 from public.connections c
       where c.id = connection_id and c.event_id = messages.event_id and c.status = 'accepted'
         and (c.sender_id = auth.uid() or c.receiver_id = auth.uid())
-        and not public.is_blocked(c.sender_id, c.receiver_id)))
-    or (conversation_type = 'squad' and public.is_squad_member(squad_id))
+        and not private.is_blocked(c.sender_id, c.receiver_id)))
+    or (conversation_type = 'squad' and private.is_squad_member(squad_id))
   )
 );
+
+revoke insert, update on public.messages from authenticated;
+grant insert (id, event_id, conversation_type, connection_id, squad_id, sender_id, message_type, content, media_url) on public.messages to authenticated;
 
 -- BLASTS ── recibo solo los que me fueron entregados.
 drop policy if exists blasts_select on public.event_blasts;
 create policy blasts_select on public.event_blasts for select to authenticated using (
-  public.is_event_staff(event_id)
+  private.is_event_staff(event_id)
   or exists (select 1 from public.blast_deliveries d where d.blast_id = event_blasts.id and d.user_id = auth.uid())
 );
 drop policy if exists deliveries_own on public.blast_deliveries;
 create policy deliveries_own on public.blast_deliveries for select to authenticated using (user_id = auth.uid());
 drop policy if exists deliveries_seen on public.blast_deliveries;
 create policy deliveries_seen on public.blast_deliveries for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+-- Solo seen_at: cambiar blast_id permitía leer blasts que no me enviaron.
+revoke insert, update on public.blast_deliveries from authenticated;
+grant update (seen_at) on public.blast_deliveries to authenticated;
 
 -- PERKS ── mis QRs; el staff los ve y los canjea.
 drop policy if exists perks_select on public.user_perks_qrs;
 create policy perks_select on public.user_perks_qrs for select to authenticated
-  using (user_id = auth.uid() or public.is_event_staff(event_id));
+  using (user_id = auth.uid() or private.is_event_staff(event_id));
+-- Los QRs se canjean SOLO con redeem_perk (un update directo permitía cambiar dueño, título o estado).
 drop policy if exists perks_staff_update on public.user_perks_qrs;
-create policy perks_staff_update on public.user_perks_qrs for update to authenticated
-  using (public.has_staff_role(event_id, array['owner','manager','bartender']::staff_role_t[]))
-  with check (public.has_staff_role(event_id, array['owner','manager','bartender']::staff_role_t[]));
+revoke insert, update, delete on public.user_perks_qrs from authenticated;
 
 drop policy if exists perk_rules_staff on public.perk_rules;
 create policy perk_rules_staff on public.perk_rules for all to authenticated
-  using (public.is_event_manager(event_id)) with check (public.is_event_manager(event_id));
+  using (private.is_event_manager(event_id)) with check (private.is_event_manager(event_id));
 drop policy if exists perk_rules_staff_read on public.perk_rules;
-create policy perk_rules_staff_read on public.perk_rules for select to authenticated using (public.is_event_staff(event_id));
+create policy perk_rules_staff_read on public.perk_rules for select to authenticated using (private.is_event_staff(event_id));
 -- Los asistentes ven las reglas activas de su evento (progreso "Squad de 4 → trago").
 drop policy if exists perk_rules_attendees on public.perk_rules;
 create policy perk_rules_attendees on public.perk_rules for select to authenticated
-  using (is_active and public.is_event_attendee(event_id));
+  using (is_active and private.is_event_attendee(event_id));
 
 drop policy if exists raffles_select on public.raffles;
 create policy raffles_select on public.raffles for select to authenticated
-  using (public.is_event_attendee(event_id) or public.is_event_staff(event_id));
+  using (private.is_event_attendee(event_id) or private.is_event_staff(event_id));
 drop policy if exists raffles_staff on public.raffles;
-create policy raffles_staff on public.raffles for insert to authenticated with check (public.is_event_manager(event_id));
+create policy raffles_staff on public.raffles for insert to authenticated with check (private.is_event_manager(event_id));
+-- Se crea sin ganador: winner_* y drawn_at los escribe draw_raffle.
+revoke insert, update on public.raffles from authenticated;
+grant insert (id, event_id, prize_title, filter) on public.raffles to authenticated;
 
 drop policy if exists songs_select on public.song_requests;
 create policy songs_select on public.song_requests for select to authenticated
-  using (public.is_event_attendee(event_id) or public.is_event_staff(event_id));
+  using (private.is_event_attendee(event_id) or private.is_event_staff(event_id));
 
 drop policy if exists menu_select on public.bar_menu_items;
 create policy menu_select on public.bar_menu_items for select to authenticated using (true);
 drop policy if exists menu_staff on public.bar_menu_items;
 create policy menu_staff on public.bar_menu_items for all to authenticated
-  using (public.is_event_manager(event_id)) with check (public.is_event_manager(event_id));
+  using (private.is_event_manager(event_id)) with check (private.is_event_manager(event_id));
 
 drop policy if exists orders_select on public.bar_orders;
 create policy orders_select on public.bar_orders for select to authenticated
-  using (user_id = auth.uid() or auth.uid() = any(split_user_ids) or public.is_event_staff(event_id));
+  using (user_id = auth.uid() or auth.uid() = any(split_user_ids) or private.is_event_staff(event_id));
+-- El Kanban avanza SOLO por advance_bar_order / redeem_pickup_code (ORDER_FLOW): un update directo
+-- permitía saltear estados o cambiar el total cobrado.
 drop policy if exists orders_staff_update on public.bar_orders;
-create policy orders_staff_update on public.bar_orders for update to authenticated
-  using (public.can_operate_bar(event_id)) with check (public.can_operate_bar(event_id));
+revoke insert, update, delete on public.bar_orders from authenticated;
+
+-- Anti fuerza bruta de códigos: quién pide (usuario o IP del request de PostgREST) y si superó el límite.
+create or replace function private.request_key()
+returns text language plpgsql stable security definer set search_path = public, extensions as $$
+declare v_ip text;
+begin
+  if auth.uid() is not null then return 'u:' || auth.uid(); end if;
+  begin
+    v_ip := split_part(coalesce(current_setting('request.headers', true)::json->>'x-forwarded-for', ''), ',', 1);
+  exception when others then v_ip := null;
+  end;
+  -- Sin IP conocida no se limita (si no, cualquiera podría bloquear la vista previa a todos los anónimos).
+  return case when nullif(trim(v_ip), '') is null then null else 'ip:' || trim(v_ip) end;
+end $$;
+
+-- Más de 20 fallos en 15 minutos ⇒ esperar. Limpia lo viejo de paso.
+create or replace function private.too_many_code_failures(p_key text)
+returns boolean language plpgsql security definer set search_path = public, extensions as $$
+begin
+  delete from public.access_code_failures where failed_at < now() - interval '1 day';
+  return (select count(*) from public.access_code_failures where key = p_key and failed_at > now() - interval '15 minutes') >= 20;
+end $$;
 
 -- ════════════════════════════════════════════════════════════════════════
 -- RPCs DE NEGOCIO (atómicas; replican src/lib/engine/actions.ts)
@@ -723,15 +815,15 @@ returns table (
            0.60 * coalesce(2.0 * cardinality(array(select unnest(p.music_genres) intersect select unnest(me.music_genres)))
              / nullif(cardinality(p.music_genres) + cardinality(me.music_genres), 0), 0)
          + 0.25 * case when a.mood_tag = me.mood_tag then 0.8 when a.mood_tag in ('open_to_meet','at_bar','after_hunt') and me.mood_tag in ('open_to_meet','at_bar','after_hunt') then 0.7 else 0.4 end
-         + 0.15 * greatest(0, 1 - extract(epoch from now() - a.last_active_at) / 5400)
+         + 0.15 * least(1, greatest(0, 1 - extract(epoch from now() - a.last_active_at) / 5400))
          )::numeric, 4) as rank,
          array(select unnest(a.visited_sectors) intersect select unnest(me.visited_sectors)) as shared_zones
   from public.event_attendees a
   join public.profiles p on p.id = a.user_id
   cross join me
   where a.event_id = p_event and a.user_id <> auth.uid() and not a.ghost_mode
-    and not public.is_blocked(auth.uid(), a.user_id)
-    and public.lobby_is_open(p_event)
+    and not private.is_blocked(auth.uid(), a.user_id)
+    and private.lobby_is_open(p_event)
     and not exists (select 1 from public.connections c where c.event_id = p_event and c.status = 'rejected'
                     and ((c.sender_id = auth.uid() and c.receiver_id = a.user_id) or (c.sender_id = a.user_id and c.receiver_id = auth.uid())))
   order by rank desc;
@@ -748,6 +840,8 @@ declare
   v_via join_via_t;
 begin
   if v_uid is null then raise exception 'not_authenticated'; end if;
+  if private.too_many_code_failures('u:' || v_uid) then raise exception 'too_many_attempts'; end if;
+  p_code := left(trim(coalesce(p_code, '')), 64);
 
   select * into v_event from public.events where upper(master_invite_code) = upper(p_code) or slug = lower(p_code);
   if found then v_via := 'master_link';
@@ -758,7 +852,11 @@ begin
       v_via := 'single_use_code';
     else
       select * into v_squad from public.squads where upper(invite_code) = upper(p_code);
-      if not found then raise exception 'invalid_code'; end if;
+      if not found then
+        -- Se registra el fallo y se devuelve null (un raise desharía el registro). El cliente lo trata como invalid_code.
+        insert into public.access_code_failures (key) values ('u:' || v_uid);
+        return null;
+      end if;
       select * into v_event from public.events where id = v_squad.event_id;
       v_via := 'squad_link';
     end if;
@@ -779,8 +877,8 @@ begin
     insert into public.event_attendees (event_id, user_id, mood_tag, joined_via) values (v_event.id, v_uid, p_mood, v_via);
   end if;
 
-  if v_via = 'squad_link' and public.user_squad(v_event.id, v_uid) is null
-     and not exists (select 1 from public.squad_members m where m.squad_id = v_squad.id and public.is_blocked(m.user_id, v_uid)) then
+  if v_via = 'squad_link' and private.user_squad(v_event.id, v_uid) is null
+     and not exists (select 1 from public.squad_members m where m.squad_id = v_squad.id and private.is_blocked(m.user_id, v_uid)) then
     insert into public.squad_members (squad_id, user_id, status, joined_at) values (v_squad.id, v_uid, 'joined', now())
     on conflict (squad_id, user_id) do update set status = 'joined', joined_at = now();
   end if;
@@ -791,10 +889,13 @@ end $$;
 -- Vista previa de un link/código de acceso (también sin sesión). Los squads y los códigos de 1 uso
 -- no son legibles por RLS, así que /join/<código> se resuelve acá devolviendo SOLO datos públicos.
 create or replace function public.resolve_access_code(p_code text)
-returns jsonb language plpgsql stable security definer set search_path = public, extensions as $$
+returns jsonb language plpgsql volatile security definer set search_path = public, extensions as $$
 declare
   v_event public.events; v_code public.event_invite_codes; v_squad public.squads; v_via text;
+  v_key text := private.request_key();
 begin
+  if v_key is not null and private.too_many_code_failures(v_key) then raise exception 'too_many_attempts'; end if;
+  p_code := left(coalesce(p_code, ''), 64);
   select * into v_event from public.events where upper(master_invite_code) = upper(trim(p_code)) or slug = lower(trim(p_code));
   if found then v_via := 'master_link';
   else
@@ -804,7 +905,10 @@ begin
       v_via := 'single_use_code';
     else
       select * into v_squad from public.squads where upper(invite_code) = upper(trim(p_code));
-      if not found then return null; end if;
+      if not found then
+        if v_key is not null then insert into public.access_code_failures (key) values (v_key); end if;
+        return null;
+      end if;
       select * into v_event from public.events where id = v_squad.event_id;
       v_via := 'squad_link';
     end if;
@@ -833,11 +937,15 @@ declare
   v_reciprocal public.connections;
   v_row public.connections;
 begin
-  if not public.lobby_is_open(p_event) then raise exception 'lobby_closed'; end if;
-  if not public.is_event_attendee(p_event, v_uid) or not public.is_event_attendee(p_event, p_receiver) then raise exception 'not_attendee'; end if;
-  if public.is_blocked(v_uid, p_receiver) then raise exception 'unavailable'; end if;
+  if not private.lobby_is_open(p_event) then raise exception 'lobby_closed'; end if;
+  if not private.is_event_attendee(p_event, v_uid) or not private.is_event_attendee(p_event, p_receiver) then raise exception 'not_attendee'; end if;
+  if private.is_blocked(v_uid, p_receiver) then raise exception 'unavailable'; end if;
   if exists (select 1 from public.event_attendees where event_id = p_event and user_id = v_uid and ghost_mode) then raise exception 'sender_in_ghost_mode'; end if;
-  if public.is_match(p_event, v_uid, p_receiver) then raise exception 'already_matched'; end if;
+  if private.is_match(p_event, v_uid, p_receiver) then raise exception 'already_matched'; end if;
+  -- Anti spam (solo servidor): máx. 40 solicitudes nuevas por persona cada 10 minutos.
+  if (select count(*) from public.connections where event_id = p_event and sender_id = v_uid and created_at > now() - interval '10 minutes') >= 40 then
+    raise exception 'slow_down';
+  end if;
 
   select * into v_reciprocal from public.connections
    where event_id = p_event and sender_id = p_receiver and receiver_id = v_uid and status = 'pending' for update;
@@ -863,14 +971,14 @@ declare
   v_perk_id uuid;
   v_row public.connections;
 begin
-  if not public.lobby_is_open(p_event) then raise exception 'lobby_closed'; end if;
+  if not private.lobby_is_open(p_event) then raise exception 'lobby_closed'; end if;
   select * into v_att from public.event_attendees where event_id = p_event and user_id = v_uid for update;
   select * into v_rcv from public.event_attendees where event_id = p_event and user_id = p_receiver;
-  if v_att.id is null or v_rcv.id is null or public.is_blocked(v_uid, p_receiver) or v_rcv.ghost_mode then raise exception 'unavailable'; end if;
+  if v_att.id is null or v_rcv.id is null or private.is_blocked(v_uid, p_receiver) or v_rcv.ghost_mode then raise exception 'unavailable'; end if;
   if v_att.ghost_mode then raise exception 'sender_in_ghost_mode'; end if;
   if v_att.icebreaker_used then raise exception 'icebreaker_already_used'; end if;
   if coalesce(trim(p_message), '') = '' or char_length(p_message) > 140 then raise exception 'invalid_message'; end if;
-  if public.is_match(p_event, v_uid, p_receiver) then raise exception 'already_matched'; end if;
+  if private.is_match(p_event, v_uid, p_receiver) then raise exception 'already_matched'; end if;
   if v_rcv.only_liked_can_icebreak and not exists (
     select 1 from public.connections where event_id = p_event and sender_id = p_receiver and receiver_id = v_uid
   ) then raise exception 'receiver_only_accepts_liked'; end if;
@@ -916,8 +1024,8 @@ create or replace function public.create_squad(p_event uuid, p_name text)
 returns public.squads language plpgsql security definer set search_path = public, extensions as $$
 declare v_row public.squads;
 begin
-  if not public.lobby_is_open(p_event) or not public.is_event_attendee(p_event) then raise exception 'not_allowed'; end if;
-  if public.user_squad(p_event, auth.uid()) is not null then raise exception 'already_in_squad'; end if;
+  if not private.lobby_is_open(p_event) or not private.is_event_attendee(p_event) then raise exception 'not_allowed'; end if;
+  if private.user_squad(p_event, auth.uid()) is not null then raise exception 'already_in_squad'; end if;
   insert into public.squads (event_id, name, created_by) values (p_event, coalesce(nullif(trim(p_name), ''), 'Mi Squad'), auth.uid()) returning * into v_row;
   insert into public.squad_members (squad_id, user_id, status, joined_at) values (v_row.id, auth.uid(), 'joined', now());
   return v_row;
@@ -928,10 +1036,10 @@ returns void language plpgsql security definer set search_path = public, extensi
 declare v_event uuid;
 begin
   select event_id into v_event from public.squads where id = p_squad;
-  if not public.is_squad_member(p_squad) then raise exception 'not_member'; end if;
-  if not public.is_event_attendee(v_event, p_invitee) then raise exception 'not_attendee'; end if;
-  if exists (select 1 from public.squad_members m where m.squad_id = p_squad and public.is_blocked(m.user_id, p_invitee)) then raise exception 'unavailable'; end if;
-  if public.user_squad(v_event, p_invitee) is not null then raise exception 'already_in_squad'; end if;
+  if not private.is_squad_member(p_squad) then raise exception 'not_member'; end if;
+  if not private.is_event_attendee(v_event, p_invitee) then raise exception 'not_attendee'; end if;
+  if exists (select 1 from public.squad_members m where m.squad_id = p_squad and private.is_blocked(m.user_id, p_invitee)) then raise exception 'unavailable'; end if;
+  if private.user_squad(v_event, p_invitee) is not null then raise exception 'already_in_squad'; end if;
   insert into public.squad_members (squad_id, user_id, invited_by, status) values (p_squad, p_invitee, auth.uid(), 'invited')
   on conflict (squad_id, user_id) do nothing;
 end $$;
@@ -941,9 +1049,9 @@ returns void language plpgsql security definer set search_path = public, extensi
 declare v_event uuid; v_name text;
 begin
   select event_id into v_event from public.squads where id = p_squad;
-  if v_event is null or not public.lobby_is_open(v_event) or not public.is_event_attendee(v_event) then raise exception 'not_allowed'; end if;
-  if public.user_squad(v_event, auth.uid()) is not null then raise exception 'already_in_squad'; end if;
-  if exists (select 1 from public.squad_members m where m.squad_id = p_squad and m.status = 'joined' and public.is_blocked(m.user_id, auth.uid())) then raise exception 'unavailable'; end if;
+  if v_event is null or not private.lobby_is_open(v_event) or not private.is_event_attendee(v_event) then raise exception 'not_allowed'; end if;
+  if private.user_squad(v_event, auth.uid()) is not null then raise exception 'already_in_squad'; end if;
+  if exists (select 1 from public.squad_members m where m.squad_id = p_squad and m.status = 'joined' and private.is_blocked(m.user_id, auth.uid())) then raise exception 'unavailable'; end if;
   insert into public.squad_members (squad_id, user_id, status, joined_at) values (p_squad, auth.uid(), 'joined', now())
   on conflict (squad_id, user_id) do update set status = 'joined', joined_at = now();
   select split_part(full_name, ' ', 1) into v_name from public.profiles where id = auth.uid();
@@ -1004,8 +1112,9 @@ create or replace function public.trigger_rescue(p_event uuid, p_x double precis
 returns public.map_pins language plpgsql security definer set search_path = public, extensions as $$
 declare v_squad uuid; v_pin public.map_pins; v_name text;
 begin
-  v_squad := public.user_squad(p_event, auth.uid());
+  v_squad := private.user_squad(p_event, auth.uid());
   if v_squad is null then raise exception 'no_squad'; end if;
+  p_sector := nullif(left(trim(p_sector), 40), '');
   delete from public.map_pins where event_id = p_event and user_id = auth.uid();
   insert into public.map_pins (event_id, user_id, coord_x, coord_y, sector_name, note, is_rescue_alert, share_with_squad)
   values (p_event, auth.uid(), p_x, p_y, p_sector, '🚨 Necesito ayuda — vengan a mi pin', true, true) returning * into v_pin;
@@ -1023,14 +1132,14 @@ create or replace function public.drop_pin(p_event uuid, p_x double precision, p
 returns public.map_pins language plpgsql security definer set search_path = public, extensions as $$
 declare v_matches uuid[]; v_pin public.map_pins;
 begin
-  if not public.lobby_is_open(p_event) or not public.is_event_attendee(p_event) then raise exception 'not_allowed'; end if;
+  if not private.lobby_is_open(p_event) or not private.is_event_attendee(p_event) then raise exception 'not_allowed'; end if;
   select coalesce(array_agg(m), '{}') into v_matches from unnest(coalesce(p_match_ids, '{}')) m
-   where public.is_match(p_event, auth.uid(), m) and not public.is_blocked(auth.uid(), m);
-  p_share_with_squad := p_share_with_squad and public.user_squad(p_event, auth.uid()) is not null;
+   where private.is_match(p_event, auth.uid(), m) and not private.is_blocked(auth.uid(), m);
+  p_share_with_squad := p_share_with_squad and private.user_squad(p_event, auth.uid()) is not null;
   if not p_share_with_squad and cardinality(v_matches) = 0 then raise exception 'choose_audience'; end if;
   delete from public.map_pins where event_id = p_event and user_id = auth.uid();
   insert into public.map_pins (event_id, user_id, coord_x, coord_y, sector_name, note, share_with_squad, shared_match_ids)
-  values (p_event, auth.uid(), p_x, p_y, p_sector, nullif(left(trim(p_note), 60), ''), p_share_with_squad, v_matches)
+  values (p_event, auth.uid(), p_x, p_y, nullif(left(trim(p_sector), 40), ''), nullif(left(trim(p_note), 60), ''), p_share_with_squad, v_matches)
   returning * into v_pin;
   update public.event_attendees set last_active_at = now() where event_id = p_event and user_id = auth.uid();
   return v_pin;
@@ -1039,9 +1148,9 @@ end $$;
 -- 🚩 Punto Base del Squad (+ aviso en el chat)
 create or replace function public.set_squad_base_pin(p_squad uuid, p_x double precision, p_y double precision, p_label text)
 returns void language plpgsql security definer set search_path = public, extensions as $$
-declare v_event uuid; v_label text := coalesce(nullif(trim(p_label), ''), 'Nuestro Punto de Encuentro');
+declare v_event uuid; v_label text := left(coalesce(nullif(trim(p_label), ''), 'Nuestro Punto de Encuentro'), 40);
 begin
-  if not public.is_squad_member(p_squad) then raise exception 'not_member'; end if;
+  if not private.is_squad_member(p_squad) then raise exception 'not_member'; end if;
   update public.squads set base_pin_x = p_x, base_pin_y = p_y, base_pin_label = v_label where id = p_squad returning event_id into v_event;
   insert into public.messages (event_id, conversation_type, squad_id, sender_id, message_type, content)
   values (v_event, 'squad', p_squad, auth.uid(), 'system_alert', '🚩 Nuevo Punto Base: ' || v_label);
@@ -1051,7 +1160,7 @@ create or replace function public.announce_base_meetup(p_squad uuid, p_minutes i
 returns void language plpgsql security definer set search_path = public, extensions as $$
 declare v_sq public.squads;
 begin
-  if not public.is_squad_member(p_squad) then raise exception 'not_member'; end if;
+  if not private.is_squad_member(p_squad) then raise exception 'not_member'; end if;
   select * into v_sq from public.squads where id = p_squad;
   if v_sq.base_pin_x is null then raise exception 'no_base_pin'; end if;
   insert into public.messages (event_id, conversation_type, squad_id, sender_id, message_type, content)
@@ -1063,7 +1172,7 @@ create or replace function public.set_safety_status(p_event uuid, p_status safet
 returns void language plpgsql security definer set search_path = public, extensions as $$
 declare v_squad uuid; v_name text;
 begin
-  v_squad := public.user_squad(p_event, auth.uid());
+  v_squad := private.user_squad(p_event, auth.uid());
   if v_squad is null then raise exception 'no_squad'; end if;
   update public.squad_members set safety_status = p_status where squad_id = v_squad and user_id = auth.uid();
   select split_part(full_name, ' ', 1) into v_name from public.profiles where id = auth.uid();
@@ -1083,7 +1192,17 @@ create or replace function public.send_blast(p_event uuid, p_title text, p_messa
 returns int language plpgsql security definer set search_path = public, extensions as $$
 declare v_blast uuid; v_n int;
 begin
-  if not public.is_event_manager(p_event) then raise exception 'forbidden'; end if;
+  if not private.is_event_manager(p_event) then raise exception 'forbidden'; end if;
+  -- Validación (espejo de sendBlast en el motor): textos acotados y link seguro (ruta interna o https,
+  -- nunca javascript:/data:), duración de Flash Promo razonable y segmento conocido.
+  p_title := trim(coalesce(p_title, '')); p_message := trim(coalesce(p_message, ''));
+  p_cta_label := nullif(trim(coalesce(p_cta_label, '')), ''); p_cta_link := nullif(trim(coalesce(p_cta_link, '')), '');
+  if p_title = '' or p_message = '' or char_length(p_title) > 80 or char_length(p_message) > 280 then raise exception 'invalid_blast'; end if;
+  if char_length(coalesce(p_cta_label, '')) > 40 then raise exception 'invalid_blast'; end if;
+  if p_cta_link is not null and (char_length(p_cta_link) > 512 or p_cta_link ~ '[\s\\]'
+     or not (p_cta_link ~ '^/([^/]|$)' or p_cta_link ~* '^https://[^/?#]+')) then raise exception 'invalid_cta_link'; end if;
+  if p_flash_minutes is not null and (p_flash_minutes < 1 or p_flash_minutes > 240) then raise exception 'invalid_blast'; end if;
+  if coalesce(p_segment->>'kind', '') not in ('all','mood','squad_min_size','sector','top_spenders') then raise exception 'invalid_blast'; end if;
   insert into public.event_blasts (event_id, title, message, target_segment, cta_label, cta_link, is_flash_promo, expires_at)
   values (p_event, p_title, p_message, p_segment, p_cta_label, p_cta_link, p_flash_minutes is not null,
           case when p_flash_minutes is not null then now() + make_interval(mins => p_flash_minutes) end)
@@ -1096,13 +1215,13 @@ begin
     when 'mood' then a.mood_tag::text = p_segment->>'mood'
     when 'squad_min_size' then (
       select count(*) from public.squad_members m2
-      where m2.squad_id = public.user_squad(p_event, a.user_id) and m2.status = 'joined') >= (p_segment->>'min')::int
+      where m2.squad_id = private.user_squad(p_event, a.user_id) and m2.status = 'joined') >= (p_segment->>'min')::int
     when 'sector' then exists (
       select 1 from public.map_pins p where p.event_id = p_event and p.user_id = a.user_id
         and p.expires_at > now() and p.sector_name = p_segment->>'sector_name')
     when 'top_spenders' then a.user_id in (
       select a2.user_id from public.event_attendees a2 where a2.event_id = p_event
-      order by a2.total_spent desc limit (p_segment->>'limit')::int)
+      order by a2.total_spent desc limit least(greatest(coalesce((p_segment->>'limit')::int, 0), 0), 10000))
     else false end;
   get diagnostics v_n = row_count;
   return v_n;
@@ -1114,7 +1233,7 @@ returns uuid language plpgsql security definer set search_path = public, extensi
 declare v_r public.raffles; v_winner uuid; v_perk uuid;
 begin
   select * into v_r from public.raffles where id = p_raffle for update;
-  if not public.is_event_manager(v_r.event_id) then raise exception 'forbidden'; end if;
+  if not private.is_event_manager(v_r.event_id) then raise exception 'forbidden'; end if;
   if v_r.winner_user_id is not null then raise exception 'already_drawn'; end if;
 
   select a.user_id into v_winner from public.event_attendees a
@@ -1122,14 +1241,14 @@ begin
   where a.event_id = v_r.event_id and case v_r.filter
     when 'all' then true
     when 'female' then p.gender = 'female'
-    when 'in_squad' then public.user_squad(v_r.event_id, a.user_id) is not null
+    when 'in_squad' then private.user_squad(v_r.event_id, a.user_id) is not null
     when 'active_pin' then exists (select 1 from public.map_pins mp where mp.event_id = v_r.event_id and mp.user_id = a.user_id and mp.expires_at > now())
   end
   order by random() limit 1;
   if v_winner is null then raise exception 'no_participants'; end if;
 
   insert into public.user_perks_qrs (event_id, user_id, squad_id, title, perk_type, source, source_ref_id)
-  values (v_r.event_id, v_winner, public.user_squad(v_r.event_id, v_winner), '🏆 ' || v_r.prize_title, 'raffle_prize', 'raffle', v_r.id)
+  values (v_r.event_id, v_winner, private.user_squad(v_r.event_id, v_winner), '🏆 ' || v_r.prize_title, 'raffle_prize', 'raffle', v_r.id)
   returning id into v_perk;
   update public.raffles set winner_user_id = v_winner, winner_perk_id = v_perk, drawn_at = now() where id = p_raffle;
   return v_winner;
@@ -1142,7 +1261,7 @@ declare v_p public.user_perks_qrs;
 begin
   select * into v_p from public.user_perks_qrs where qr_code_string = p_qr for update;
   if not found then raise exception 'invalid_qr'; end if;
-  if not public.has_staff_role(v_p.event_id, array['owner','manager','bartender']::staff_role_t[]) then raise exception 'forbidden'; end if;
+  if not private.has_staff_role(v_p.event_id, array['owner','manager','bartender']::staff_role_t[]) then raise exception 'forbidden'; end if;
   if v_p.status = 'redeemed' then raise exception 'already_redeemed'; end if;
   update public.user_perks_qrs set status = 'redeemed', redeemed_at = now() where id = v_p.id returning * into v_p;
   return v_p;
@@ -1158,7 +1277,7 @@ declare
   v_pin public.map_pins; v_order public.bar_orders; v_share numeric(12,2);
 begin
   if p_delivery = 'icebreaker_gift' then raise exception 'use_send_icebreaker'; end if;
-  if not public.lobby_is_open(p_event) or not public.is_event_attendee(p_event, v_uid) then raise exception 'not_allowed'; end if;
+  if not private.lobby_is_open(p_event) or not private.is_event_attendee(p_event, v_uid) then raise exception 'not_allowed'; end if;
 
   select jsonb_agg(jsonb_build_object('item_id', m.id, 'name', m.emoji || ' ' || m.name, 'qty', least(greatest((i->>'qty')::int, 1), 20), 'unit_price', m.price)),
          sum(m.price * least(greatest((i->>'qty')::int, 1), 20))
@@ -1167,7 +1286,7 @@ begin
   join public.bar_menu_items m on m.event_id = p_event and m.id = i->>'item_id' and m.is_available;
   if v_items is null then raise exception 'empty_order'; end if;
 
-  v_squad := public.user_squad(p_event, v_uid);
+  v_squad := private.user_squad(p_event, v_uid);
   if p_delivery = 'pin_delivery' then
     select * into v_pin from public.map_pins where event_id = p_event and user_id = v_uid and expires_at > now() order by created_at desc limit 1;
     if v_pin.id is null then raise exception 'pin_required'; end if;
@@ -1218,7 +1337,7 @@ declare v_o public.bar_orders; v_flow bar_order_status_t[]; v_i int;
 begin
   select * into v_o from public.bar_orders where id = p_order for update;
   if not found then raise exception 'not_found'; end if;
-  if not public.can_operate_bar(v_o.event_id) then raise exception 'forbidden'; end if;
+  if not private.can_operate_bar(v_o.event_id) then raise exception 'forbidden'; end if;
   v_flow := case when v_o.delivery_type = 'pin_delivery'
                  then array['pending','preparing','delivering','completed']::bar_order_status_t[]
                  else array['pending','preparing','ready_qr','completed']::bar_order_status_t[] end;
@@ -1233,7 +1352,7 @@ create or replace function public.redeem_pickup_code(p_event uuid, p_code text)
 returns public.bar_orders language plpgsql security definer set search_path = public, extensions as $$
 declare v_o public.bar_orders; v_code text := upper(regexp_replace(trim(p_code), '^ROUGE:ORDER:[^:]+:', '', 'i'));
 begin
-  if not public.can_operate_bar(p_event) then raise exception 'forbidden'; end if;
+  if not private.can_operate_bar(p_event) then raise exception 'forbidden'; end if;
   select * into v_o from public.bar_orders where event_id = p_event and upper(pickup_code) = v_code for update;
   if not found then raise exception 'not_found'; end if;
   if v_o.status = 'completed' then raise exception 'already_delivered'; end if;
@@ -1247,7 +1366,8 @@ create or replace function public.vote_song(p_event uuid, p_title text, p_artist
 returns public.song_requests language plpgsql security definer set search_path = public, extensions as $$
 declare v_row public.song_requests;
 begin
-  if not public.is_event_attendee(p_event) then raise exception 'not_attendee'; end if;
+  if not private.is_event_attendee(p_event) then raise exception 'not_attendee'; end if;
+  if coalesce(trim(p_title), '') = '' then raise exception 'invalid_song'; end if;
   select * into v_row from public.song_requests where event_id = p_event and lower(title) = lower(trim(p_title)) for update;
   if found then
     update public.song_requests
@@ -1267,12 +1387,12 @@ returns table (
   squad_size int, matches int, total_spent numeric, joined_at timestamptz, tags text[]
 ) language plpgsql stable security definer set search_path = public, extensions as $$
 begin
-  if not public.is_event_manager(p_event) then raise exception 'forbidden'; end if;
+  if not private.is_event_manager(p_event) then raise exception 'forbidden'; end if;
   return query
   with base as (
     select a.user_id, p.full_name, p.username, p.phone_normalized as phone,
            date_part('year', age(p.birth_date))::int as age, p.gender, p.music_genres, a.total_spent, a.joined_at,
-           (select count(*)::int from public.squad_members m where m.squad_id = public.user_squad(p_event, a.user_id) and m.status = 'joined') as squad_size,
+           (select count(*)::int from public.squad_members m where m.squad_id = private.user_squad(p_event, a.user_id) and m.status = 'joined') as squad_size,
            (select count(*)::int from public.connections c where c.event_id = p_event and c.status = 'accepted' and a.user_id in (c.sender_id, c.receiver_id)) as matches,
            (select count(*)::int from public.squad_members m where m.invited_by = a.user_id and m.status = 'joined') as brought,
            exists (select 1 from public.squads s where s.event_id = p_event and s.created_by = a.user_id) as is_creator,
@@ -1296,7 +1416,7 @@ create or replace function public.event_stats(p_event uuid)
 returns jsonb language plpgsql stable security definer set search_path = public, extensions as $$
 declare v jsonb;
 begin
-  if not public.has_staff_role(p_event, array['owner','manager','security']::staff_role_t[]) then raise exception 'forbidden'; end if;
+  if not private.has_staff_role(p_event, array['owner','manager','security']::staff_role_t[]) then raise exception 'forbidden'; end if;
   select jsonb_build_object(
     'matches',            count(*) filter (where status = 'accepted'),
     'pending_connections', count(*) filter (where status = 'pending'),
@@ -1315,7 +1435,7 @@ end $$;
 create or replace function public.generate_invite_codes(p_event uuid, p_count int)
 returns setof public.event_invite_codes language plpgsql security definer set search_path = public, extensions as $$
 begin
-  if not public.is_event_manager(p_event) then raise exception 'forbidden'; end if;
+  if not private.is_event_manager(p_event) then raise exception 'forbidden'; end if;
   if p_count < 1 or p_count > 1000 then raise exception 'invalid_count'; end if;
   return query
   with ins as (
@@ -1333,7 +1453,7 @@ create or replace function public.set_staff_role(p_event uuid, p_username text, 
 returns uuid language plpgsql security definer set search_path = public, extensions as $$
 declare v_user uuid; v_creator uuid;
 begin
-  if not public.has_staff_role(p_event, array['owner']::staff_role_t[]) then raise exception 'forbidden'; end if;
+  if not private.has_staff_role(p_event, array['owner']::staff_role_t[]) then raise exception 'forbidden'; end if;
   select created_by into v_creator from public.events where id = p_event;
   select id into v_user from public.profiles where username = lower(ltrim(trim(p_username), '@'));
   if v_user is null then raise exception 'staff_user_not_found'; end if;
@@ -1352,9 +1472,11 @@ returns int language sql security definer set search_path = public, extensions a
   with d as (delete from public.map_pins where expires_at <= now() returning 1) select count(*)::int from d;
 $$;
 
--- Permisos de ejecución
-revoke execute on all functions in schema public from anon;
+-- Permisos de ejecución. Postgres da EXECUTE a PUBLIC por defecto (y anon es PUBLIC): se saca y se concede explícito.
+revoke execute on all functions in schema public from public, anon;
 grant execute on all functions in schema public to authenticated;
+revoke execute on all functions in schema private from public, anon;
+grant execute on all functions in schema private to authenticated;
 revoke execute on function public.purge_expired_pins() from authenticated;
 revoke execute on function public.apply_squad_perk_rules(uuid) from authenticated;
 grant execute on function public.resolve_access_code(text) to anon;
@@ -1382,9 +1504,13 @@ end $$;
 -- ════════════════════════════════════════════════════════════════════════
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types) values
   ('profile-media', 'profile-media', true,  5242880,  array['image/webp','image/jpeg','image/png','video/mp4','video/webm']),
-  ('venue-maps',    'venue-maps',    true,  8388608,  array['image/webp','image/jpeg','image/png','image/svg+xml']),
-  ('chat-media',    'chat-media',    false, 3145728,  array['image/webp','image/jpeg','image/png','audio/webm','audio/mp4','video/mp4'])
+  ('venue-maps',    'venue-maps',    true,  8388608,  array['image/webp','image/jpeg','image/png']),
+  ('chat-media',    'chat-media',    false, 3145728,  array['image/webp','image/jpeg','image/png'])
 on conflict (id) do nothing;
+-- Re-aplica límites y tipos en buckets ya creados. Sin SVG en ningún bucket: un SVG puede llevar scripts.
+update storage.buckets set public = true,  file_size_limit = 5242880, allowed_mime_types = array['image/webp','image/jpeg','image/png','video/mp4','video/webm'] where id = 'profile-media';
+update storage.buckets set public = true,  file_size_limit = 8388608, allowed_mime_types = array['image/webp','image/jpeg','image/png'] where id = 'venue-maps';
+update storage.buckets set public = false, file_size_limit = 3145728, allowed_mime_types = array['image/webp','image/jpeg','image/png'] where id = 'chat-media';
 
 drop policy if exists "media_public_read" on storage.objects;
 create policy "media_public_read" on storage.objects for select using (bucket_id in ('profile-media','venue-maps'));
@@ -1394,8 +1520,33 @@ create policy "media_owner_write" on storage.objects for insert to authenticated
 drop policy if exists "media_owner_delete" on storage.objects;
 create policy "media_owner_delete" on storage.objects for delete to authenticated
   using (bucket_id in ('profile-media','chat-media') and (storage.foldername(name))[1] = auth.uid()::text);
+-- Fotos del chat: las ve quien las subió y quien puede ver un mensaje que las usa (RLS de messages:
+-- participantes del 1:1 o miembros del Squad). Antes cualquier usuario podía listar y firmar fotos ajenas.
 drop policy if exists "chat_media_read" on storage.objects;
-create policy "chat_media_read" on storage.objects for select to authenticated using (bucket_id = 'chat-media');
+create policy "chat_media_read" on storage.objects for select to authenticated using (
+  bucket_id = 'chat-media' and (
+    (storage.foldername(name))[1] = auth.uid()::text
+    or exists (select 1 from public.messages m where m.media_url is not null and position('/chat-media/' || name in m.media_url) > 0)
+  )
+);
 drop policy if exists "venue_maps_staff_write" on storage.objects;
 create policy "venue_maps_staff_write" on storage.objects for insert to authenticated
-  with check (bucket_id = 'venue-maps' and public.is_event_manager(((storage.foldername(name))[1])::uuid));
+  with check (bucket_id = 'venue-maps' and private.is_event_manager(((storage.foldername(name))[1])::uuid));
+
+-- ════════════════════════════════════════════════════════════════════════
+-- LIMPIEZA: versiones viejas de los helpers en `public` (se podían llamar por /rpc con ids ajenos).
+-- Va al final: para entonces las políticas y funciones de arriba ya usan las de `private`.
+-- ════════════════════════════════════════════════════════════════════════
+drop function if exists public.can_see_pin(public.map_pins, uuid);
+drop function if exists public.is_blocked(uuid, uuid);
+drop function if exists public.is_event_attendee(uuid, uuid);
+drop function if exists public.is_event_staff(uuid, uuid);
+drop function if exists public.can_operate_bar(uuid, uuid);
+drop function if exists public.is_event_manager(uuid, uuid);
+drop function if exists public.has_staff_role(uuid, staff_role_t[], uuid);
+drop function if exists public.is_squad_member(uuid, uuid);
+drop function if exists public.are_squadmates(uuid, uuid, uuid);
+drop function if exists public.user_squad(uuid, uuid);
+drop function if exists public.is_match(uuid, uuid, uuid);
+drop function if exists public.squad_event(uuid);
+drop function if exists public.lobby_is_open(uuid);

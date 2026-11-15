@@ -54,6 +54,7 @@ import {
   squadOf,
 } from "./selectors";
 import { BIO_MAX, MAX_PHOTOS, NAME_MAX, checkBirthDate, checkGenres, checkUsername, parseInstagram, parseSpotify } from "./profile";
+import { isSafeCtaLink } from "@/lib/security/paths";
 
 export type Result<T = undefined> = { ok: true; state: RougeState; data: T } | { ok: false; error: string };
 
@@ -1072,6 +1073,10 @@ export interface BlastInput {
 
 export function sendBlast(state: RougeState, eventId: UUID, input: BlastInput, now = Date.now()): Result<{ blast: EventBlast; reach: number }> {
   if (!input.title.trim() || !input.message.trim()) return fail("Completá título y mensaje.");
+  // Espejo de send_blast (schema.sql): textos acotados y link seguro (ruta de ROUGE o https).
+  if (input.title.trim().length > 80 || input.message.trim().length > 280 || (input.ctaLabel?.trim().length ?? 0) > 40) return fail("El título, el mensaje o el botón son demasiado largos.");
+  if (input.ctaLink?.trim() && !isSafeCtaLink(input.ctaLink.trim())) return fail("El link del botón tiene que ser una sección de ROUGE (por ejemplo /bar) o una dirección https://.");
+  if (input.flashMinutes !== undefined && (input.flashMinutes < 1 || input.flashMinutes > 240)) return fail("La Flash Promo dura entre 1 y 240 minutos.");
   const blast: EventBlast = {
     id: uid(),
     event_id: eventId,

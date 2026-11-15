@@ -4,6 +4,30 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Sin publicar]
 
+### Seguridad
+- **Navegador:** CSP estricta con nonce por request (`src/proxy.ts`), HSTS, anti clickjacking, `nosniff`,
+  `Referrer-Policy`, `Permissions-Policy` y COOP en todas las respuestas; reportes de violaciones en `/api/csp-report`.
+  Las páginas pasan a renderizarse por request (necesario para el nonce).
+- **Compresión de imágenes:** el worker carga la librería desde nuestro dominio (`public/vendor`, copiada en
+  `predev`/`prebuild`) en vez de jsdelivr.
+- **API de Instagram:** sin open redirect con `/\dominio`, origen fijo en producción, límite de pedidos, bodies acotados,
+  timeouts, descargas solo de Meta (también tras redirecciones) y solo tipos de imagen, `no-store`; tokens cifrados con
+  `INSTAGRAM_TOKEN_KEY`.
+- **Base de datos:** helpers de permisos movidos al schema `private` (ya no se puede consultar quién bloqueó o hizo match
+  con quién); privilegios por columna (squads, eventos, mensajes, entregas, sorteos); pines, pedidos y QRs solo por RPC;
+  `anon` sin acceso a tablas ni RPCs salvo la vista previa de `/join`; fotos de chat legibles solo por quien ve el mensaje;
+  mensajes con fotos solo del propio Storage; validación de Text Blasts (link seguro, largos, duración); códigos de Squad de
+  10 hex; freno a la fuerza bruta de códigos (`too_many_attempts`) y al spam de conexiones (`slow_down`); `last_active_at`
+  recortado a "ahora"; sin SVG en Storage.
+- **Tests:** `schema.security.test.ts` carga el `schema.sql` real en PGlite y ejecuta ~50 ataques en cada `npm test`;
+  `security.test.ts` cubre CSP, redirecciones, links, límites y cifrado.
+
+### Pendientes de seguridad conocidos
+- `vitest` 3.x tiene avisos de seguridad (solo desarrollo, no llega a producción); el salto a 4.1.12 choca con un bug de
+  npm 10 al resolver dependencias opcionales.
+- Ver "Limitaciones conocidas" en `docs/tecnica/seguridad-y-privacidad.md` (datos de asistentes entre asistentes, acceso
+  por slug, URLs firmadas de chat que vencen).
+
 ### Herramientas
 - 14 skills de Claude Code en `.claude/skills/` (de `rampstackco/claude-skills`, MIT) para revisar código,
   seguridad, accesibilidad, rendimiento, QA, tests, diseño, formularios, onboarding, media, dependencias y

@@ -27,6 +27,15 @@ Este documento resume qué se guarda, quién lo ve y cómo se protege.
 ## Controles implementados
 
 - **Row Level Security** en todas las tablas; políticas por rol con `has_staff_role`, `is_event_manager` y `can_operate_bar`.
+  Esos helpers viven en el schema `private`, que la API no expone: nadie puede preguntarle a la base "¿A bloqueó a B?" o
+  "¿A hizo match con B?" con ids ajenos.
+- **Escrituras acotadas:** privilegios por columna y por tabla. Pines, pedidos de barra, QRs, avance de comandas, ganadores
+  de sorteos y entregas de blasts solo cambian por RPC; `created_at`, dueños y totales no se pueden falsificar. `anon` no
+  toca ninguna tabla (salvo columnas públicas de `events`) ni ejecuta RPCs (salvo `resolve_access_code`).
+- **Anti fuerza bruta y anti spam en el servidor:** códigos de Squad de 10 hex (1 billón de combinaciones); 20 códigos
+  inválidos en 15 min por usuario o IP bloquean el ingreso un rato; tope de solicitudes de conexión por minuto.
+- **Mensajes:** solo texto o foto; la foto tiene que estar en `chat-media/<id del que envía>/` (no se aceptan URLs externas
+  que funcionen como píxel de rastreo de la IP del otro). Las alertas del sistema solo las generan las RPCs.
 - **Privilegios por columna** en `profiles`: el teléfono y `instagram_verified` no son legibles/escribibles por clientes.
 - **Bloqueos:** `is_blocked()` se aplica en grilla, perfiles, squads, pines y mensajes, por perfil y por teléfono normalizado E.164.
 - **Códigos ocultos:** los códigos de 1 uso y los squads ajenos no son legibles; la vista previa sale de `resolve_access_code`.
@@ -40,12 +49,32 @@ Este documento resume qué se guarda, quién lo ve y cómo se protege.
   - callback de desautorización / borrado de datos con `signed_request` verificado (`/api/instagram/data-deletion`).
 - **Claves:** la *service role key* solo vive en el servidor (`SUPABASE_SERVICE_ROLE_KEY`, nunca con prefijo `NEXT_PUBLIC_`).
 - **Redirecciones internas:** los parámetros `next` se validan como rutas internas (sin open redirects).
-- **Storage:** cada usuario escribe solo en su carpeta; los planos solo Dueño/a o Producción.
+- **Storage:** cada usuario escribe solo en su carpeta; los planos solo Dueño/a o Producción. Las fotos de chat las ve solo
+  quien puede ver el mensaje (ya no cualquier usuario con sesión). Sin SVG en ningún bucket.
+- **Navegador:** CSP estricta con nonce por request (`src/proxy.ts`): solo corren los scripts de la app; red, imágenes e
+  iframes limitados a Supabase, los CDNs de Meta (miniaturas al importar) y Spotify. Además HSTS, `X-Frame-Options: DENY` /
+  `frame-ancestors 'none'` (anti clickjacking), `nosniff`, `Referrer-Policy`, `Permissions-Policy` (sin cámara, micrófono
+  ni GPS) y COOP. Las violaciones se reportan a `/api/csp-report` (logs). El worker de compresión de imágenes se sirve desde
+  nuestro dominio (antes bajaba código de jsdelivr). El iframe de Spotify va con `sandbox`.
+- **API (`/api/*`):** `no-store`, límite de pedidos por IP y por usuario (en memoria, por instancia), bodies acotados,
+  timeouts a Meta, descargas de fotos solo de hosts de Meta también tras redirecciones y solo JPEG/PNG/WebP/HEIC, origen
+  público fijo (`NEXT_PUBLIC_APP_URL`, nunca el header `Host`), redirecciones internas que rechazan `/\evil.com`.
+- **Tokens de Instagram cifrados** en la base con AES-256-GCM si está `INSTAGRAM_TOKEN_KEY`.
+- **Links de Text Blasts:** solo rutas de ROUGE o `https://` (validado en el motor, en `send_blast` y al mostrarlos).
 
 ## Limitaciones conocidas (v1)
 
-- **Fotos de chat:** el bucket `chat-media` es legible para cualquier usuario autenticado que tenga la URL. Las rutas
-  incluyen UUID (no adivinables), pero no hay control por conversación. Mejora sugerida: URLs firmadas.
+- **Fotos de chat:** se muestran con URLs firmadas que vencen a los 7 días; después la foto deja de verse aunque el chat
+  quede. Mejora sugerida: firmar al mostrar (la política de lectura ya lo permite a los participantes).
+- **Datos de asistentes entre asistentes:** cualquier asistente del evento puede leer de los demás `total_spent`,
+  `visited_sectors` (zonas donde dejaron pin) y `joined_via`, porque la grilla se calcula en el cliente. Mejora sugerida:
+  que el cliente use la RPC `event_grid` (ya devuelve solo las zonas en común) y quitar esas columnas a `authenticated`.
+- **Acceso por slug:** `join_event` acepta el slug del evento, que es público; en la práctica cualquiera con sesión que lo
+  conozca puede entrar al lobby (los códigos de 1 uso solo saltean el cupo). Si un evento tiene que ser realmente privado,
+  hay que dejar de aceptar el slug para entrar.
+- **Límite de pedidos de la API:** en memoria por instancia (serverless): frena ráfagas, no un ataque distribuido. Para
+  eso, una regla en Vercel Firewall.
+- **CSP:** `style-src` permite estilos inline (React los usa en atributos `style`); los scripts sí son estrictos.
 - **Fotos de perfil** son públicas por URL (necesario para mostrarlas rápido con mala señal).
 - **Instagram:** solo cuentas profesionales; el @ escrito a mano no se verifica (se muestra como "sin verificar").
 - **Moderación:** no hay reportes de contenido ni moderación de fotos en la v1 (solo bloqueo).

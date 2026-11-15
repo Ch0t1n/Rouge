@@ -29,6 +29,7 @@ export const IG_ERRORS: Record<string, string> = {
   ig_token_invalid: "Tu conexión con Instagram venció. Volvé a conectarla.",
   ig_api_error: "Instagram no respondió. Probá en un rato.",
   ig_bad_media: "No pudimos traer esa foto.",
+  rate_limited: "Demasiados intentos seguidos. Esperá un minuto y probá de nuevo.",
   not_authenticated: "Tu sesión expiró. Volvé a ingresar.",
 };
 
