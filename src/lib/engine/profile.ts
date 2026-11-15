@@ -80,6 +80,24 @@ const EMBED_RE = /^https:\/\/open\.spotify\.com\/embed\/(track|album|playlist|ep
  *   spotify:track:ID
  * Devuelve la URL de embed normalizada (sin tracking) o null.
  */
+/**
+ * @ de Instagram desde lo que pegue el usuario: "@sofi.noche", "sofi.noche",
+ * "instagram.com/sofi.noche", "https://www.instagram.com/sofi.noche/?hl=es". Devuelve null si no es válido.
+ * Reglas de Instagram: 1-30 caracteres, letras, números, punto y guion bajo; sin punto al inicio/fin ni "..".
+ */
+export function parseInstagram(raw: string | null | undefined): string | null {
+  let v = (raw ?? "").trim();
+  if (!v) return null;
+  const url = v.match(/^(?:https?:\/\/)?(?:www\.|m\.)?instagr(?:am\.com|\.am)\/([^/?#]+)/i);
+  if (url) v = url[1];
+  v = v.replace(/^@/, "").toLowerCase();
+  if (!/^[a-z0-9._]{1,30}$/.test(v) || v.startsWith(".") || v.endsWith(".") || v.includes("..")) return null;
+  if (["p", "reel", "reels", "stories", "explore", "accounts"].includes(v)) return null;
+  return v;
+}
+
+export const instagramUrl = (username: string) => `https://www.instagram.com/${username}/`;
+
 export function parseSpotify(raw: string | null | undefined): SpotifyRef | null {
   if (!raw) return null;
   const s = raw.trim();

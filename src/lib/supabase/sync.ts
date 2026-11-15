@@ -11,7 +11,7 @@ import { lobbyPhase } from "@/lib/engine/selectors";
 import { BAR_MENU, STATE_VERSION } from "@/lib/mock/seed";
 
 /** Columnas legibles de `profiles` (el teléfono NO: column privileges). */
-const PROFILE_COLUMNS = "id,username,full_name,birth_date,gender,bio,photos,loop_video_url,music_genres,spotify_embed_url,is_verified,created_at";
+const PROFILE_COLUMNS = "id,username,full_name,birth_date,gender,bio,photos,loop_video_url,music_genres,spotify_embed_url,instagram_username,instagram_verified,is_verified,created_at";
 
 type Row = Record<string, unknown>;
 
@@ -76,6 +76,8 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
     isManager ? byEvent<RougeState["event_invite_codes"][number]>("event_invite_codes") : Promise.resolve([]),
     q<Profile>(sb.rpc("my_profile")),
   ]);
+  // Mi Instagram conectado (sin token). Si la RPC no existe todavía (esquema viejo), no rompe la carga.
+  const igRows = await q<{ username: string; account_type: string | null; connected_at: string }>(sb.rpc("my_instagram")).catch(() => []);
   // Mis roles en todos los eventos (selector del panel) + el equipo completo del evento activo si soy staff.
   const teamRows = isStaff ? await byEvent<RougeState["event_staff"][number]>("event_staff") : [];
   const eventStaff = [...staffRows.filter((r) => r.event_id !== eventId || !isStaff), ...teamRows];
@@ -112,6 +114,7 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
     current_user_id: userId,
     active_event_id: eventId,
     profiles: profiles.map((p) => ({ ...p, phone_normalized: phones.get(p.id) ?? null, photos: p.photos ?? [], music_genres: p.music_genres ?? [] })),
+    instagram_links: igRows.map((r) => ({ user_id: userId, username: r.username, account_type: r.account_type, connected_at: r.connected_at })),
     user_blocks: blocks,
     events,
     event_staff: eventStaff,

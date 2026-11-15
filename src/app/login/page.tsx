@@ -8,12 +8,15 @@ import { MOOD_TAGS, type Profile, type StaffRole } from "@/lib/types";
 import { destinationFor, ROLE_META, safeNext, STAFF_ROLES, staffRoleOf } from "@/lib/engine/roles";
 import { getAttendee, getProfile } from "@/lib/engine/selectors";
 import { getSupabase } from "@/lib/supabase/client";
+import { SOCIAL } from "@/lib/social/client";
 import { friendlyError } from "@/lib/supabase/errors";
 import { useRouge } from "@/lib/store/RougeContext";
 import { cn } from "@/lib/utils";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
+import { OrDivider, SocialLoginButtons } from "@/components/social/SocialLoginButtons";
+import { useInstagramReturn } from "@/components/social/InstagramField";
 
 /**
  * Ingreso e identificación del tipo de usuario.
@@ -40,6 +43,7 @@ function Login() {
   const switching = params.get("switch") === "1";
   const [tab, setTab] = useState<Tab>(params.get("as") === "staff" ? "staff" : "attendee");
   const me = getProfile(state, state.current_user_id);
+  useInstagramReturn();
 
   // Supabase: con sesión iniciada (vuelta del magic link) va directo a su pantalla según el rol.
   useEffect(() => {
@@ -170,6 +174,8 @@ function EmailLogin({ tab, next }: { tab: Tab; next: string | null }) {
           </ul>
         </div>
       )}
+      <SocialLoginButtons next={next} as={tab} instagram={tab === "attendee"} />
+      {SOCIAL.google || (tab === "attendee" && SOCIAL.instagram) ? <OrDivider label="o con tu email" /> : null}
       <TextField label="Email" type="email" inputMode="email" autoComplete="email" required placeholder="vos@mail.com" value={email} onChange={(e) => setEmail(e.target.value)} error={error} prefix={<Mail className="size-4" />} className="pl-10" />
       <Button type="submit" block size="lg" variant={tab === "staff" ? "vip" : "rouge"} disabled={busy || !/^\S+@\S+\.\S+$/.test(email)}>
         {busy ? "Enviando…" : "Enviarme el link"} <ArrowRight />
@@ -229,6 +235,8 @@ function DemoPicker({ tab, next }: { tab: Tab; next: string | null }) {
   const people = state.profiles.filter((p) => !staffOf(p));
   return (
     <div className="space-y-3">
+      <SocialLoginButtons next={next} />
+      <OrDivider label="o elegí una persona del demo" />
       <p className="text-xs text-muted">Modo Demo: elegí con quién entrar. Abrí otra pestaña con otra persona para simular un segundo teléfono.</p>
       <ul className="grid grid-cols-2 gap-2">
         {people.map((p) => {

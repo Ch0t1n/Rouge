@@ -9,6 +9,8 @@ import { MediaImage } from "@/components/media/MediaImage";
 import { LoopVideo } from "@/components/media/LoopVideo";
 import { SpotifyEmbed } from "@/components/media/SpotifyEmbed";
 import { GenreChips } from "./GenrePicker";
+import { InstagramIcon } from "@/components/ui/brand-icons";
+import { instagramUrl } from "@/lib/engine/profile";
 
 interface ProfileViewProps {
   profile: Profile;
@@ -104,6 +106,23 @@ export function ProfileView({ profile, mood, affinity, actions, className }: Pro
       </div>
 
       {actions}
+
+      {profile.instagram_username && (
+        <a
+          href={instagramUrl(profile.instagram_username)}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="glass flex min-h-touch items-center gap-3 rounded-2xl px-4 py-2.5 transition hover:bg-white/10"
+          aria-label={`Instagram de ${profile.full_name.split(" ")[0]}: @${profile.instagram_username}${profile.instagram_verified ? " (verificado)" : " (sin verificar)"}`}
+        >
+          <InstagramIcon className="size-5 shrink-0 text-rouge" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate font-display font-semibold">@{profile.instagram_username}</span>
+            <span className="block text-xs text-muted">{profile.instagram_verified ? "Cuenta conectada" : "Sin verificar · lo escribió a mano"}</span>
+          </span>
+          {profile.instagram_verified && <BadgeCheck className="size-5 shrink-0 text-squad" aria-hidden />}
+        </a>
+      )}
 
       {profile.bio && <p className="text-[15px] leading-relaxed text-primary/90">{profile.bio}</p>}
 

@@ -5,6 +5,8 @@ import * as A from "./actions";
 import * as S from "./selectors";
 import { crmRows } from "./analytics";
 import { musicAffinity } from "./affinity";
+import { parseInstagram } from "./profile";
+const { upsertProfile, linkInstagram, unlinkInstagram } = A;
 
 const NOW = Date.parse("2026-11-14T03:00:00.000Z");
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -205,5 +207,38 @@ describe("afinidad", () => {
     const me = S.getProfile(s, ME)!;
     const mateo = S.getProfile(s, id(5))!;
     expect(Math.round(musicAffinity(me, mateo) * 100)).toBe(67);
+  });
+});
+
+describe("Instagram en el perfil", () => {
+  it("parsea el @ desde cualquier formato y rechaza inválidos", () => {
+    expect(parseInstagram("@Sofi.Noche")).toBe("sofi.noche");
+    expect(parseInstagram("https://www.instagram.com/sofi.noche/?hl=es")).toBe("sofi.noche");
+    expect(parseInstagram("instagram.com/sofi_noche")).toBe("sofi_noche");
+    for (const bad of ["", ".sofi", "sofi.", "so..fi", "sofi noche", "a".repeat(31), "https://instagram.com/p/abc"]) expect(parseInstagram(bad), bad).toBeNull();
+  });
+  it("verificado solo si coincide con la cuenta conectada; escrito a mano queda sin verificar", () => {
+    const s0 = createSeedState(Date.now());
+    const me = DEMO_IDS.me;
+    expect(s0.profiles.find((p) => p.id === me)?.instagram_verified).toBe(true);
+    const manual = upsertProfile(s0, me, { instagram_username: "@otra.cuenta" });
+    expect(manual.ok && manual.data).toMatchObject({ instagram_username: "otra.cuenta", instagram_verified: false });
+    const back = upsertProfile(s0, me, { instagram_username: s0.instagram_links.find((l) => l.user_id === me)!.username });
+    expect(back.ok && back.data.instagram_verified).toBe(true);
+    expect(upsertProfile(s0, me, { instagram_username: "no válido!" })).toMatchObject({ ok: false });
+  });
+  it("conectar y desconectar; una cuenta de IG no se comparte entre perfiles", () => {
+    const s0 = createSeedState(Date.now());
+    const nuevo = "nuevo-user";
+    const linked = linkInstagram(s0, nuevo, "@noche.123");
+    expect(linked.ok).toBe(true);
+    // Login con Instagram antes del onboarding: el perfil nace con ese @ verificado
+    const created = upsertProfile((linked as { state: typeof s0 }).state, nuevo, { username: "noche123", full_name: "Noche", birth_date: "1999-01-01" });
+    expect(created.ok && created.data).toMatchObject({ instagram_username: "noche.123", instagram_verified: true });
+    const taken = linkInstagram(s0, DEMO_IDS.me, s0.instagram_links.find((l) => l.user_id !== DEMO_IDS.me)!.username);
+    expect(taken).toMatchObject({ ok: false, error: "Esa cuenta de Instagram ya está conectada a otro perfil." });
+    const un = unlinkInstagram(s0, DEMO_IDS.me);
+    expect(un.ok && un.state.profiles.find((p) => p.id === DEMO_IDS.me)).toMatchObject({ instagram_username: null, instagram_verified: false });
+    expect(un.ok && un.state.instagram_links.some((l) => l.user_id === DEMO_IDS.me)).toBe(false);
   });
 });

@@ -279,6 +279,38 @@ describe.skipIf(!URL || !ANON || !SERVICE)("Supabase real: flujo completo con RL
     expect((await fetchRemoteState(segu.sb, segu.id, EV)).isStaff).toBe(false);
   });
 
+  it("instagram: tokens invisibles, verificado lo decide el servidor y el login con IG antes del onboarding", async () => {
+    // @ escrito a mano → sin verificar
+    await act(mateo, C.upsertProfile(mateo.id, { instagram_username: "@Mateo.Manual" }));
+    let p = (await snap(sofi)).profiles.find((x) => x.id === mateo.id);
+    expect(p).toMatchObject({ instagram_username: "mateo.manual", instagram_verified: false });
+    // El cliente no puede marcarse verificado (column privileges) ni leer tokens
+    const { error: upErr } = await mateo.sb.from("profiles").update({ instagram_verified: true }).eq("id", mateo.id);
+    expect(upErr).not.toBeNull();
+    // Conexión OAuth (la escribe /api/instagram/callback con service role)
+    const ig = `ig${RUN}`.slice(0, 20);
+    await admin.from("instagram_accounts").insert({ user_id: mateo.id, ig_user_id: `9${Date.now()}`, username: ig, account_type: "CREATOR", access_token: "SECRETO" });
+    await admin.from("profiles").update({ instagram_username: ig }).eq("id", mateo.id);
+    p = (await snap(sofi)).profiles.find((x) => x.id === mateo.id);
+    expect(p).toMatchObject({ instagram_username: ig, instagram_verified: true }); // lo ve otro asistente, verificado
+    const { data: leaked } = await sofi.sb.from("instagram_accounts").select("*");
+    expect(leaked ?? []).toHaveLength(0);
+    const { data: own } = await mateo.sb.from("instagram_accounts").select("access_token");
+    expect(own ?? []).toHaveLength(0); // ni el dueño lee su token desde el cliente
+    const mine = await snap(mateo);
+    expect(mine.instagram_links).toEqual([expect.objectContaining({ user_id: mateo.id, username: ig })]);
+    // Si después escribe otro @ a mano, deja de estar verificado
+    await act(mateo, C.upsertProfile(mateo.id, { instagram_username: "otro.handle" }));
+    expect((await snap(sofi)).profiles.find((x) => x.id === mateo.id)?.instagram_verified).toBe(false);
+
+    // Login con Instagram ANTES del onboarding: el perfil nace con el @ verificado (trigger)
+    const nuevo = await actor(admin, "ignuevo");
+    const ig2 = `n${RUN}`.slice(0, 20);
+    await admin.from("instagram_accounts").insert({ user_id: nuevo.id, ig_user_id: `8${Date.now()}`, username: ig2, access_token: "SECRETO2" });
+    await act(nuevo, C.upsertProfile(nuevo.id, { username: `ign.${RUN}`.slice(0, 20), full_name: "IG Nuevo", birth_date: "1997-03-03", phone: phone(30) }));
+    expect((await snap(nuevo)).profiles.find((x) => x.id === nuevo.id)).toMatchObject({ instagram_username: ig2, instagram_verified: true });
+  });
+
   it("storage: subo a mi carpeta, no a la de otra persona", async () => {
     const blob = new Blob([new Uint8Array([82, 73, 70, 70])], { type: "image/webp" });
     const ok = await sofi.sb.storage.from("profile-media").upload(`${sofi.id}/test-${RUN}.webp`, blob, { contentType: "image/webp" });

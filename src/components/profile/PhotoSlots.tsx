@@ -2,6 +2,11 @@
 
 import { useRef, useState } from "react";
 import { ImagePlus, Loader2, Star, Trash2 } from "lucide-react";
+import * as C from "@/lib/store/commands";
+import { SOCIAL, startInstagram } from "@/lib/social/client";
+import { InstagramPhotoPicker } from "@/components/social/InstagramPhotoPicker";
+import { InstagramIcon } from "@/components/ui/brand-icons";
+import { Button } from "@/components/ui/button";
 import type { ProfilePhoto } from "@/lib/types";
 import { MAX_PHOTOS } from "@/lib/engine/profile";
 import { averageColor, compressImage, formatBytes, imageSize } from "@/lib/media/compress";
@@ -15,13 +20,28 @@ import { cn } from "@/lib/utils";
  * ANTES de subir, y se muestra el ahorro para que el usuario lo entienda.
  */
 export function PhotoSlots({ photos, onChange }: { photos: ProfilePhoto[]; onChange: (p: ProfilePhoto[]) => void }) {
-  const { notify } = useRouge();
+  const { notify, state, mode, exec } = useRouge();
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(0);
+  const [picker, setPicker] = useState(false);
   const latest = useRef(photos);
   latest.current = photos;
+  const me = state.current_user_id;
+  const igLink = state.instagram_links.find((l) => l.user_id === me);
 
-  const onFiles = async (files: FileList | null) => {
+  /** Sin Instagram conectado: en demo se simula; con Supabase va al OAuth y vuelve a esta misma pantalla. */
+  const connectInstagram = async () => {
+    if (mode === "demo") {
+      const suggestion = state.profiles.find((p) => p.id === me)?.username ?? `noche.${Math.floor(100 + Math.random() * 900)}`;
+      const r = await exec(C.linkInstagramDemo(me, suggestion));
+      if (r.ok) setPicker(true);
+      return;
+    }
+    const err = await startInstagram("link", window.location.pathname + window.location.search);
+    if (err) notify({ tone: "error", title: err });
+  };
+
+  const onFiles = async (files: FileList | File[] | null) => {
     if (!files?.length) return;
     const free = MAX_PHOTOS - latest.current.length;
     const list = Array.from(files).slice(0, free);
@@ -107,6 +127,12 @@ export function PhotoSlots({ photos, onChange }: { photos: ProfilePhoto[]; onCha
           );
         })}
       </div>
+      {(igLink || SOCIAL.instagram) && (
+        <Button type="button" variant="glass" block className="mt-3" disabled={busy > 0} onClick={() => (igLink ? setPicker(true) : connectInstagram())}>
+          <InstagramIcon className="text-rouge" /> {igLink ? `Importar de Instagram · @${igLink.username}` : "Conectar Instagram e importar fotos"}
+        </Button>
+      )}
+      <InstagramPhotoPicker open={picker} onClose={() => setPicker(false)} max={MAX_PHOTOS - photos.length} username={igLink?.username} onPicked={(files) => onFiles(files)} />
       <input ref={input} type="file" accept="image/*" multiple hidden onChange={(e) => onFiles(e.target.files)} data-testid="photo-input" />
     </div>
   );

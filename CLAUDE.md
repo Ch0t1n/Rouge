@@ -43,7 +43,9 @@ src/
     layout.tsx            # Fuentes, metadata PWA, RougeProvider, AppShell
     page.tsx              # Landing pública a ancho completo (capturas reales en public/landing)
     app/                  # Home del asistente (hub del evento) — start_url de la PWA
-    login/                # Login por tipo de usuario: Asistente / Equipo. Supabase: magic link; demo: elegir persona/rol
+    login/                # Login por tipo de usuario: Asistente / Equipo. Supabase: magic link, Google, Instagram; demo: persona/rol
+      instagram/          # Vuelta del login con Instagram: canjea #token_hash por la sesión (verifyOtp)
+    api/instagram/        # OAuth de Instagram (SOLO servidor): start, callback, media (listar/importar), DELETE, data-deletion
     onboarding/           # Alta del perfil persistente en 4 pasos (guarda progresivamente)
     profile/              # "Así te ven" + completitud · profile/edit (editor completo)
     settings/privacy/     # Lista negra por teléfono + perfiles bloqueados
@@ -77,6 +79,7 @@ src/
     squad/                # InviteToSquadButton ("Invitar a mi Squad" desde cualquier perfil)
     perks/                # QrBlock (QR alto contraste)
     share/ShareSheet.tsx  # QR + compartir nativo + WhatsApp + copiar + PNG para CUALQUIER link (useShare, ShareButton)
+    social/               # SocialLoginButtons, InstagramPhotoPicker, InstagramField (+ useInstagramReturn), InstagramCallback
     landing/Landing.tsx   # Secciones de la landing
     admin/                # AdminChrome (nav por permisos, NoAccess, badge de rol), TeamPanel, SecurityPanel, PrintCodes, AdminHeader, Panel, downloadCSV
     venue/VenueMap.tsx    # Plano interactivo (zoom/paneo, sectores, pines)
@@ -102,6 +105,9 @@ src/
     supabase/sync.ts      # fetchRemoteState() (RLS) + subscribeRealtime()
     supabase/errors.ts    # friendlyError(): excepciones de RPC/RLS → mensajes en español
     supabase/client.ts    # Cliente Supabase (null si no hay credenciales)
+    social/client.ts      # Google (signInWithOAuth), Instagram (start/importar/desconectar), flags SOCIAL, IG_ERRORS
+    instagram/oauth.ts    # Helpers puros del OAuth (state firmado, signed_request, parseo Graph) — testeados
+    instagram/server.ts   # Tokens, Graph API, sesión por magic link (service role). Solo servidor
     media/compress.ts     # Compresión WebP, color dominante, transcodificación del loop (sin audio)
     media/mediaStore.ts   # Blobs en IndexedDB (`idb:<uuid>`) para el Modo Demo
     media/upload.ts       # uploadMedia(): Supabase Storage si hay sesión, si no IndexedDB
@@ -187,6 +193,14 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
     (`setStaffRole` / RPC `set_staff_role`, por @username). Botones demo que actúan por el staff pasan `{ simulate: true }`.
 16. **Todo link se comparte con QR.** Usar `useShare()` / `ShareButton` (`components/share`) para cualquier link
     nuevo (evento, códigos, Squad, perfil). Links relativos se completan con el dominio actual.
+17. **Login social.** Google = proveedor nativo de Supabase (`signInWithOAuth`, vuelve a `/login`). Instagram = OAuth
+    propio en `/api/instagram/*` (Supabase no lo trae): `start` firma un `state` HMAC atado a una cookie httpOnly;
+    `callback` canjea code → token largo (60 días), guarda en `instagram_accounts` (RLS sin políticas: ningún cliente lee
+    tokens) y, en login, abre la sesión con `generateLink` + `verifyOtp` (`/login/instagram`, token en el fragmento).
+    Cuentas nuevas usan un email interno `ig-<id>@instagram.rouge.invalid` (no entregable). Las fotos importadas se
+    descargan por `/api/instagram/media` (solo hosts de Meta) y pasan por `compressImage → uploadMedia`.
+    `RougeContext` publica `signedIn` recién cuando cargó el estado de ESE usuario (evita decidir "sin perfil" antes de tiempo).
+    Botones visibles con `NEXT_PUBLIC_AUTH_GOOGLE=1` / `NEXT_PUBLIC_AUTH_INSTAGRAM=1`; en demo se simulan.
 8. **Guardado sincrónico.** `run()` persiste en el acto (y hay flush en `pagehide`): una acción
    nunca se pierde por cerrar la PWA o navegar inmediatamente.
 
@@ -201,6 +215,10 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
   (`parseSpotify`). Loop ≤5 s, re-codificado sin audio vía canvas + MediaRecorder.
 - **Lista negra:** nunca revelar si un teléfono bloqueado tiene cuenta; mostrar números enmascarados
   (`maskPhone`). Un perfil bloqueado o inexistente muestra el mismo estado "no disponible".
+- **Instagram:** `instagram_username` se puede escribir a mano (`parseInstagram`); `instagram_verified` lo calcula el
+  trigger `profile_instagram` (⇔ coincide con la cuenta conectada) y el motor (`instagramVerified`): el cliente nunca
+  lo escribe. Una cuenta de Instagram se conecta a un solo perfil. Desconectar borra el token y saca el @.
+  Solo cuentas profesionales (Creador/Empresa) pueden conectarse por API desde 2024.
 - **Teléfono privado:** nunca se expone a otros usuarios (column privileges en `profiles`);
   solo el CRM del staff (`event_crm`) lo ve.
 - **Ghost Mode ("Modo Solo Amigos"):** oculta al usuario de la grilla de conexiones; sigue visible
@@ -272,6 +290,7 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
 - [x] **Fase 4** — Squads y seguridad, Pin-Drop 15 min, Punto Base, chat realtime (texto + fotos), Perks/QRs y Barra Express.
 - [x] **Fase 5** — `/admin`: eventos y códigos, CRM + CSV, Text Blasts, perks y sorteos, Kanban de barra, Pantalla LED.
 - [x] **Fase 6** — Roles de equipo (login por tipo de usuario, permisos en cliente y SQL), QR para todo link, landing pública.
+- [x] **Fase 7** — Login con Google e Instagram, importar fotos del feed e Instagram (verificado) en el perfil.
 
 ## Convenciones
 

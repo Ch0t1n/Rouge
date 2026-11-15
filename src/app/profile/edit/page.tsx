@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Save } from "lucide-react";
 import type { Gender, MusicGenre, ProfilePhoto } from "@/lib/types";
 import { upsertProfile } from "@/lib/engine/actions";
-import { BIO_MAX, GENDER_OPTIONS, checkBirthDate, checkUsername, cleanUsername, formatPhone } from "@/lib/engine/profile";
+import { BIO_MAX, GENDER_OPTIONS, checkBirthDate, checkUsername, cleanUsername, formatPhone, parseInstagram } from "@/lib/engine/profile";
 import { discardMedia } from "@/lib/media/upload";
 import { useRouge } from "@/lib/store/RougeContext";
 import { useRequireProfile } from "@/lib/store/hooks";
@@ -19,6 +19,7 @@ import { LoopVideoField } from "@/components/profile/LoopVideoField";
 import { GenrePicker } from "@/components/profile/GenrePicker";
 import { SpotifyField } from "@/components/profile/SpotifyField";
 import { PhoneField } from "@/components/profile/PhoneField";
+import { InstagramField, useInstagramReturn } from "@/components/social/InstagramField";
 
 export default function EditProfilePage() {
   const me = useRequireProfile();
@@ -30,6 +31,8 @@ function EditForm() {
   const { state, exec, notify } = useRouge();
   const router = useRouter();
   const me = state.profiles.find((p) => p.id === state.current_user_id)!;
+  useInstagramReturn();
+  const igLinked = state.instagram_links.some((l) => l.user_id === me.id);
 
   const [fullName, setFullName] = useState(me.full_name);
   const [username, setUsername] = useState(me.username);
@@ -41,6 +44,9 @@ function EditForm() {
   const [bio, setBio] = useState(me.bio);
   const [genres, setGenres] = useState<MusicGenre[]>(me.music_genres);
   const [spotify, setSpotify] = useState(me.spotify_embed_url ?? "");
+  // @ manual: solo cuenta si no hay Instagram conectado (si está conectado, manda la conexión).
+  const [instagram, setInstagram] = useState(igLinked ? "" : (me.instagram_username ?? ""));
+  const igManual = parseInstagram(instagram);
 
   const usernameCheck = checkUsername(state, username, me.id);
   const birthError = checkBirthDate(birthDate);
@@ -57,11 +63,12 @@ function EditForm() {
       loop !== me.loop_video_url ||
       bio !== me.bio ||
       JSON.stringify(genres) !== JSON.stringify(me.music_genres) ||
-      (spotify.trim() || null) !== me.spotify_embed_url,
-    [fullName, username, birthDate, gender, phoneNorm, photos, loop, bio, genres, spotify, me],
+      (spotify.trim() || null) !== me.spotify_embed_url ||
+      (!igLinked && (igManual ?? null) !== me.instagram_username),
+    [fullName, username, birthDate, gender, phoneNorm, photos, loop, bio, genres, spotify, me, igLinked, igManual],
   );
 
-  const valid = fullName.trim() && usernameCheck.ok && !birthError && !!phoneNorm && photos.length >= 1 && genres.length >= 1 && bio.length <= BIO_MAX;
+  const valid = (!instagram.trim() || !!igManual) && fullName.trim() && usernameCheck.ok && !birthError && !!phoneNorm && photos.length >= 1 && genres.length >= 1 && bio.length <= BIO_MAX;
 
   const save = async () => {
     const r = await exec(
@@ -76,6 +83,7 @@ function EditForm() {
         bio,
         music_genres: genres,
         spotify_embed_url: spotify.trim() || null,
+        ...(igLinked ? {} : { instagram_username: igManual }),
       }),
     );
     if (!r.ok) return;
@@ -124,6 +132,11 @@ function EditForm() {
           <h2 className="text-base">Música</h2>
           <GenrePicker value={genres} onChange={setGenres} />
           <SpotifyField value={spotify} onChange={setSpotify} />
+        </section>
+
+        <section className="space-y-3">
+          <h2 className="text-base">Instagram</h2>
+          <InstagramField value={instagram} onChange={setInstagram} />
         </section>
       </div>
 

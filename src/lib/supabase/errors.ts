@@ -41,6 +41,9 @@ const MESSAGES: Record<string, string> = {
   already_delivered: "Ese pedido ya fue entregado.",
   not_ready: "El pedido todavía no está listo para retirar.",
   invalid_count: "Generá entre 1 y 1000 códigos por lote.",
+  ig_not_connected: "Conectá tu Instagram primero.",
+  ig_token_invalid: "Tu conexión con Instagram venció. Volvé a conectarla.",
+  ig_api_error: "Instagram no respondió. Probá en un rato.",
 };
 
 export interface SupabaseLikeError {

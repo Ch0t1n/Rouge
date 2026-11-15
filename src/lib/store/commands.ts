@@ -63,10 +63,27 @@ export const upsertProfile = (userId: UUID, input: A.ProfileInput): Command<Roug
       loop_video_url: p.loop_video_url,
       music_genres: p.music_genres,
       spotify_embed_url: p.spotify_embed_url,
+      instagram_username: p.instagram_username,
     };
     const existed = before.profiles.some((x) => x.id === p.id);
     if (existed) must(await sb.from("profiles").update(fields).eq("id", p.id));
     else must(await sb.from("profiles").insert({ id: p.id, ...fields }));
+  },
+});
+
+/** Modo Demo: simula conectar Instagram (en Supabase la conexión la hace el OAuth en /api/instagram). */
+export const linkInstagramDemo = (userId: UUID, username: string): Command<RougeState["instagram_links"][number]> => ({
+  name: "linkInstagramDemo",
+  local: (s) => A.linkInstagram(s, userId, username),
+});
+
+/** Desconecta Instagram: borra el token en el servidor (DELETE /api/instagram) y saca el @ del perfil. */
+export const unlinkInstagram = (userId: UUID): Command<undefined> => ({
+  name: "unlinkInstagram",
+  local: (s) => A.unlinkInstagram(s, userId),
+  remote: async () => {
+    const { disconnectInstagramRemote } = await import("@/lib/social/client");
+    await disconnectInstagramRemote();
   },
 });
 

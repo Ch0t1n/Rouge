@@ -17,6 +17,7 @@ import type {
   EventAttendee,
   EventBlast,
   EventInviteCode,
+  InstagramLink,
   MapPin,
   Message,
   MessageType,
@@ -52,7 +53,7 @@ import {
   squadMembers,
   squadOf,
 } from "./selectors";
-import { BIO_MAX, MAX_PHOTOS, NAME_MAX, checkBirthDate, checkGenres, checkUsername, parseSpotify } from "./profile";
+import { BIO_MAX, MAX_PHOTOS, NAME_MAX, checkBirthDate, checkGenres, checkUsername, parseInstagram, parseSpotify } from "./profile";
 
 export type Result<T = undefined> = { ok: true; state: RougeState; data: T } | { ok: false; error: string };
 
@@ -115,9 +116,45 @@ function systemMessage(eventId: UUID, squadId: UUID, senderId: UUID, content: st
 // PERFIL Y PRIVACIDAD
 // ═════════════════════════════════════════════════════════════════════
 
-export type ProfileInput = Partial<Omit<Profile, "id" | "created_at" | "is_verified" | "phone_normalized">> & {
+export type ProfileInput = Partial<Omit<Profile, "id" | "created_at" | "is_verified" | "phone_normalized" | "instagram_verified">> & {
   phone?: string | null;
 };
+
+// ── Instagram ────────────────────────────────────────────────────────
+
+const linkOf = (s: RougeState, userId: UUID) => s.instagram_links.find((l) => l.user_id === userId);
+
+/** Verificado ⇔ el @ del perfil es el de la cuenta conectada (mismo cálculo que el trigger profile_instagram). */
+export function instagramVerified(s: RougeState, userId: UUID, username: string | null): boolean {
+  const link = linkOf(s, userId);
+  return !!username && !!link && link.username.toLowerCase() === username.toLowerCase();
+}
+
+/**
+ * Conecta la cuenta de Instagram (en Supabase lo hace /api/instagram/callback con OAuth; acá es la regla
+ * y el Modo Demo). El perfil pasa a mostrar ese @ como verificado.
+ */
+export function linkInstagram(state: RougeState, userId: UUID, username: string, now = Date.now()): Result<InstagramLink> {
+  const ig = parseInstagram(username);
+  if (!ig) return fail("Ese @ de Instagram no es válido.");
+  if (state.instagram_links.some((l) => l.user_id !== userId && l.username.toLowerCase() === ig)) return fail("Esa cuenta de Instagram ya está conectada a otro perfil.");
+  const link: InstagramLink = { user_id: userId, username: ig, account_type: linkOf(state, userId)?.account_type ?? "CREATOR", connected_at: iso(now) };
+  const links = [...state.instagram_links.filter((l) => l.user_id !== userId), link];
+  const profiles = state.profiles.map((p) => (p.id === userId ? { ...p, instagram_username: ig, instagram_verified: true } : p));
+  return ok({ ...state, instagram_links: links, profiles }, link);
+}
+
+/** Desconecta Instagram: borra el token (servidor) y saca el @ del perfil. */
+export function unlinkInstagram(state: RougeState, userId: UUID): Result {
+  return ok(
+    {
+      ...state,
+      instagram_links: state.instagram_links.filter((l) => l.user_id !== userId),
+      profiles: state.profiles.map((p) => (p.id === userId ? { ...p, instagram_username: null, instagram_verified: false } : p)),
+    },
+    undefined,
+  );
+}
 
 export function upsertProfile(state: RougeState, userId: UUID, input: ProfileInput, now = Date.now()): Result<Profile> {
   const existing = getProfile(state, userId);
@@ -153,6 +190,14 @@ export function upsertProfile(state: RougeState, userId: UUID, input: ProfileInp
     input = { ...input, spotify_embed_url: ref.embedUrl };
   }
 
+  if (input.instagram_username !== undefined && input.instagram_username !== null && input.instagram_username !== "") {
+    const ig = parseInstagram(input.instagram_username);
+    if (!ig) return fail("Ese @ de Instagram no es válido.");
+    input = { ...input, instagram_username: ig };
+  } else if (input.instagram_username === "") {
+    input = { ...input, instagram_username: null };
+  }
+
   let phone_normalized = existing?.phone_normalized ?? null;
   if (input.phone !== undefined) {
     phone_normalized = input.phone ? normalizePhone(input.phone) : null;
@@ -177,13 +222,18 @@ export function upsertProfile(state: RougeState, userId: UUID, input: ProfileInp
       loop_video_url: rest.loop_video_url ?? null,
       music_genres: rest.music_genres ?? [],
       spotify_embed_url: rest.spotify_embed_url ?? null,
+      // Login con Instagram antes del onboarding: el perfil nace con el @ de la cuenta conectada.
+      instagram_username: rest.instagram_username ?? linkOf(state, userId)?.username ?? null,
+      instagram_verified: false,
       is_verified: false,
       created_at: iso(now),
     };
+    profile.instagram_verified = instagramVerified(state, userId, profile.instagram_username);
     return ok({ ...state, profiles: [...state.profiles, profile] }, profile);
   }
 
-  const profile: Profile = { ...existing, ...rest, phone_normalized };
+  const merged: Profile = { ...existing, ...rest, phone_normalized };
+  const profile: Profile = { ...merged, instagram_verified: instagramVerified(state, userId, merged.instagram_username) };
   return ok({ ...state, profiles: state.profiles.map((p) => (p.id === userId ? profile : p)) }, profile);
 }
 

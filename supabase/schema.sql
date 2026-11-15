@@ -62,6 +62,24 @@ create table if not exists public.profiles (
   created_at         timestamptz not null default now()
 );
 
+-- Instagram en el perfil: el @ puede escribirse a mano; "verificado" solo si coincide con la cuenta conectada por OAuth.
+alter table public.profiles add column if not exists instagram_username text
+  check (instagram_username is null or instagram_username ~ '^[a-z0-9._]{1,30}$');
+alter table public.profiles add column if not exists instagram_verified boolean not null default false;
+
+-- Cuenta de Instagram conectada (Instagram API with Instagram Login). Tokens SOLO para el servidor:
+-- RLS sin políticas + sin privilegios para anon/authenticated. La lee/escribe la API de Next con service role.
+create table if not exists public.instagram_accounts (
+  user_id           uuid primary key references auth.users(id) on delete cascade,
+  ig_user_id        text not null unique,
+  username          text not null,
+  account_type      text,
+  access_token      text not null,
+  token_expires_at  timestamptz,
+  connected_at      timestamptz not null default now(),
+  updated_at        timestamptz not null default now()
+);
+
 -- Lista negra: por usuario o por teléfono normalizado (bloqueo preventivo).
 create table if not exists public.user_blocks (
   id                        uuid primary key default gen_random_uuid(),
@@ -450,6 +468,7 @@ $$;
 -- ROW LEVEL SECURITY
 -- ════════════════════════════════════════════════════════════════════════
 alter table public.profiles            enable row level security;
+alter table public.instagram_accounts  enable row level security;
 alter table public.user_blocks         enable row level security;
 alter table public.events              enable row level security;
 alter table public.event_staff         enable row level security;
@@ -479,13 +498,38 @@ drop policy if exists profiles_update on public.profiles;
 create policy profiles_update on public.profiles for update to authenticated using (id = auth.uid()) with check (id = auth.uid());
 
 revoke all on public.profiles from anon, authenticated;
-grant select (id, username, full_name, birth_date, gender, bio, photos, loop_video_url, music_genres, spotify_embed_url, is_verified, created_at)
+grant select (id, username, full_name, birth_date, gender, bio, photos, loop_video_url, music_genres, spotify_embed_url, instagram_username, instagram_verified, is_verified, created_at)
   on public.profiles to authenticated;
--- is_verified solo lo modifica el staff de ROUGE (service role)
-grant insert (id, username, full_name, birth_date, gender, phone_normalized, bio, photos, loop_video_url, music_genres, spotify_embed_url)
+-- is_verified solo lo modifica el staff de ROUGE (service role); instagram_verified lo calcula el trigger
+grant insert (id, username, full_name, birth_date, gender, phone_normalized, bio, photos, loop_video_url, music_genres, spotify_embed_url, instagram_username)
   on public.profiles to authenticated;
-grant update (username, full_name, birth_date, gender, phone_normalized, bio, photos, loop_video_url, music_genres, spotify_embed_url)
+grant update (username, full_name, birth_date, gender, phone_normalized, bio, photos, loop_video_url, music_genres, spotify_embed_url, instagram_username)
   on public.profiles to authenticated;
+
+-- Instagram verificado ⇔ el @ del perfil es el de la cuenta conectada (espejo de upsertProfile en el motor).
+create or replace function public.tg_profile_instagram()
+returns trigger language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if tg_op = 'INSERT' and new.instagram_username is null then
+    -- Login con Instagram antes del onboarding: el perfil nace con el @ de la cuenta conectada.
+    select lower(username) into new.instagram_username from public.instagram_accounts where user_id = new.id;
+  end if;
+  new.instagram_username := nullif(lower(new.instagram_username), '');
+  new.instagram_verified := new.instagram_username is not null and exists (
+    select 1 from public.instagram_accounts a where a.user_id = new.id and lower(a.username) = new.instagram_username);
+  return new;
+end $$;
+drop trigger if exists profile_instagram on public.profiles;
+create trigger profile_instagram before insert or update on public.profiles
+  for each row execute function public.tg_profile_instagram();
+
+-- INSTAGRAM ── ningún cliente ve los tokens; mi conexión (sin token) se lee con my_instagram().
+revoke all on public.instagram_accounts from anon, authenticated;
+create or replace function public.my_instagram()
+returns table (username text, account_type text, connected_at timestamptz)
+language sql stable security definer set search_path = public, extensions as $$
+  select a.username, a.account_type, a.connected_at from public.instagram_accounts a where a.user_id = auth.uid();
+$$;
 
 -- Mi perfil completo (incluye mi teléfono)
 create or replace function public.my_profile()

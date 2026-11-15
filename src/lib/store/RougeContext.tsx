@@ -119,6 +119,7 @@ function emptyState(userId: UUID = ""): RougeState {
     current_user_id: userId,
     active_event_id: "",
     profiles: [],
+    instagram_links: [],
     user_blocks: [],
     events: [],
     event_staff: [],
@@ -176,16 +177,21 @@ export function RougeProvider({ children }: { children: ReactNode }) {
       const { data } = await sb.from("events").select("id,slug,name,description,venue_name,cover_url,starts_at,ends_at,lobby_opens_at,lobby_expires_at,max_capacity");
       const events = ((data ?? []) as RougeState["events"]).map((e) => ({ ...e, venue_layout_json: { aspect: 0.75, sectors: [] }, lineup_json: [], master_invite_code: "", venue_map_url: null, created_by: null }));
       commit({ ...emptyState(), events, active_event_id: events[0]?.id ?? "" });
+      setSignedIn(false);
       return;
     }
     try {
       const preferred = safe(() => localStorage.getItem(EVENT_KEY), null);
       const snap = await fetchRemoteState(sb, userId, preferred);
       if (userRef.current !== userId) return; // cambió la sesión mientras cargaba
+      // Sesión y estado se publican JUNTOS: nadie ve "signedIn" con el estado de otro usuario
+      // (ej. volver de Instagram/Google y decidir "sin perfil → onboarding" antes de cargar).
       commit(snap.state);
+      setSignedIn(true);
     } catch (e) {
       notify({ tone: "error", title: friendlyError(e) });
-      if (!stateRef.current) commit(emptyState(userId));
+      if (!stateRef.current || stateRef.current.current_user_id !== userId) commit(emptyState(userId));
+      setSignedIn(true);
     }
   }, [commit, notify]);
 
@@ -212,14 +218,13 @@ export function RougeProvider({ children }: { children: ReactNode }) {
     sb.auth.getSession().then(({ data }) => {
       if (!alive) return;
       userRef.current = data.session?.user.id ?? null;
-      setSignedIn(!!data.session);
       void loadRemote();
     });
     const { data: sub } = sb.auth.onAuthStateChange((_evt, session) => {
       const next = session?.user.id ?? null;
       if (next === userRef.current) return;
       userRef.current = next;
-      setSignedIn(!!session);
+      if (!session) setSignedIn(false);
       void loadRemote();
     });
     return () => {

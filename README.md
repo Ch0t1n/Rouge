@@ -21,6 +21,8 @@ pines en el plano, QRs y pedidos de barra precargados. Todo persiste en `localSt
   Seguridad. Cada rol entra a su pantalla y solo ve sus secciones (la barra no ve el CRM, seguridad ve las
   alertas de rescate).
 - Tocá tu avatar arriba a la derecha para **actuar como** otra persona.
+- En `/login` probá **Continuar con Instagram / Google** (simulados en el demo): Instagram sugiere tu @ e importa
+  fotos de un feed de ejemplo; el perfil muestra tu Instagram verificado.
 - Todo link tiene su **QR** (entrada al evento, códigos de 1 uso, invitación al Squad, perfil): compartir, WhatsApp,
   copiar o descargar PNG. `/admin/print-codes` imprime un QR por código libre.
 - Abrí una **segunda pestaña** para simular otro teléfono: los cambios se sincronizan.
@@ -48,6 +50,35 @@ Con credenciales en `.env.local` la app deja el Modo Demo y usa Supabase: login 
    va directo a su pantalla. Para operar el evento del seed con tu cuenta, ver el comentario al inicio de
    `supabase/seed.sql`.
 5. (Opcional) Programá `select public.purge_expired_pins()` con pg_cron cada 5 min.
+
+### Login con Google e Instagram
+
+**Google** (proveedor nativo de Supabase):
+1. Google Cloud Console → *APIs y servicios → Credenciales* → ID de cliente OAuth (aplicación web).
+   URI de redireccionamiento autorizada: `https://<proyecto>.supabase.co/auth/v1/callback`.
+2. Supabase → *Authentication → Providers → Google*: pegá Client ID y Secret.
+3. `NEXT_PUBLIC_AUTH_GOOGLE=1` en el entorno de la app. El nombre de Google se sugiere en el onboarding.
+
+**Instagram** (Instagram API with Instagram Login; Supabase no lo trae, el OAuth vive en `/api/instagram/*`):
+1. [Meta for Developers](https://developers.facebook.com/) → app nueva → producto **Instagram** →
+   *API setup with Instagram login*. Permiso: `instagram_business_basic`.
+2. Redirect URI válida: `<NEXT_PUBLIC_APP_URL>/api/instagram/callback`. Deauthorize y Data Deletion:
+   `<NEXT_PUBLIC_APP_URL>/api/instagram/data-deletion`.
+3. En el entorno de la app: `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET`, `SUPABASE_SERVICE_ROLE_KEY` (solo servidor),
+   `NEXT_PUBLIC_APP_URL` y `NEXT_PUBLIC_AUTH_INSTAGRAM=1`.
+4. Mientras la app está en modo *Development* solo entran las cuentas cargadas como testers. Para abrirla al público
+   hay que pasar el **App Review** de Meta (con política de privacidad publicada y verificación del negocio).
+
+> ⚠️ Desde diciembre de 2024 Meta solo da acceso por API a cuentas **profesionales** de Instagram (Creador o Empresa;
+> pasar una cuenta personal a Creador es gratis y no cambia nada visible). Por eso ROUGE también permite **escribir el
+> @ a mano**: se muestra en el perfil como *sin verificar*. Conectado por OAuth queda *verificado* y habilita importar
+> fotos del feed (se descargan, se comprimen y se suben a nuestro Storage: nunca guardamos links del CDN de Instagram).
+
+Qué hace cada uno:
+- **Continuar con Instagram / Google** en `/login` → crea la cuenta o entra a la existente → onboarding (con @username
+  sugerido desde Instagram y nombre desde Google) o directo a su pantalla.
+- **Conectar Instagram** desde *Editar perfil* o el paso de fotos del onboarding (cuenta de email o Google).
+- **Importar de Instagram** en las fotos del perfil · **@ de Instagram** en el perfil (verificado o no).
 
 > En producción: configurá un SMTP propio en Supabase (el de prueba tiene un límite bajo de emails por hora).
 

@@ -57,8 +57,20 @@ export interface Profile {
   loop_video_url: string | null; // máx 5s, sin audio
   music_genres: MusicGenre[];
   spotify_embed_url: string | null;
+  /** @ de Instagram (sin "@", minúsculas). Se puede escribir a mano. */
+  instagram_username: string | null;
+  /** true solo si coincide con la cuenta conectada por OAuth (trigger profile_instagram). */
+  instagram_verified: boolean;
   is_verified: boolean;
   created_at: ISODate;
+}
+
+/** Mi cuenta de Instagram conectada (sin token: el token vive solo en el servidor). Supabase: my_instagram(). */
+export interface InstagramLink {
+  user_id: UUID;
+  username: string;
+  account_type: string | null;
+  connected_at: ISODate;
 }
 
 export interface UserBlock {
@@ -367,6 +379,8 @@ export interface RougeState {
   current_user_id: UUID;
   active_event_id: UUID;
   profiles: Profile[];
+  /** Cuentas de Instagram conectadas (demo: todas las personas; Supabase: solo la mía). */
+  instagram_links: InstagramLink[];
   user_blocks: UserBlock[];
   events: RougeEvent[];
   event_staff: EventStaff[];

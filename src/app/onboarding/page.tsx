@@ -19,6 +19,14 @@ import { LoopVideoField } from "@/components/profile/LoopVideoField";
 import { GenrePicker } from "@/components/profile/GenrePicker";
 import { SpotifyField } from "@/components/profile/SpotifyField";
 import { BlacklistManager } from "@/components/profile/BlacklistManager";
+import { useInstagramReturn } from "@/components/social/InstagramField";
+import { getSupabase } from "@/lib/supabase/client";
+
+/** @ de Instagram → @username válido de ROUGE ([a-z0-9._]{3,20}); vacío si no sirve. */
+function suggestUsername(ig: string | null | undefined): string {
+  const u = (ig ?? "").toLowerCase().replace(/[^a-z0-9._]/g, "").slice(0, 20);
+  return u.length >= 3 ? u : "";
+}
 
 const STEPS = [
   { title: "Quién sos", subtitle: "Tu perfil se crea una sola vez y sirve para todas las fiestas." },
@@ -49,14 +57,18 @@ function Onboarding() {
   }, [mode, signedIn, router, next]);
 
   // Si ya tenía perfil al entrar, no repetimos el onboarding.
-  const hadProfileOnMount = useRef(!!existing);
+  // Vuelta de "Conectar Instagram" desde el paso de fotos: retomamos ahí en vez de mandar al editor.
+  const resumeInstagram = params.get("instagram") === "connected" || params.has("ig_error");
+  const hadProfileOnMount = useRef(!!existing && !resumeInstagram);
   useEffect(() => {
     if (hadProfileOnMount.current) router.replace("/profile/edit");
   }, [router]);
+  useInstagramReturn();
+  const igLink = state.instagram_links.find((l) => l.user_id === meId);
 
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState(existing && resumeInstagram ? 1 : 0);
   const [fullName, setFullName] = useState(existing?.full_name ?? "");
-  const [username, setUsername] = useState(existing?.username ?? "");
+  const [username, setUsername] = useState(existing?.username ?? suggestUsername(igLink?.username));
   const [birthDate, setBirthDate] = useState(existing?.birth_date ?? "");
   const [gender, setGender] = useState<Gender>(existing?.gender ?? "undisclosed");
   const [phone, setPhone] = useState("");
@@ -66,6 +78,21 @@ function Onboarding() {
   const [genres, setGenres] = useState<MusicGenre[]>(existing?.music_genres ?? []);
   const [spotify, setSpotify] = useState(existing?.spotify_embed_url ?? "");
   const [touched, setTouched] = useState(false);
+
+  // Login social: sugerimos el @ de Instagram y el nombre de Google (editables).
+  useEffect(() => {
+    if (existing) return;
+    if (igLink && !username) setUsername(suggestUsername(igLink.username));
+  }, [igLink, existing, username]);
+  useEffect(() => {
+    if (existing || mode !== "supabase") return;
+    getSupabase()
+      ?.auth.getUser()
+      .then(({ data }) => {
+        const name = (data.user?.user_metadata?.full_name ?? data.user?.user_metadata?.name) as string | undefined;
+        if (name) setFullName((cur) => cur || name.slice(0, 60));
+      });
+  }, [existing, mode]);
 
   if (hadProfileOnMount.current) return null;
 

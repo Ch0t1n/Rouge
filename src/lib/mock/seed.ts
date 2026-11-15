@@ -6,6 +6,7 @@
  * puede probar el 100% de los flujos en cualquier momento.
  */
 import type {
+  InstagramLink,
   BarMenuItem,
   EventStaff,
   StaffRole,
@@ -32,7 +33,7 @@ import type {
   VenueLayout,
 } from "@/lib/types";
 
-export const STATE_VERSION = 3;
+export const STATE_VERSION = 4;
 
 // IDs estables → los links de demo (/join/..., /u/...) no cambian entre re-siembras.
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -97,6 +98,10 @@ interface Persona {
 }
 
 /** Equipo del evento (además de la dueña, que es quien creó el evento). */
+/** Personas del demo con Instagram conectado (verificado) y la que lo cargó a mano. */
+const IG_LINKED = new Set([1, 2, 3, 5]);
+const IG_MANUAL = 4;
+
 const STAFF: { id: string; role: StaffRole; username: string; full_name: string; phone: string; bio: string }[] = [
   { id: id(990), role: "manager", username: "lucho.produccion", full_name: "Luciano Paz", phone: "+5491150000990", bio: "Producción de la noche." },
   { id: id(991), role: "bartender", username: "dani.barra", full_name: "Daniela Ortiz", phone: "+5491150000991", bio: "Jefa de barra." },
@@ -166,6 +171,8 @@ export function createSeedState(now = Date.now()): RougeState {
       loop_video_url: null,
       music_genres: [],
       spotify_embed_url: null,
+      instagram_username: null,
+      instagram_verified: false,
       is_verified: true,
       created_at: t(-60 * 24 * 30),
     },
@@ -181,6 +188,8 @@ export function createSeedState(now = Date.now()): RougeState {
       loop_video_url: null,
       music_genres: [],
       spotify_embed_url: null,
+      instagram_username: null,
+      instagram_verified: false,
       is_verified: true,
       created_at: t(-60 * 24 * 20),
     })),
@@ -196,10 +205,20 @@ export function createSeedState(now = Date.now()): RougeState {
       loop_video_url: null,
       music_genres: p.genres,
       spotify_embed_url: p.spotify ?? null,
+      // Algunas personas conectaron Instagram (verificado) y una lo escribió a mano (sin verificar).
+      instagram_username: IG_LINKED.has(p.n) || p.n === IG_MANUAL ? p.username.replace(/\.+$/, "") : null,
+      instagram_verified: IG_LINKED.has(p.n),
       is_verified: !!p.verified,
       created_at: t(-60 * 24 * (40 - p.n)),
     })),
   ];
+
+  const instagram_links: InstagramLink[] = PERSONAS.filter((p) => IG_LINKED.has(p.n)).map((p) => ({
+    user_id: id(p.n),
+    username: p.username,
+    account_type: "CREATOR",
+    connected_at: t(-60 * 24 * 7),
+  }));
 
   // ── Evento ───────────────────────────────────────────────────────
   const event: RougeEvent = {
@@ -493,6 +512,7 @@ export function createSeedState(now = Date.now()): RougeState {
     current_user_id: DEMO_IDS.me,
     active_event_id: event.id,
     profiles,
+    instagram_links,
     user_blocks,
     events: [event],
     event_staff: STAFF.map<EventStaff>((m) => ({ event_id: event.id, user_id: m.id, role: m.role, created_at: t(-60 * 24 * 5) })),
