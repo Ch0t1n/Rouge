@@ -28,6 +28,12 @@ persiste en el navegador.
 - Abrí una **segunda pestaña** con otra persona para simular otro teléfono: los cambios se sincronizan.
 - Todo link tiene su **QR** (evento, códigos de 1 uso, Squad, perfil). `/admin/live-wall` es la Pantalla LED.
 
+## Demo online (para mostrar a clientes)
+
+En [vercel.com/new](https://vercel.com/new) importá este repo, rama `main`, **sin variables de entorno** y tocá Deploy:
+en 2–3 minutos queda una URL pública en Modo Demo que se actualiza sola con cada cambio en `main`.
+Detalle: [Puesta en producción → Demo pública](docs/operaciones/puesta-en-produccion.md#demo-pública).
+
 ## Conectar Supabase (producción)
 
 1. Ejecutá [`supabase/schema.sql`](supabase/schema.sql) en el SQL Editor (opcional: `supabase/seed.sql`).

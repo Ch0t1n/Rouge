@@ -9,11 +9,17 @@ Recomendado: **dos despliegues** en Vercel desde el mismo repo.
 
 ## Demo pública
 
-1. Vercel → *Add New → Project* → importar el repositorio. Framework: Next.js (se detecta solo).
-2. **No** cargar variables de entorno. Deploy.
-3. Asignar el dominio (*Settings → Domains*).
+1. Entrá a [vercel.com/new](https://vercel.com/new) con tu cuenta de GitHub y elegí **Import** en `Ch0t1n/Rouge`
+   (si no aparece, *Adjust GitHub App Permissions* y dale acceso al repo).
+2. Dejá todo como viene (Framework: Next.js, rama `main`) y **no cargues variables de entorno**. Tocá **Deploy**.
+3. En 2–3 minutos te da una URL `https://<proyecto>.vercel.app`. Para un dominio propio: *Settings → Domains*
+   (ej. `demo.tudominio.com`).
 
-Listo: la app arranca en Modo Demo. Se actualiza sola con cada push a la rama elegida.
+Listo: la app arranca en Modo Demo y se vuelve a publicar sola con cada cambio en `main`.
+
+Qué mostrar: `/` (landing), `/login` → **Asistente** (la app) o **Equipo** (Dueña, Producción, Barra, Mozo,
+Seguridad). Guion de 7 minutos en [Demo comercial](../producto/demo-comercial.md). La API para ticketeras responde
+`not_configured` en la demo (necesita Supabase).
 
 ## Producción
 
