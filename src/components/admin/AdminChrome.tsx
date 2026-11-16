@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { BarChart3, CalendarCog, Gift, Lock, LogOut, Megaphone, Martini, Palette, ShieldCheck, UtensilsCrossed, Tv, Users } from "lucide-react";
+import { BarChart3, CalendarCog, Gift, Lock, LogOut, Megaphone, Martini, Palette, ScanLine, Share2, ShieldCheck, UtensilsCrossed, Tv, Users } from "lucide-react";
 import { useRouge } from "@/lib/store/RougeContext";
 import { NO_PERMISSION, permissionForPath, ROLE_META, roleHome } from "@/lib/engine/roles";
 import { getProfile } from "@/lib/engine/selectors";
@@ -19,6 +19,8 @@ export const ADMIN_NAV = [
   { href: "/admin/blasts", label: "Text Blasts", icon: Megaphone },
   { href: "/admin/perks", label: "Perks y sorteos", icon: Gift },
   { href: "/admin/bar-pos", label: "Barra / POS", icon: Martini },
+  { href: "/admin/door", label: "Puerta", icon: ScanLine },
+  { href: "/admin/rrpp", label: "RRPP", icon: Share2 },
   { href: "/admin/live-wall", label: "Pantalla LED", icon: Tv },
 ] as const;
 

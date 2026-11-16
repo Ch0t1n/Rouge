@@ -59,6 +59,7 @@ const MESSAGES: Record<string, string> = {
   mp_not_connected: "La marca no tiene Mercado Pago conectado.",
   mp_api_error: "Mercado Pago no respondió. Probá en un rato.",
   banned: "No podés entrar a este evento.",
+  not_promoter: "Esa persona no es RRPP de este evento: sumala al equipo con el rol RRPP.",
   is_staff: "No podés expulsar a alguien del equipo: primero sacalo del equipo.",
   event_has_attendees: "Ya entró gente a este evento: no se puede eliminar (sus matches y chats se conservan). Podés cerrar el lobby desde el editor.",
   event_has_payments: "Este evento tiene cobros registrados con Mercado Pago: no se puede eliminar.",

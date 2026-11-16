@@ -18,6 +18,8 @@ const VIEWS: { role: DemoRole; path?: string; title: string; text: string; tone:
   { role: "duena", title: "Panel de la dueña", text: "Resumen con ventas, accesos, CRM, avisos y sorteos.", tone: "vip" },
   { role: "barra", title: "Barra / comandas", text: "Kanban de pedidos y ventanilla rápida con QR.", tone: "vip" },
   { role: "seguridad", title: "Seguridad", text: "Alertas de rescate en vivo con la ubicación en el plano.", tone: "squad" },
+  { role: "seguridad", path: "/admin/door", title: "Puerta", text: "Escáner de entradas y pases con foto y edad, desde el celular.", tone: "squad" },
+  { role: "rrpp", title: "RRPP", text: "Link y QR propios para invitar y cuánta gente entró por cada RRPP.", tone: "vip" },
   { role: "duena", path: "/admin/live-wall", title: "Pantalla LED", text: "Para la TV o el proyector del lugar (pantalla completa).", tone: "rouge" },
 ];
 
@@ -147,7 +149,7 @@ export function DemoHub() {
                 <li key={v.title}>
                   <a href={openAs(v.role, v.path)} target="_blank" rel="noopener" className="glass group flex min-h-[96px] items-center gap-4 rounded-3xl p-5 transition hover:bg-white/10">
                     <span className={cn("grid size-12 shrink-0 place-items-center rounded-2xl text-2xl", TONE[v.tone])} aria-hidden>
-                      {v.path === "/admin/live-wall" ? "📺" : r.emoji}
+                      {v.path === "/admin/live-wall" ? "📺" : v.path === "/admin/door" ? "🚪" : r.emoji}
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block font-display font-semibold">{v.title}</span>

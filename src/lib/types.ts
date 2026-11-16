@@ -167,7 +167,7 @@ export interface RougeEvent {
 }
 
 /** Equipo del evento (tabla `event_staff`). Quien crea el evento es "owner" aunque no tenga fila. */
-export type StaffRole = "owner" | "manager" | "bartender" | "waiter" | "security";
+export type StaffRole = "owner" | "manager" | "bartender" | "waiter" | "security" | "promoter";
 
 export interface EventStaff {
   event_id: UUID;
@@ -191,6 +191,19 @@ export interface EventInviteCode {
   api_key_id: UUID | null;
   /** Anulado (ej. entrada reembolsada): deja de servir para entrar. */
   revoked_at: ISODate | null;
+  /** Escaneado en la puerta (ingreso físico). Distinto de `is_used` (alguien lo usó para entrar a la app). */
+  checked_in_at: ISODate | null;
+  created_at: ISODate;
+}
+
+/** Link propio de un RRPP para un evento (`/join/<code>`): atribuye a quienes entran por él. */
+export interface PromoterLink {
+  id: UUID;
+  event_id: UUID;
+  user_id: UUID;
+  code: string;
+  /** Lo que se le paga al RRPP por cada ingreso (lo fija dueño/a o producción). */
+  commission_per_entry: number;
   created_at: ISODate;
 }
 
@@ -233,6 +246,10 @@ export interface EventAttendee {
   last_active_at: ISODate;
   /** Sectores del plano donde dejó pin esta noche (filtro post-fiesta "coincidieron en tu zona"). Sin coordenadas: privacidad. */
   visited_sectors: string[];
+  /** RRPP por cuyo link entró (primer contacto). */
+  referred_by: UUID | null;
+  /** Escaneado en la puerta con su pase de la app o su entrada. */
+  checked_in_at: ISODate | null;
   joined_at: ISODate;
 }
 
@@ -508,6 +525,8 @@ export interface RougeState {
   brand_payment_accounts: BrandPaymentAccount[];
   event_staff: EventStaff[];
   event_invite_codes: EventInviteCode[];
+  /** Links de RRPP (staff gestor: todos los del evento; RRPP: el propio). */
+  promoter_links: PromoterLink[];
   /** Mis claves de la API (Supabase: solo las que creé). */
   api_keys: ApiKey[];
   event_attendees: EventAttendee[];
@@ -528,6 +547,8 @@ export interface RougeState {
   squad_expenses: SquadExpense[];
   squad_settlements: SquadSettlement[];
   payout_aliases: PayoutAlias[];
+  /** Supabase: números por RRPP calculados en el servidor (RPC promoter_stats). El RRPP no ve a los asistentes. */
+  promoter_stats?: { user_id: UUID; link_id: UUID | null; code: string | null; commission_per_entry: number; entries: number; checked_in: number; billable: number; to_pay: number }[] | null;
   /** Solo staff en Modo Supabase: conteos de conexiones (que son privadas por RLS). */
   admin_stats?: AdminStats | null;
 }

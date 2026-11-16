@@ -5,7 +5,7 @@
 import { DEMO_IDS } from "@/lib/mock/seed";
 import type { UUID } from "@/lib/types";
 
-export type DemoRole = "asistente" | "amiga" | "duena" | "produccion" | "barra" | "mozo" | "seguridad";
+export type DemoRole = "asistente" | "amiga" | "duena" | "produccion" | "barra" | "mozo" | "seguridad" | "rrpp";
 
 export const DEMO_ROLES: Record<DemoRole, { id: UUID; name: string; label: string; emoji: string; home: string; side: "phone" | "panel" }> = {
   asistente: { id: DEMO_IDS.me, name: "Sofía", label: "Asistente", emoji: "✨", home: "/app", side: "phone" },
@@ -15,6 +15,7 @@ export const DEMO_ROLES: Record<DemoRole, { id: UUID; name: string; label: strin
   barra: { id: DEMO_IDS.bartender, name: "Daniela", label: "Barra", emoji: "🍸", home: "/admin/bar-pos", side: "panel" },
   mozo: { id: DEMO_IDS.waiter, name: "Tomás", label: "Mozo", emoji: "🛵", home: "/admin/bar-pos", side: "panel" },
   seguridad: { id: DEMO_IDS.security, name: "Marta", label: "Seguridad", emoji: "🛡️", home: "/admin", side: "panel" },
+  rrpp: { id: DEMO_IDS.promoter, name: "Victoria", label: "RRPP", emoji: "📣", home: "/admin/rrpp", side: "panel" },
 };
 
 export interface DemoStep {

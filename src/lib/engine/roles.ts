@@ -6,7 +6,8 @@
  *   manager    → producción: todo el panel
  *   bartender  → barra: comandas, canje de QR y pantalla LED
  *   waiter     → mozo/a: comandas (delivery a pines / Mesas VIP)
- *   security   → seguridad: resumen con alertas de rescate y pantalla LED
+ *   security   → seguridad: resumen con alertas de rescate, puerta (escáner) y pantalla LED
+ *   promoter   → RRPP: su link propio con QR y sus ingresos/comisión (no ve datos de asistentes)
  *
  * Contraparte SQL: has_staff_role() en schema.sql (las RPCs exigen el mismo rol).
  */
@@ -25,16 +26,21 @@ export type Permission =
   | "bar.operate"
   | "perks.redeem"
   /** Sumar/quitar equipo: solo dueño/a (evita que alguien se dé más permisos). */
-  | "admin.team";
+  | "admin.team"
+  /** Panel de RRPP: el RRPP ve lo suyo; dueño/a y producción, todos y la liquidación. */
+  | "admin.rrpp"
+  /** Escáner de la puerta (entradas y pases de la app). */
+  | "door.scan";
 
-const OPERATION: Permission[] = ["admin.overview", "admin.events", "admin.crm", "admin.blasts", "admin.perks", "admin.bar", "admin.livewall", "bar.operate", "perks.redeem"];
+const OPERATION: Permission[] = ["admin.overview", "admin.events", "admin.crm", "admin.blasts", "admin.perks", "admin.bar", "admin.livewall", "bar.operate", "perks.redeem", "admin.rrpp", "door.scan"];
 
 export const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
   owner: [...OPERATION, "admin.team"],
   manager: OPERATION,
   bartender: ["admin.bar", "bar.operate", "perks.redeem", "admin.livewall"],
   waiter: ["admin.bar", "bar.operate"],
-  security: ["admin.overview", "admin.livewall"],
+  security: ["admin.overview", "admin.livewall", "door.scan"],
+  promoter: ["admin.rrpp"],
 };
 
 export const ROLE_META: Record<Role, { label: string; emoji: string; description: string }> = {
@@ -42,12 +48,13 @@ export const ROLE_META: Record<Role, { label: string; emoji: string; description
   manager: { label: "Producción", emoji: "🎛️", description: "Opera la noche: accesos, avisos, sorteos y comandas." },
   bartender: { label: "Barra", emoji: "🍸", description: "Comandas, ventanilla rápida y canje de QRs." },
   waiter: { label: "Mozo/a", emoji: "🛵", description: "Lleva pedidos a pines y Mesas VIP." },
-  security: { label: "Seguridad", emoji: "🛡️", description: "Ve las alertas de rescate activas y la pantalla LED." },
+  security: { label: "Seguridad", emoji: "🛡️", description: "Escanea entradas en la puerta y ve las alertas de rescate y la pantalla LED." },
+  promoter: { label: "RRPP", emoji: "📣", description: "Tiene su link y QR propios para invitar y ve cuánta gente entró por él (sin datos personales)." },
   attendee: { label: "Asistente", emoji: "✨", description: "Conectá, armá tu Squad y pedí sin filas." },
   guest: { label: "Visitante", emoji: "👋", description: "Todavía sin ingresar." },
 };
 
-export const STAFF_ROLES: StaffRole[] = ["owner", "manager", "bartender", "waiter", "security"];
+export const STAFF_ROLES: StaffRole[] = ["owner", "manager", "bartender", "waiter", "security", "promoter"];
 
 /** Rol de staff en el evento (quien lo creó es owner aunque no tenga fila en event_staff). */
 export function staffRoleOf(s: RougeState, eventId: UUID, userId: UUID): StaffRole | null {
@@ -79,6 +86,8 @@ export function roleHome(r: Role): string {
     case "bartender":
     case "waiter":
       return "/admin/bar-pos";
+    case "promoter":
+      return "/admin/rrpp";
     case "attendee":
       return "/app";
     default:
@@ -98,6 +107,8 @@ export const ADMIN_ROUTE_PERMISSION: [string, Permission][] = [
   ["/admin/live-wall", "admin.livewall"],
   ["/admin/print-codes", "admin.events"],
   ["/admin/print-ticket", "admin.bar"],
+  ["/admin/rrpp", "admin.rrpp"],
+  ["/admin/door", "door.scan"],
   ["/admin", "admin.overview"],
 ];
 

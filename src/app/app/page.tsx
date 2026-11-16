@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { UserRound, ArrowRight, ChevronRight, Clock3, Crown, DoorOpen, Flag, Gift, Heart, LayoutDashboard, MapPin, Martini, QrCode, ShieldCheck, Users, Zap } from "lucide-react";
 import { MOOD_TAGS } from "@/lib/types";
@@ -35,6 +35,9 @@ import { ROLE_META, roleHome } from "@/lib/engine/roles";
 import { eventTheme } from "@/lib/engine/branding";
 import { squadAccount } from "@/lib/engine/settle";
 import { BrandLogo } from "@/components/brand/BrandTheme";
+import { QrBlock } from "@/components/perks/QrCard";
+import { BottomSheet } from "@/components/ui/bottom-sheet";
+import { passValue } from "@/lib/engine/door";
 
 const PHASE_LABEL: Record<LobbyPhase, string> = {
   upcoming: "Próximamente",
@@ -77,6 +80,7 @@ function Home() {
   const hoursToClose = Math.max(0, Math.round((+new Date(event.lobby_expires_at) - now) / 3_600_000));
   const mood = MOOD_TAGS.find((m) => m.id === attendee?.mood_tag);
   const theme = eventTheme(state, event.id);
+  const [pass, setPass] = useState(false);
   const account = data.squad ? squadAccount(state, data.squad.squad.id, me.id) : null;
   const flashLeft = data.flash?.expires_at ? Math.max(0, Math.ceil((+new Date(data.flash.expires_at) - now) / 60_000)) : 0;
 
@@ -149,6 +153,24 @@ function Home() {
             )}
           </div>
         </section>
+
+        {/* Mi entrada: pase para escanear en la puerta */}
+        {attendee && phase !== "expired" && (
+          <button type="button" onClick={() => setPass(true)} className="glass flex w-full items-center gap-3 rounded-2xl p-4 text-left transition hover:bg-white/10" data-testid="my-pass">
+            <QrCode className="size-6 shrink-0 text-squad" />
+            <span className="min-w-0 flex-1 text-sm">
+              <b className="block">Mi entrada</b>
+              <span className="text-muted">{attendee.checked_in_at ? `Ya entraste a las ${new Date(attendee.checked_in_at).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })} ✓` : "Mostrá este QR en la puerta"}</span>
+            </span>
+            <ChevronRight className="size-5 text-muted" />
+          </button>
+        )}
+        <BottomSheet open={pass} onClose={() => setPass(false)} title="Mi entrada" description="Mostralo en la puerta: el personal ve tu foto y tu nombre.">
+          <div className="space-y-3 text-center">
+            <QrBlock value={passValue(event.id, me.id)} label={`${me.full_name} · ${event.name}`} />
+            <p className="text-xs text-muted">Si tenés la entrada de la ticketera, también sirve su QR.</p>
+          </div>
+        </BottomSheet>
 
         {/* Flash promo (Text Blast) */}
         {data.flash && (

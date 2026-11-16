@@ -26,6 +26,7 @@ import type {
   PerkRule,
   PerkType,
   Profile,
+  PromoterLink,
   Raffle,
   RaffleFilter,
   RougeEvent,
@@ -306,6 +307,8 @@ export interface ResolvedCode {
   via: EventAttendee["joined_via"];
   inviteCode?: EventInviteCode;
   squad?: Squad;
+  /** Link de RRPP: entra como el link maestro y queda atribuido a ese RRPP. */
+  promoter?: PromoterLink;
 }
 
 export function resolveAccessCode(state: RougeState, rawCode: string): ResolvedCode | null {
@@ -314,6 +317,12 @@ export function resolveAccessCode(state: RougeState, rawCode: string): ResolvedC
   const byMaster = state.events.find((e) => e.master_invite_code.toUpperCase() === upper || e.slug === code.toLowerCase());
   if (byMaster) return { event: byMaster, via: "master_link" };
   // Un código anulado (entrada reembolsada) es inválido, igual que uno inexistente (mismo criterio que join_event).
+  // Link de RRPP (/join/RP…): mismo ingreso que el link maestro, con atribución.
+  const promoter = state.promoter_links.find((l) => l.code.toUpperCase() === upper);
+  if (promoter) {
+    const event = getEvent(state, promoter.event_id);
+    return event ? { event, via: "master_link", promoter } : null;
+  }
   const inviteCode = state.event_invite_codes.find((c) => c.code.toUpperCase() === upper && !c.revoked_at);
   if (inviteCode) {
     const event = getEvent(state, inviteCode.event_id);
@@ -337,7 +346,7 @@ export function joinEvent(
   if (!getProfile(state, userId)) return fail("Primero creá tu perfil.");
   const resolved = resolveAccessCode(state, code);
   if (!resolved) return fail("Código o link inválido.");
-  const { event, via, inviteCode, squad } = resolved;
+  const { event, via, inviteCode, squad, promoter } = resolved;
   // Expulsado por el organizador: mensaje genérico (mismo criterio que join_event → 'banned').
   if (state.event_bans.some((b) => b.event_id === event.id && b.user_id === userId)) return fail("No podés entrar a este evento.");
 
@@ -369,6 +378,8 @@ export function joinEvent(
       icebreaker_used: false,
       total_spent: 0,
       joined_via: via,
+      referred_by: promoter && promoter.user_id !== userId ? promoter.user_id : null,
+      checked_in_at: null,
       last_active_at: iso(now),
       joined_at: iso(now),
     };
@@ -1339,7 +1350,7 @@ export function generateInviteCodes(state: RougeState, eventId: UUID, count: num
     const code = shortCode(ACCESS_CODE_LENGTH);
     if (taken.has(code)) continue;
     taken.add(code);
-    codes.push({ id: uid(), event_id: eventId, code, is_used: false, used_by_user_id: null, used_at: null, external_ref: null, label: null, source: "panel", api_key_id: null, revoked_at: null, created_at: iso(now) });
+    codes.push({ id: uid(), event_id: eventId, code, is_used: false, used_by_user_id: null, used_at: null, external_ref: null, label: null, source: "panel", api_key_id: null, revoked_at: null, checked_in_at: null, created_at: iso(now) });
   }
   return ok({ ...state, event_invite_codes: [...state.event_invite_codes, ...codes] }, codes);
 }

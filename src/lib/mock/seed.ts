@@ -8,6 +8,7 @@
 import type {
   Brand,
   BrandPaymentAccount,
+  PromoterLink,
   PayoutAlias,
   SquadExpense,
   InstagramLink,
@@ -37,7 +38,7 @@ import type {
   VenueLayout,
 } from "@/lib/types";
 
-export const STATE_VERSION = 7;
+export const STATE_VERSION = 8;
 
 // IDs estables → los links de demo (/join/..., /u/...) no cambian entre re-siembras.
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -53,6 +54,7 @@ export const DEMO_IDS = {
   squadMain: id(2001),
   squadVip: id(2002),
   brand: id(3001),
+  promoter: id(994),
 } as const;
 
 export const VENUE_LAYOUT: VenueLayout = {
@@ -112,6 +114,7 @@ const STAFF: { id: string; role: StaffRole; username: string; full_name: string;
   { id: id(991), role: "bartender", username: "dani.barra", full_name: "Daniela Ortiz", phone: "+5491150000991", bio: "Jefa de barra." },
   { id: id(992), role: "waiter", username: "tomas.mozo", full_name: "Tomás Rey", phone: "+5491150000992", bio: "Delivery a Mesas VIP." },
   { id: id(993), role: "security", username: "marta.seguridad", full_name: "Marta Gómez", phone: "+5491150000993", bio: "Coordinación de seguridad." },
+  { id: id(994), role: "promoter", username: "vicky.rrpp", full_name: "Victoria Sosa", phone: "+5491150000994", bio: "RRPP de la noche. Escribime para la lista." },
 ];
 
 const PERSONAS: Persona[] = [
@@ -281,9 +284,17 @@ export function createSeedState(now = Date.now()): RougeState {
       source: i >= 18 ? "api" : "panel",
       api_key_id: null,
       revoked_at: null,
+      // Los primeros 5 ya se escanearon en la puerta.
+      checked_in_at: i < 5 ? t(START - 20 + i * 6) : null,
       created_at: t(-60 * 24 * 3),
     };
   });
+
+  // ── RRPP: link propio de Vicky (entraron por él Mateo, Lucas, Bruno y Joaquín) ──
+  const promoter_links: PromoterLink[] = [
+    { id: id(17001), event_id: event.id, user_id: DEMO_IDS.promoter, code: "RPVICKY7", commission_per_entry: 1500, created_at: t(-60 * 24 * 4) },
+  ];
+  const REFERRED = new Set([5, 6, 7, 8]);
 
   // ── Asistentes ───────────────────────────────────────────────────
   const attendees: EventAttendee[] = PERSONAS.map((p, i) => ({
@@ -298,6 +309,9 @@ export function createSeedState(now = Date.now()): RougeState {
     joined_via: i < 6 ? "single_use_code" : i % 2 ? "master_link" : "squad_link",
     last_active_at: t(-p.activeMinAgo),
     visited_sectors: VISITED[p.n] ?? [],
+    referred_by: REFERRED.has(p.n) ? DEMO_IDS.promoter : null,
+    // La fiesta está en vivo: casi todos ya pasaron por la puerta (Joaquín y los dos últimos todavía no).
+    checked_in_at: p.n === 8 || p.n >= 12 ? null : t(START - 10 + p.n * 4),
     joined_at: t(START - 40 + i * 6),
   }));
 
@@ -569,6 +583,7 @@ export function createSeedState(now = Date.now()): RougeState {
     brand_payment_accounts,
     event_staff: STAFF.map<EventStaff>((m) => ({ event_id: event.id, user_id: m.id, role: m.role, created_at: t(-60 * 24 * 5) })),
     event_invite_codes: invite_codes,
+    promoter_links,
     api_keys: [],
     event_attendees: attendees,
     event_bans: [],

@@ -40,6 +40,9 @@ do $$ begin
   create type staff_role_t        as enum ('owner','manager','bartender','waiter','security');
   create type raffle_filter_t     as enum ('all','active_pin','in_squad','female');
 exception when duplicate_object then null; end $$;
+-- [v1.6] RRPP. En el resto del script NO se usa 'promoter'::staff_role_t (Postgres no deja usar un valor nuevo de un
+-- enum en la misma transacción en que se agrega): se compara como texto (role::text = 'promoter').
+alter type staff_role_t add value if not exists 'promoter';
 
 -- ════════════════════════════════════════════════════════════════════════
 -- TABLAS
@@ -214,6 +217,9 @@ alter table public.event_invite_codes add column if not exists label text check 
 alter table public.event_invite_codes add column if not exists source text not null default 'panel' check (source in ('panel', 'api'));
 alter table public.event_invite_codes add column if not exists api_key_id uuid;
 alter table public.event_invite_codes add column if not exists revoked_at timestamptz;
+-- [v1.6] Ingreso físico (escáner de la puerta). Distinto de is_used (alguien lo usó para entrar a la app).
+alter table public.event_invite_codes add column if not exists checked_in_at timestamptz;
+alter table public.event_invite_codes add column if not exists checked_in_by uuid references public.profiles(id) on delete set null;
 do $$ begin
   alter table public.event_invite_codes add constraint invite_revoked_chk check (not (is_used and revoked_at is not null));
 exception when duplicate_object then null; end $$;
@@ -255,6 +261,9 @@ create table if not exists public.event_attendees (
 );
 
 alter table public.event_attendees add column if not exists visited_sectors text[] not null default '{}';
+-- [v1.6] RRPP por cuyo link entró (primer contacto) e ingreso físico escaneado en la puerta.
+alter table public.event_attendees add column if not exists referred_by uuid references public.profiles(id) on delete set null;
+alter table public.event_attendees add column if not exists checked_in_at timestamptz;
 
 create table if not exists public.connections (
   id                    uuid primary key default gen_random_uuid(),
@@ -474,6 +483,18 @@ create table if not exists public.payout_aliases (
   updated_at  timestamptz not null default now()
 );
 
+-- [v1.6] Link propio de cada RRPP por evento (/join/<code>). Comisión por ingreso que fija dueño/a o producción.
+create table if not exists public.promoter_links (
+  id                    uuid primary key default gen_random_uuid(),
+  event_id              uuid not null references public.events(id) on delete cascade,
+  user_id               uuid not null references public.profiles(id) on delete cascade,
+  code                  text not null unique,
+  commission_per_entry  numeric(12,2) not null default 0 check (commission_per_entry >= 0 and commission_per_entry <= 1000000),
+  created_at            timestamptz not null default now(),
+  unique (event_id, user_id)
+);
+create index if not exists idx_attendees_referred on public.event_attendees (event_id, referred_by) where referred_by is not null;
+
 -- [v1.5] Expulsados de un evento por el organizador: no pueden volver a entrar a ESE evento.
 create table if not exists public.event_bans (
   event_id    uuid not null references public.events(id) on delete cascade,
@@ -554,7 +575,8 @@ $$;
 
 create or replace function public.is_event_staff(p_event uuid, p_user uuid default auth.uid())
 returns boolean language sql stable security definer set search_path = public, extensions as $$
-  select exists (select 1 from public.event_staff where event_id = p_event and user_id = p_user)
+  -- [v1.6] El RRPP NO es staff para ver datos (pines, squads, pedidos, perks): solo tiene su link y sus números.
+  select exists (select 1 from public.event_staff where event_id = p_event and user_id = p_user and role::text <> 'promoter')
       or exists (select 1 from public.events where id = p_event and created_by = p_user);
 $$;
 
@@ -663,6 +685,7 @@ alter table public.squad_expenses      enable row level security;
 alter table public.squad_settlements   enable row level security;
 alter table public.payout_aliases      enable row level security;
 alter table public.event_bans          enable row level security;
+alter table public.promoter_links      enable row level security;
 
 -- PROFILES ── el teléfono NUNCA es legible por otros usuarios (column privileges).
 drop policy if exists profiles_select on public.profiles;
@@ -734,6 +757,10 @@ grant select (id, slug, name, description, venue_name, cover_url, starts_at, end
 -- [v1.5] Eliminar un evento: solo quien lo creó (y nunca con cobros registrados: trigger events_keep_payments).
 drop policy if exists events_delete on public.events;
 create policy events_delete on public.events for delete to authenticated using (created_by = auth.uid());
+
+-- PROMOTER LINKS ── el RRPP ve el suyo; dueño/a y producción, todos. Altas y comisión por RPC.
+drop policy if exists promoter_links_select on public.promoter_links;
+create policy promoter_links_select on public.promoter_links for select to authenticated using (user_id = auth.uid() or public.is_event_manager(event_id));
 
 -- EVENT BANS ── el staff gestor ve y levanta los bloqueos de su evento; cada uno ve el propio. Altas por remove_attendee.
 drop policy if exists bans_select on public.event_bans;
@@ -971,12 +998,18 @@ declare
   v_event public.events;
   v_code public.event_invite_codes;
   v_squad public.squads;
+  v_link public.promoter_links;
   v_via join_via_t;
 begin
   if v_uid is null then raise exception 'not_authenticated'; end if;
 
   select * into v_event from public.events where upper(master_invite_code) = upper(p_code) or slug = lower(p_code);
   if found then v_via := 'master_link';
+  elsif exists (select 1 from public.promoter_links where upper(code) = upper(trim(p_code))) then
+    -- [v1.6] Link de RRPP: entra como el link maestro y queda atribuido a ese RRPP.
+    select * into v_link from public.promoter_links where upper(code) = upper(trim(p_code));
+    select * into v_event from public.events where id = v_link.event_id;
+    v_via := 'master_link';
   else
     select * into v_code from public.event_invite_codes where upper(code) = upper(p_code) and revoked_at is null for update;
     if found then
@@ -1004,7 +1037,8 @@ begin
     elsif (select count(*) from public.event_attendees where event_id = v_event.id) >= v_event.max_capacity then
       raise exception 'event_full';
     end if;
-    insert into public.event_attendees (event_id, user_id, mood_tag, joined_via) values (v_event.id, v_uid, p_mood, v_via);
+    insert into public.event_attendees (event_id, user_id, mood_tag, joined_via, referred_by)
+    values (v_event.id, v_uid, p_mood, v_via, case when v_link.user_id is distinct from v_uid then v_link.user_id end);
   end if;
 
   if v_via = 'squad_link' and public.user_squad(v_event.id, v_uid) is null
@@ -1025,6 +1059,9 @@ declare
 begin
   select * into v_event from public.events where upper(master_invite_code) = upper(trim(p_code)) or slug = lower(trim(p_code));
   if found then v_via := 'master_link';
+  elsif exists (select 1 from public.promoter_links where upper(code) = upper(trim(p_code))) then
+    select e.* into v_event from public.events e join public.promoter_links l on l.event_id = e.id where upper(l.code) = upper(trim(p_code));
+    v_via := 'master_link';
   else
     select * into v_code from public.event_invite_codes where upper(code) = upper(trim(p_code)) and revoked_at is null;
     if found then
@@ -1849,6 +1886,109 @@ begin
 end $$;
 drop trigger if exists events_keep_payments on public.events;
 create trigger events_keep_payments before delete on public.events for each row execute function public.tg_events_keep_payments();
+
+-- [v1.6] RRPP: link propio (lo pide el RRPP o dueño/a/producción para un RRPP del equipo). Código generado acá.
+create or replace function public.ensure_promoter_link(p_event uuid, p_user uuid default auth.uid())
+returns public.promoter_links language plpgsql security definer set search_path = public, extensions as $$
+declare v_row public.promoter_links; v_code text;
+begin
+  if not exists (select 1 from public.event_staff where event_id = p_event and user_id = p_user and role::text = 'promoter') then raise exception 'not_promoter'; end if;
+  if p_user <> auth.uid() and not public.is_event_manager(p_event) then raise exception 'forbidden'; end if;
+  select * into v_row from public.promoter_links where event_id = p_event and user_id = p_user;
+  if found then return v_row; end if;
+  loop
+    v_code := 'RP' || upper(substr(translate(encode(gen_random_bytes(8), 'base64'), '+/=0O1IL', ''), 1, 6));
+    exit when char_length(v_code) = 8 and not exists (select 1 from public.promoter_links where code = v_code);
+  end loop;
+  insert into public.promoter_links (event_id, user_id, code) values (p_event, p_user, v_code) returning * into v_row;
+  return v_row;
+end $$;
+
+create or replace function public.set_promoter_commission(p_link uuid, p_amount numeric)
+returns public.promoter_links language plpgsql security definer set search_path = public, extensions as $$
+declare v_row public.promoter_links;
+begin
+  select * into v_row from public.promoter_links where id = p_link;
+  if not found then raise exception 'not_found'; end if;
+  if not public.is_event_manager(v_row.event_id) then raise exception 'forbidden'; end if;
+  if p_amount is null or p_amount < 0 or p_amount > 1000000 then raise exception 'invalid_amount'; end if;
+  update public.promoter_links set commission_per_entry = round(p_amount, 2) where id = p_link returning * into v_row;
+  return v_row;
+end $$;
+
+-- Números por RRPP (espejo de promoterStats): el RRPP ve solo su fila; dueño/a y producción, todas. Sin datos personales.
+-- Si el evento usa el escáner de la puerta, se liquida por ingreso confirmado; si no, por ingreso a la app.
+create or replace function public.promoter_stats(p_event uuid)
+returns table (user_id uuid, link_id uuid, code text, commission_per_entry numeric, entries int, checked_in int, billable int, to_pay numeric)
+language sql stable security definer set search_path = public, extensions as $$
+  with door as (
+    select exists (select 1 from public.event_attendees where event_id = p_event and checked_in_at is not null)
+        or exists (select 1 from public.event_invite_codes where event_id = p_event and checked_in_at is not null) as uses_door
+  ), base as (
+    select s.user_id, l.id as link_id, l.code, coalesce(l.commission_per_entry, 0) as commission_per_entry,
+           (select count(*)::int from public.event_attendees a where a.event_id = p_event and a.referred_by = s.user_id) as entries,
+           (select count(*)::int from public.event_attendees a where a.event_id = p_event and a.referred_by = s.user_id and a.checked_in_at is not null) as checked_in
+    from public.event_staff s
+    left join public.promoter_links l on l.event_id = s.event_id and l.user_id = s.user_id
+    where s.event_id = p_event and s.role::text = 'promoter'
+      and (public.is_event_manager(p_event) or s.user_id = auth.uid())
+  )
+  select b.user_id, b.link_id, b.code, b.commission_per_entry, b.entries, b.checked_in,
+         case when d.uses_door then b.checked_in else b.entries end as billable,
+         round((case when d.uses_door then b.checked_in else b.entries end) * b.commission_per_entry, 2) as to_pay
+  from base b cross join door d
+  order by b.entries desc;
+$$;
+
+-- [v1.6] Puerta (espejo de doorCheckIn): entrada (código de 1 uso o su URL /join/<código>) o pase de la app
+-- (ROUGE:PASS:<evento>:<usuario>). Devuelve nombre, foto y edad para comparar con quien entra. Dueño/a, producción y seguridad.
+create or replace function public.door_check_in(p_event uuid, p_value text)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare
+  v_raw text := trim(coalesce(p_value, '')); v_code text; v_ev public.events; v_c public.event_invite_codes;
+  v_att public.event_attendees; v_user uuid; v_p public.profiles; v_parts text[]; v_status text; v_kind text; v_at timestamptz;
+begin
+  if not public.has_staff_role(p_event, array['owner','manager','security']::staff_role_t[]) then raise exception 'forbidden'; end if;
+  select * into v_ev from public.events where id = p_event;
+  if upper(v_raw) like 'ROUGE:PASS:%' then
+    v_kind := 'pass';
+    v_parts := string_to_array(substr(v_raw, 12), ':');
+    if coalesce(array_length(v_parts, 1), 0) < 2 then return jsonb_build_object('status', 'invalid', 'kind', v_kind); end if;
+    if v_parts[1] <> p_event::text then return jsonb_build_object('status', 'other_event', 'kind', v_kind); end if;
+    begin v_user := v_parts[2]::uuid; exception when others then return jsonb_build_object('status', 'invalid', 'kind', v_kind); end;
+    select * into v_att from public.event_attendees where event_id = p_event and user_id = v_user for update;
+    if exists (select 1 from public.event_bans where event_id = p_event and user_id = v_user) then v_status := 'banned';
+    elsif v_att.id is null then v_status := 'not_attendee';
+    elsif v_att.checked_in_at is not null then v_status := 'already'; v_at := v_att.checked_in_at;
+    else
+      update public.event_attendees set checked_in_at = now() where id = v_att.id returning checked_in_at into v_at;
+      v_status := 'ok';
+    end if;
+  else
+    v_kind := 'code';
+    v_code := upper(coalesce(substring(v_raw from '/join/([^/?#[:space:]]+)'), v_raw));
+    if upper(v_ev.slug) = v_code or upper(v_ev.master_invite_code) = v_code or exists (select 1 from public.promoter_links where upper(code) = v_code) then
+      return jsonb_build_object('status', 'general_link', 'kind', v_kind);
+    end if;
+    select * into v_c from public.event_invite_codes where upper(code) = v_code for update;
+    if v_c.id is null then return jsonb_build_object('status', 'invalid', 'kind', v_kind); end if;
+    if v_c.event_id <> p_event then return jsonb_build_object('status', 'other_event', 'kind', v_kind); end if;
+    v_user := v_c.used_by_user_id;
+    if v_c.revoked_at is not null then v_status := 'revoked';
+    elsif v_user is not null and exists (select 1 from public.event_bans where event_id = p_event and user_id = v_user) then v_status := 'banned';
+    elsif v_c.checked_in_at is not null then v_status := 'already'; v_at := v_c.checked_in_at;
+    else
+      update public.event_invite_codes set checked_in_at = now(), checked_in_by = auth.uid() where id = v_c.id returning checked_in_at into v_at;
+      if v_user is not null then update public.event_attendees set checked_in_at = coalesce(checked_in_at, now()) where event_id = p_event and user_id = v_user; end if;
+      v_status := 'ok';
+    end if;
+  end if;
+  select * into v_p from public.profiles where id = v_user;
+  return jsonb_build_object(
+    'status', v_status, 'kind', v_kind, 'user_id', v_p.id, 'name', v_p.full_name, 'username', v_p.username,
+    'photo', v_p.photos->0->>'url', 'age', case when v_p.id is null then null else date_part('year', age(v_p.birth_date))::int end,
+    'label', v_c.label, 'checked_in_at', v_at);
+end $$;
 
 -- Permisos de ejecución
 revoke execute on all functions in schema public from anon;

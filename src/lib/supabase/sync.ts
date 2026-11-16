@@ -97,6 +97,12 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
   ]);
   // Expulsados del evento (RLS: el staff ve los del evento; cada uno, el propio).
   const bans = await byEvent<RougeState["event_bans"][number]>("event_bans").catch(() => []);
+  // Links de RRPP (RLS: dueño/a y producción ven todos los del evento; el RRPP, el suyo).
+  const promoterLinks = await byEvent<RougeState["promoter_links"][number]>("promoter_links").catch(() => []);
+  const promoterStats =
+    eventId && (isManager || myRole === "promoter")
+      ? (await q<NonNullable<RougeState["promoter_stats"]>[number]>(sb.rpc("promoter_stats", { p_event: eventId })).catch(() => [])).map((r) => ({ ...r, commission_per_entry: Number(r.commission_per_entry), to_pay: Number(r.to_pay) }))
+      : null;
   const brands = [...new Map([...myBrands, ...eventBrands].map((b) => [b.id, b])).values()];
   // Mis roles en todos los eventos (selector del panel) + el equipo completo del evento activo si soy staff.
   const teamRows = isStaff ? await byEvent<RougeState["event_staff"][number]>("event_staff") : [];
@@ -126,7 +132,7 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
       const crm = await q<{ user_id: UUID; phone: string | null }>(sb.rpc("event_crm", { p_event: eventId })).catch(() => []);
       crm.forEach((r) => phones.set(r.user_id, r.phone));
     }
-    const { data: stats } = myRole === "bartender" || myRole === "waiter" ? { data: null } : await sb.rpc("event_stats", { p_event: eventId });
+    const { data: stats } = myRole === "bartender" || myRole === "waiter" || myRole === "promoter" ? { data: null } : await sb.rpc("event_stats", { p_event: eventId });
     if (stats) adminStats = { event_id: eventId, ...(stats as Omit<NonNullable<RougeState["admin_stats"]>, "event_id">) };
   }
 
@@ -143,10 +149,11 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
     brands,
     brand_payment_accounts: payAccounts,
     event_staff: eventStaff,
-    event_invite_codes: codes,
+    event_invite_codes: codes.map((c) => ({ ...c, checked_in_at: c.checked_in_at ?? null })),
+    promoter_links: promoterLinks.map((l) => ({ ...l, commission_per_entry: Number(l.commission_per_entry) })),
     api_keys: apiKeys,
     event_bans: bans,
-    event_attendees: attendees.map((a) => ({ ...a, total_spent: Number(a.total_spent), visited_sectors: a.visited_sectors ?? [] })),
+    event_attendees: attendees.map((a) => ({ ...a, total_spent: Number(a.total_spent), visited_sectors: a.visited_sectors ?? [], referred_by: a.referred_by ?? null, checked_in_at: a.checked_in_at ?? null })),
     connections,
     squads,
     squad_members: squadMembers.filter((m) => squadIds.has(m.squad_id)),
@@ -165,6 +172,7 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
     squad_settlements: settlements.map((t) => ({ ...t, amount: Number(t.amount) })),
     payout_aliases: aliases,
     admin_stats: adminStats,
+    promoter_stats: promoterStats,
   };
   return { state, isStaff };
 }

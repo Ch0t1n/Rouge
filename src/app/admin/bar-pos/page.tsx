@@ -2,7 +2,8 @@
 
 import * as C from "@/lib/store/commands";
 import { useMemo, useState } from "react";
-import { ArrowRight, Clock, PackageCheck, Printer, ScanLine } from "lucide-react";
+import { ArrowRight, Camera, Clock, PackageCheck, Printer, ScanLine } from "lucide-react";
+import { QrScanner } from "@/components/scan/QrScanner";
 import type { BarOrder, BarOrderStatus } from "@/lib/types";
 import { nextOrderStatus, redeemPickupCode, setOrderStatus } from "@/lib/engine/actions";
 import { DELIVERY_META, STATUS_META } from "@/lib/engine/bar";
@@ -41,6 +42,26 @@ export default function AdminBarPosPage() {
   const revenue = orders.reduce((a, o) => a + o.total_amount, 0);
   const paidOnline = orders.filter((o) => o.payment_status === "paid").reduce((a, o) => a + o.total_amount, 0);
 
+  const [scan, setScan] = useState(false);
+  /** Entrega por código o QR (tipeado, lector tipo teclado o cámara). Un QR de perk lo canjea quien tenga perks.redeem. */
+  const deliver = async (value: string) => {
+    const raw = value.trim();
+    if (!raw) return;
+    if (/^ROUGE:/.test(raw) && !/^ROUGE:ORDER:/.test(raw) && can("perks.redeem")) {
+      const p = await exec(C.redeemPerk(raw));
+      if (p.ok) {
+        notify({ tone: "vip", title: `🎁 ${p.data.title} canjeado`, description: `Para ${getProfile(state, p.data.user_id)?.full_name ?? "el asistente"}.` });
+        setCode("");
+      }
+      return;
+    }
+    const r = await exec(C.redeemPickupCode(event.id, raw));
+    if (r.ok) {
+      notify({ tone: "squad", title: `✅ Pedido ${r.data.pickup_code} entregado`, description: r.data.items_json.map((i) => `${i.qty}× ${i.name}`).join(", ") });
+      setCode("");
+    }
+  };
+
   const advance = async (o: BarOrder) => {
     const next = nextOrderStatus(o);
     if (!next) return;
@@ -58,21 +79,7 @@ export default function AdminBarPosPage() {
             className="flex w-full items-center gap-2 sm:w-auto"
             onSubmit={async (e) => {
               e.preventDefault();
-              // QR de perk (trago gratis, premio, regalo de Rompehielos): lo canjea quien tenga perks.redeem (barra).
-              const raw = code.trim();
-              if (/^ROUGE:/.test(raw) && !/^ROUGE:ORDER:/.test(raw) && can("perks.redeem")) {
-                const p = await exec(C.redeemPerk(raw));
-                if (p.ok) {
-                  notify({ tone: "vip", title: `🎁 ${p.data.title} canjeado`, description: `Para ${getProfile(state, p.data.user_id)?.full_name ?? "el asistente"}.` });
-                  setCode("");
-                }
-                return;
-              }
-              const r = await exec(C.redeemPickupCode(event.id, code));
-              if (r.ok) {
-                notify({ tone: "squad", title: `✅ Pedido ${r.data.pickup_code} entregado`, description: r.data.items_json.map((i) => `${i.qty}× ${i.name}`).join(", ") });
-                setCode("");
-              }
+              await deliver(code);
             }}
           >
             <label className="relative min-w-0 flex-1 sm:w-72 sm:flex-none">
@@ -83,9 +90,18 @@ export default function AdminBarPosPage() {
             <Button type="submit" variant="squad" disabled={!code.trim()}>
               <PackageCheck /> Entregar
             </Button>
+            <Button type="button" size="icon" variant={scan ? "squad" : "glass"} aria-label={scan ? "Cerrar cámara" : "Escanear con la cámara"} aria-pressed={scan} onClick={() => setScan((v) => !v)}>
+              <Camera />
+            </Button>
           </form>
         }
       />
+      {scan && (
+        <div className="mx-auto max-w-sm">
+          <QrScanner onResult={(text) => void deliver(text)} />
+          <p className="mt-2 text-center text-xs text-muted">Apuntá al QR de retiro del pedido o al QR de un perk.</p>
+        </div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
         {COLUMNS.map((col) => {

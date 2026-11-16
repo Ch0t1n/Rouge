@@ -199,6 +199,9 @@ describe("contrato comandos ↔ schema.sql", () => {
     ["respondSettlement", () => { const r = C.recordSettlement(DEMO_IDS.squadMain, id(2), ME, 1000, "cash").local(s0()); const s = (r as { state: RougeState }).state; return runRemote(C.respondSettlement(s.squad_settlements[0].id, ME, true), s); }],
     ["setPayoutAlias", () => runRemote(C.setPayoutAlias(ME, "sofi.noche.mp"), s0())],
     ["setPayoutAlias (borrar)", () => runRemote(C.setPayoutAlias(id(2), ""), s0())],
+    ["ensurePromoterLink", () => runRemote(C.ensurePromoterLink(EV, DEMO_IDS.promoter), st(), { ensure_promoter_link: { code: "RPSRV001" } })],
+    ["setPromoterCommission", () => runRemote(C.setPromoterCommission(s0().promoter_links[0].id, 2000), st(), { set_promoter_commission: {} })],
+    ["doorCheckIn", () => runRemote(C.doorCheckIn(EV, s0().event_invite_codes[10].code), { ...s0(), current_user_id: DEMO_IDS.security }, { door_check_in: { status: "ok" } })],
     ["upsertMenuItem (nuevo)", () => runRemote(C.upsertMenuItem(EV, { name: "Gin Pomelo", category: "trago", price: 9000, emoji: "🍹" }), st())],
     ["upsertMenuItem (agotado)", () => runRemote(C.upsertMenuItem(EV, { ...s0().bar_menu[0], is_available: false }), st())],
     ["deleteMenuItem", () => runRemote(C.deleteMenuItem(EV, "gin"), st())],
@@ -220,6 +223,14 @@ describe("contrato comandos ↔ schema.sql", () => {
     expect((raffle.data as { raffle: { winner_user_id: string } }).raffle.winner_user_id).toBe(id(8));
     const blast = await runRemote(C.sendBlast(EV, { title: "x", message: "y", segment: { kind: "all" } }), st(), { send_blast: 99 });
     expect((blast.data as { reach: number }).reach).toBe(99);
+  });
+
+  it("puerta: seguridad, dueño/a y producción escanean; barra y RRPP no", () => {
+    const as = (u: string) => ({ ...s0(), current_user_id: u });
+    const v = s0().event_invite_codes[10].code;
+    expect(C.doorCheckIn(EV, v).local(as(DEMO_IDS.security)).ok).toBe(true);
+    expect(C.doorCheckIn(EV, v).local(as(DEMO_IDS.bartender)).ok).toBe(false);
+    expect(C.doorCheckIn(EV, v).local(as(DEMO_IDS.promoter)).ok).toBe(false);
   });
 
   it("gestión del evento: solo dueño/a o producción; eliminar solo quien lo creó", () => {

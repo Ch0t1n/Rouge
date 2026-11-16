@@ -9,7 +9,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const PHONE = { w: 390, h: 844 };
-const PANEL_ROLES: DemoRole[] = ["duena", "produccion", "barra", "mozo", "seguridad"];
+const PANEL_ROLES: DemoRole[] = ["duena", "produccion", "barra", "mozo", "seguridad", "rrpp"];
 
 /**
  * Modo presentador: el teléfono del asistente y el panel del equipo lado a lado, sincronizados en vivo

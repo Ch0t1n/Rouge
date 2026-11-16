@@ -466,6 +466,40 @@ describe.skipIf(!URL || !ANON || !SERVICE)("Supabase real: flujo completo con RL
     expect(left).toHaveLength(0);
   });
 
+  it("RRPP y puerta: link propio, atribución, números sin datos personales y escáner", async () => {
+    const ev = (await snap(mateo)).events.find((e) => e.created_by === mateo.id && e.name === `Club ${RUN}`)!;
+    const sofiName = (await snap(sofi)).profiles.find((p) => p.id === sofi.id)!.username;
+    await act(mateo, C.setStaffRole(ev.id, sofiName, "promoter"), ev.id);
+    const link = await act(sofi, C.ensurePromoterLink(ev.id, sofi.id), ev.id);
+    expect(link.code).toMatch(/^RP[A-Z0-9]{6}$/);
+    await act(mateo, C.setPromoterCommission(link.id, 1000), ev.id);
+    // Staff (dueño) entra por el link de Sofía → no queda atribuido a sí mismo; un nuevo asistente sí
+    const newbie = await actor(admin, "newbie");
+    await act(newbie, C.upsertProfile(newbie.id, { username: `nb.${RUN}`.slice(0, 20), full_name: "New Bie", birth_date: "1999-05-05", phone: phone(9) }), ev.id);
+    const { error: joinErr } = await newbie.sb.rpc("join_event", { p_code: link.code.toLowerCase(), p_mood: "just_dance" });
+    expect(joinErr).toBeNull();
+    const { data: preview } = await createClient(URL!, ANON!, opts).rpc("resolve_access_code", { p_code: link.code });
+    expect(preview).toMatchObject({ via: "master_link", event: { id: ev.id } });
+    // El RRPP ve sus números (sin personas) y no ve datos del evento como staff
+    const asRrpp = await snap(sofi, ev.id);
+    expect(asRrpp.promoter_stats).toEqual([expect.objectContaining({ user_id: sofi.id, entries: 1, commission_per_entry: 1000 })]);
+    const { data: pins } = await sofi.sb.from("map_pins").select("id").eq("event_id", ev.id);
+    expect(pins ?? []).toHaveLength(0);
+    const { data: codes } = await sofi.sb.from("event_invite_codes").select("id").eq("event_id", ev.id);
+    expect(codes ?? []).toHaveLength(0);
+    // Puerta: el dueño escanea el pase del nuevo asistente; un RRPP no puede escanear
+    const pass = `ROUGE:PASS:${ev.id}:${newbie.id}`;
+    const { error: rrppDoor } = await sofi.sb.rpc("door_check_in", { p_event: ev.id, p_value: pass });
+    expect(rrppDoor?.message).toBe("forbidden");
+    const first = await act(mateo, C.doorCheckIn(ev.id, pass), ev.id);
+    expect(first).toMatchObject({ status: "ok", kind: "pass", name: "New Bie" });
+    expect((await act(mateo, C.doorCheckIn(ev.id, pass), ev.id)).status).toBe("already");
+    expect((await act(mateo, C.doorCheckIn(ev.id, ev.master_invite_code), ev.id)).status).toBe("general_link");
+    // Con escáner en uso, se liquida por ingreso confirmado
+    const stats = (await snap(mateo, ev.id)).promoter_stats!;
+    expect(stats.find((r) => r.user_id === sofi.id)).toMatchObject({ entries: 1, checked_in: 1, billable: 1, to_pay: 1000 });
+  });
+
   it("storage: subo a mi carpeta, no a la de otra persona", async () => {
     const blob = new Blob([new Uint8Array([82, 73, 70, 70])], { type: "image/webp" });
     const ok = await sofi.sb.storage.from("profile-media").upload(`${sofi.id}/test-${RUN}.webp`, blob, { contentType: "image/webp" });

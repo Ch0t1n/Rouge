@@ -17,6 +17,8 @@ import * as B from "@/lib/engine/branding";
 import * as P from "@/lib/engine/payments";
 import * as T from "@/lib/engine/settle";
 import * as E from "@/lib/engine/eventAdmin";
+import * as RP from "@/lib/engine/promoters";
+import * as D from "@/lib/engine/door";
 
 export interface Command<T> {
   name: string;
@@ -679,4 +681,28 @@ export const deleteEvent = (eventId: UUID): Command<undefined> => ({
   remote: async (sb) => {
     must(await sb.from("events").delete().eq("id", eventId));
   },
+});
+
+// ── RRPP y puerta ────────────────────────────────────────────────────
+
+/** Link propio de un RRPP (lo pide el RRPP o dueño/a/producción). El código lo genera el servidor. */
+export const ensurePromoterLink = (eventId: UUID, promoterId: UUID): Command<RougeState["promoter_links"][number]> => ({
+  name: "ensurePromoterLink",
+  optimistic: false,
+  local: (s) => RP.ensurePromoterLink(s, eventId, promoterId, s.current_user_id),
+  remote: async (sb) => rpc<RougeState["promoter_links"][number]>(sb, "ensure_promoter_link", { p_event: eventId, p_user: promoterId }),
+});
+
+export const setPromoterCommission = (linkId: UUID, amount: number): Command<RougeState["promoter_links"][number]> => ({
+  name: "setPromoterCommission",
+  local: (s) => RP.setPromoterCommission(s, linkId, amount, s.current_user_id),
+  remote: async (sb) => rpc<RougeState["promoter_links"][number]>(sb, "set_promoter_commission", { p_link: linkId, p_amount: amount }),
+});
+
+/** Escaneo en la puerta: el servidor decide (código anulado, ya entró, expulsado…) y devuelve quién es. */
+export const doorCheckIn = (eventId: UUID, value: string): Command<D.DoorResult> => ({
+  name: "doorCheckIn",
+  optimistic: false,
+  local: guarded("door.scan", () => eventId, (s) => D.doorCheckIn(s, eventId, value)),
+  remote: async (sb) => rpc<D.DoorResult>(sb, "door_check_in", { p_event: eventId, p_value: value }),
 });

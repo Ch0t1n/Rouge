@@ -149,6 +149,7 @@ function emptyState(userId: UUID = ""): RougeState {
     brand_payment_accounts: [],
     event_staff: [],
     event_invite_codes: [],
+    promoter_links: [],
     api_keys: [],
     event_attendees: [],
     event_bans: [],
