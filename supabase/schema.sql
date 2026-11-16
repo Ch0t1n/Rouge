@@ -474,6 +474,16 @@ create table if not exists public.payout_aliases (
   updated_at  timestamptz not null default now()
 );
 
+-- [v1.5] Expulsados de un evento por el organizador: no pueden volver a entrar a ESE evento.
+create table if not exists public.event_bans (
+  event_id    uuid not null references public.events(id) on delete cascade,
+  user_id     uuid not null references public.profiles(id) on delete cascade,
+  banned_by   uuid references public.profiles(id) on delete set null,
+  reason      text check (reason is null or char_length(reason) <= 140),
+  created_at  timestamptz not null default now(),
+  primary key (event_id, user_id)
+);
+
 create index if not exists idx_brands_owner            on public.brands (owner_id);
 create index if not exists idx_events_brand            on public.events (brand_id) where brand_id is not null;
 create index if not exists idx_orders_awaiting         on public.bar_orders (event_id) where payment_status = 'awaiting_payment';
@@ -652,6 +662,7 @@ alter table public.brand_payment_accounts enable row level security;
 alter table public.squad_expenses      enable row level security;
 alter table public.squad_settlements   enable row level security;
 alter table public.payout_aliases      enable row level security;
+alter table public.event_bans          enable row level security;
 
 -- PROFILES ── el teléfono NUNCA es legible por otros usuarios (column privileges).
 drop policy if exists profiles_select on public.profiles;
@@ -719,6 +730,16 @@ revoke all on public.events from anon;
 grant select (id, slug, name, description, venue_name, cover_url, starts_at, ends_at, lobby_opens_at, lobby_expires_at, max_capacity,
               brand_id, logo_url, theme_primary, theme_accent)
   on public.events to anon;
+
+-- [v1.5] Eliminar un evento: solo quien lo creó (y nunca con cobros registrados: trigger events_keep_payments).
+drop policy if exists events_delete on public.events;
+create policy events_delete on public.events for delete to authenticated using (created_by = auth.uid());
+
+-- EVENT BANS ── el staff gestor ve y levanta los bloqueos de su evento; cada uno ve el propio. Altas por remove_attendee.
+drop policy if exists bans_select on public.event_bans;
+create policy bans_select on public.event_bans for select to authenticated using (user_id = auth.uid() or public.is_event_manager(event_id));
+drop policy if exists bans_delete on public.event_bans;
+create policy bans_delete on public.event_bans for delete to authenticated using (public.is_event_manager(event_id));
 
 -- BRANDS ── públicas (la app y /join muestran logo y colores); cada dueño/a edita las suyas.
 -- payments_enabled no es editable por clientes (column privileges): lo escribe el servidor al conectar Mercado Pago.
@@ -971,6 +992,8 @@ begin
 
   if now() < v_event.lobby_opens_at then raise exception 'lobby_not_open'; end if;
   if now() >= v_event.lobby_expires_at then raise exception 'lobby_expired'; end if;
+  -- [v1.5] Expulsado por el organizador (mensaje genérico, igual que joinEvent del motor).
+  if exists (select 1 from public.event_bans where event_id = v_event.id and user_id = v_uid) then raise exception 'banned'; end if;
 
   if exists (select 1 from public.event_attendees where event_id = v_event.id and user_id = v_uid) then
     update public.event_attendees set mood_tag = p_mood, last_active_at = now() where event_id = v_event.id and user_id = v_uid;
@@ -1791,6 +1814,41 @@ create or replace function public.purge_expired_pins()
 returns int language sql security definer set search_path = public, extensions as $$
   with d as (delete from public.map_pins where expires_at <= now() returning 1) select count(*)::int from d;
 $$;
+
+-- [v1.5] Expulsar del evento (espejo de removeAttendee): sale del lobby, de su Squad de esta noche y del plano.
+-- Con p_ban no puede volver a entrar a este evento. No toca su perfil, matches ni chats. No se expulsa al equipo.
+create or replace function public.remove_attendee(p_event uuid, p_user uuid, p_ban boolean default false, p_reason text default null)
+returns boolean language plpgsql security definer set search_path = public, extensions as $$
+declare v_attending boolean;
+begin
+  if not public.is_event_manager(p_event) then raise exception 'forbidden'; end if;
+  if exists (select 1 from public.events where id = p_event and created_by = p_user)
+     or exists (select 1 from public.event_staff where event_id = p_event and user_id = p_user) then
+    raise exception 'is_staff';
+  end if;
+  v_attending := exists (select 1 from public.event_attendees where event_id = p_event and user_id = p_user);
+  if not v_attending and not p_ban then raise exception 'not_attendee'; end if;
+  delete from public.event_attendees where event_id = p_event and user_id = p_user;
+  delete from public.squad_members m using public.squads q where q.id = m.squad_id and q.event_id = p_event and m.user_id = p_user;
+  delete from public.map_pins where event_id = p_event and user_id = p_user;
+  if p_ban then
+    insert into public.event_bans (event_id, user_id, banned_by, reason) values (p_event, p_user, auth.uid(), nullif(trim(p_reason), ''))
+    on conflict (event_id, user_id) do nothing;
+  end if;
+  return p_ban;
+end $$;
+
+-- [v1.5] Solo se borra un evento al que no entró nadie (creado por error o de prueba): los matches y chats de un evento
+-- real quedan para siempre y los cobros de Mercado Pago se conservan.
+create or replace function public.tg_events_keep_payments()
+returns trigger language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if exists (select 1 from public.bar_orders where event_id = old.id and payment_status = 'paid') then raise exception 'event_has_payments'; end if;
+  if exists (select 1 from public.event_attendees where event_id = old.id) then raise exception 'event_has_attendees'; end if;
+  return old;
+end $$;
+drop trigger if exists events_keep_payments on public.events;
+create trigger events_keep_payments before delete on public.events for each row execute function public.tg_events_keep_payments();
 
 -- Permisos de ejecución
 revoke execute on all functions in schema public from anon;

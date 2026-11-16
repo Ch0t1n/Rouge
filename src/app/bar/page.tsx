@@ -62,7 +62,7 @@ function Bar() {
   const online = eventChargesOnline(state, event.id);
   const orders = ordersOf(state, meId, event.id);
   const active = orders.filter((o) => o.status !== "completed");
-  const lines = useMemo(() => state.bar_menu.filter((i) => cart[i.id]).map((i) => ({ item: i, qty: cart[i.id] })), [cart, state.bar_menu]);
+  const lines = useMemo(() => state.bar_menu.filter((i) => cart[i.id] && i.is_available).map((i) => ({ item: i, qty: cart[i.id] })), [cart, state.bar_menu]);
   const total = lines.reduce((a, l) => a + l.item.price * l.qty, 0);
   const sharing = splitWith.some((u) => u !== meId);
   const each = sharing ? Math.round(total / splitWith.length) : total;
@@ -165,13 +165,15 @@ function Bar() {
                 {items.map((i) => {
                   const qty = cart[i.id] ?? 0;
                   return (
-                    <li key={i.id} className={cn("flex items-center gap-3 rounded-2xl border p-3 transition", qty ? "border-vip/50 bg-vip/[0.07]" : "border-white/10 bg-white/[0.03]")}>
+                    <li key={i.id} className={cn("flex items-center gap-3 rounded-2xl border p-3 transition", qty ? "border-vip/50 bg-vip/[0.07]" : "border-white/10 bg-white/[0.03]", !i.is_available && "opacity-55")}>
                       <span className="text-3xl" aria-hidden>{i.emoji}</span>
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-semibold">{i.name}</p>
                         <p className="metric text-sm text-vip">{formatMoney(i.price)}</p>
                       </div>
-                      {qty ? (
+                      {!i.is_available ? (
+                        <span className="rounded-full bg-white/10 px-3 py-1.5 font-display text-xs font-semibold uppercase text-muted">Agotado</span>
+                      ) : qty ? (
                         <div className="flex items-center gap-1">
                           <button type="button" aria-label={`Quitar ${i.name}`} onClick={() => set(i.id, qty - 1)} className="grid size-11 place-items-center rounded-full bg-white/10"><Minus className="size-4" /></button>
                           <span className="metric w-6 text-center text-lg">{qty}</span>

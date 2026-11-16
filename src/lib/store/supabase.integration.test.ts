@@ -432,6 +432,40 @@ describe.skipIf(!URL || !ANON || !SERVICE)("Supabase real: flujo completo con RL
     expect(squadAccount(s3, squadId, sofi.id).settled).toBe(true);
   });
 
+  it("gestión del evento: menú, expulsión con bloqueo, nueva edición y borrado seguro", async () => {
+    const ev = (await snap(mateo)).events.find((e) => e.created_by === mateo.id && e.name === `Club ${RUN}`)!;
+    // Menú: el dueño agota un ítem; el servidor no lo vende
+    const gin = (await snap(mateo, ev.id)).bar_menu.find((i) => i.id === "gin")!;
+    await act(mateo, C.upsertMenuItem(ev.id, { ...gin, is_available: false }), ev.id);
+    const { error: soldOut } = await cami.sb.rpc("create_bar_order", { p_event: ev.id, p_items: [{ item_id: "gin", qty: 1 }], p_delivery: "fast_pickup" });
+    expect(soldOut?.message).toBe("empty_order");
+    const { error: notMgr } = await cami.sb.from("bar_menu_items").update({ price: 1 }).eq("event_id", ev.id).eq("id", "agua").select();
+    expect((await snap(mateo, ev.id)).bar_menu.find((i) => i.id === "agua")?.price).not.toBe(1);
+    void notMgr;
+    // Expulsión con bloqueo: Cami sale y no puede volver a entrar
+    const s = await snap(cami, ev.id);
+    expect(await rejects(cami, C.removeAttendee(ev.id, mateo.id, true), { banned: true }, s)).toMatchObject({ message: "forbidden" });
+    await act(mateo, C.removeAttendee(ev.id, cami.id, true, "prueba"), ev.id);
+    expect((await snap(mateo, ev.id)).event_attendees.some((a) => a.user_id === cami.id)).toBe(false);
+    expect((await snap(mateo, ev.id)).event_bans.map((b) => b.user_id)).toContain(cami.id);
+    const { error: banned } = await cami.sb.rpc("join_event", { p_code: ev.master_invite_code, p_mood: "just_dance" });
+    expect(banned?.message).toBe("banned");
+    await act(mateo, C.unbanAttendee(ev.id, cami.id), ev.id);
+    expect((await cami.sb.rpc("join_event", { p_code: ev.master_invite_code, p_mood: "just_dance" })).error).toBeNull();
+    // Un evento con gente (y cobros) no se borra; una edición nueva vacía sí
+    const { error: keep } = await mateo.sb.from("events").delete().eq("id", ev.id);
+    expect(keep?.message).toMatch(/event_has_(payments|attendees)/);
+    const dup = await act(mateo, C.duplicateEvent(ev.id, new Date(Date.now() + 7 * 86_400_000).toISOString()), ev.id);
+    const fresh = await snap(mateo, dup.event.id);
+    expect(fresh.events.find((e) => e.id === dup.event.id)?.brand_id).toBe(ev.brand_id);
+    expect(fresh.bar_menu.length).toBeGreaterThan(5);
+    const { data: gone } = await sofi.sb.from("events").delete().eq("id", dup.event.id).select();
+    expect(gone ?? []).toHaveLength(0); // RLS: solo quien lo creó
+    await act(mateo, C.deleteEvent(dup.event.id), dup.event.id);
+    const { data: left } = await admin.from("events").select("id").eq("id", dup.event.id);
+    expect(left).toHaveLength(0);
+  });
+
   it("storage: subo a mi carpeta, no a la de otra persona", async () => {
     const blob = new Blob([new Uint8Array([82, 73, 70, 70])], { type: "image/webp" });
     const ok = await sofi.sb.storage.from("profile-media").upload(`${sofi.id}/test-${RUN}.webp`, blob, { contentType: "image/webp" });

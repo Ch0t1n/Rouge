@@ -20,7 +20,7 @@ export function IcebreakerComposer({ open, onClose, target, eventId }: { open: b
   const [text, setText] = useState("");
   const [gift, setGift] = useState(false);
   const [drink, setDrink] = useState<string | null>(null);
-  const drinks = state.bar_menu.filter((i) => GIFTABLE_CATEGORIES.includes(i.category));
+  const drinks = state.bar_menu.filter((i) => i.is_available && GIFTABLE_CATEGORIES.includes(i.category));
   const first = target.full_name.split(" ")[0];
 
   const send = async () => {

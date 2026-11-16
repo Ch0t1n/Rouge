@@ -37,7 +37,7 @@ import type {
   VenueLayout,
 } from "@/lib/types";
 
-export const STATE_VERSION = 6;
+export const STATE_VERSION = 7;
 
 // IDs estables → los links de demo (/join/..., /u/...) no cambian entre re-siembras.
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -72,16 +72,16 @@ export const VENUE_LAYOUT: VenueLayout = {
 };
 
 export const BAR_MENU: BarMenuItem[] = [
-  { id: "fernet", name: "Fernet con Coca", category: "trago", price: 6500, emoji: "🥃" },
-  { id: "gin", name: "Gin Tonic", category: "trago", price: 8000, emoji: "🍸" },
-  { id: "speed", name: "Vodka Speed", category: "trago", price: 7500, emoji: "⚡" },
-  { id: "aperol", name: "Aperol Spritz", category: "trago", price: 8500, emoji: "🍊" },
-  { id: "ipa", name: "Cerveza IPA", category: "cerveza", price: 5000, emoji: "🍺" },
-  { id: "agua", name: "Agua sin gas", category: "sin_alcohol", price: 2500, emoji: "💧" },
-  { id: "energy", name: "Energizante", category: "sin_alcohol", price: 3500, emoji: "🔋" },
-  { id: "combo-fernet", name: "Combo 4 Fernets", category: "combo", price: 22000, emoji: "🎉" },
-  { id: "botella-vodka", name: "Botella Vodka + 4 Speed", category: "botella", price: 95000, emoji: "🍾" },
-  { id: "champagne", name: "Champagne Brut", category: "botella", price: 60000, emoji: "🥂" },
+  { id: "fernet", name: "Fernet con Coca", category: "trago", price: 6500, emoji: "🥃", is_available: true },
+  { id: "gin", name: "Gin Tonic", category: "trago", price: 8000, emoji: "🍸", is_available: true },
+  { id: "speed", name: "Vodka Speed", category: "trago", price: 7500, emoji: "⚡", is_available: true },
+  { id: "aperol", name: "Aperol Spritz", category: "trago", price: 8500, emoji: "🍊", is_available: true },
+  { id: "ipa", name: "Cerveza IPA", category: "cerveza", price: 5000, emoji: "🍺", is_available: true },
+  { id: "agua", name: "Agua sin gas", category: "sin_alcohol", price: 2500, emoji: "💧", is_available: true },
+  { id: "energy", name: "Energizante", category: "sin_alcohol", price: 3500, emoji: "🔋", is_available: true },
+  { id: "combo-fernet", name: "Combo 4 Fernets", category: "combo", price: 22000, emoji: "🎉", is_available: true },
+  { id: "botella-vodka", name: "Botella Vodka + 4 Speed", category: "botella", price: 95000, emoji: "🍾", is_available: true },
+  { id: "champagne", name: "Champagne Brut", category: "botella", price: 60000, emoji: "🥂", is_available: true },
 ];
 
 interface Persona {
@@ -571,6 +571,7 @@ export function createSeedState(now = Date.now()): RougeState {
     event_invite_codes: invite_codes,
     api_keys: [],
     event_attendees: attendees,
+    event_bans: [],
     connections,
     squads,
     squad_members,

@@ -211,6 +211,15 @@ export interface ApiKey {
   created_at: ISODate;
 }
 
+/** Persona expulsada de un evento por el organizador (no puede volver a entrar a ESE evento). */
+export interface EventBan {
+  event_id: UUID;
+  user_id: UUID;
+  banned_by: UUID | null;
+  reason: string | null;
+  created_at: ISODate;
+}
+
 export interface EventAttendee {
   id: UUID;
   event_id: UUID;
@@ -395,6 +404,8 @@ export interface BarMenuItem {
   category: "trago" | "cerveza" | "botella" | "sin_alcohol" | "combo";
   price: number;
   emoji: string;
+  /** false = "Agotado": se ve en el menú pero no se puede pedir. */
+  is_available: boolean;
 }
 
 export interface BarOrderItem {
@@ -500,6 +511,8 @@ export interface RougeState {
   /** Mis claves de la API (Supabase: solo las que creé). */
   api_keys: ApiKey[];
   event_attendees: EventAttendee[];
+  /** Expulsados del evento (staff: los del evento; asistente: solo el propio). */
+  event_bans: EventBan[];
   connections: Connection[];
   squads: Squad[];
   squad_members: SquadMember[];

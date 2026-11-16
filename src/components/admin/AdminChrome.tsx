@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { BarChart3, CalendarCog, Gift, Lock, LogOut, Megaphone, Martini, Palette, ShieldCheck, Tv, Users } from "lucide-react";
+import { BarChart3, CalendarCog, Gift, Lock, LogOut, Megaphone, Martini, Palette, ShieldCheck, UtensilsCrossed, Tv, Users } from "lucide-react";
 import { useRouge } from "@/lib/store/RougeContext";
 import { NO_PERMISSION, permissionForPath, ROLE_META, roleHome } from "@/lib/engine/roles";
 import { getProfile } from "@/lib/engine/selectors";
@@ -14,6 +14,7 @@ export const ADMIN_NAV = [
   { href: "/admin", label: "Resumen", icon: BarChart3 },
   { href: "/admin/events", label: "Eventos y accesos", icon: CalendarCog },
   { href: "/admin/brand", label: "Marca y cobros", icon: Palette },
+  { href: "/admin/menu", label: "Menú de la barra", icon: UtensilsCrossed },
   { href: "/admin/crm", label: "CRM", icon: Users },
   { href: "/admin/blasts", label: "Text Blasts", icon: Megaphone },
   { href: "/admin/perks", label: "Perks y sorteos", icon: Gift },
@@ -34,7 +35,7 @@ export function AdminChrome({ children }: { children: ReactNode }) {
 
   if (!allowed) return <NoAccess />;
   // La Pantalla LED va a pantalla completa (HDMI), sin chrome.
-  if (pathname.startsWith("/admin/live-wall") || pathname.startsWith("/admin/print-codes")) return <>{children}</>;
+  if (pathname.startsWith("/admin/live-wall") || pathname.startsWith("/admin/print-codes") || pathname.startsWith("/admin/print-ticket")) return <>{children}</>;
 
   const isActive = (href: string) => (href === "/admin" ? pathname === "/admin" : pathname.startsWith(href));
   const eventSelect = (

@@ -16,6 +16,7 @@ import { AdminHeader, downloadCSV, Panel } from "@/components/admin/AdminChrome"
 import { useShare } from "@/components/share/ShareSheet";
 import { TeamPanel } from "@/components/admin/TeamPanel";
 import { ApiKeysPanel } from "@/components/admin/ApiKeysPanel";
+import { EventLifecyclePanel } from "@/components/admin/EventLifecyclePanel";
 import { can } from "@/lib/engine/roles";
 import { VenueMap } from "@/components/venue/VenueMap";
 import { VENUE_LAYOUT } from "@/lib/mock/seed";
@@ -73,6 +74,17 @@ export default function AdminEventsPage() {
         </div>
       )}
       {event && can(state, event.id, state.current_user_id, "admin.team") && <TeamPanel event={event} />}
+      {event && (
+        <EventLifecyclePanel
+          key={event.id}
+          event={event}
+          onDuplicated={(id) => {
+            setEditing(id);
+            setActiveEvent(id);
+          }}
+          onDeleted={() => setEditing("new")}
+        />
+      )}
     </main>
   );
 }

@@ -16,6 +16,7 @@ import { can, NO_PERMISSION, type Permission } from "@/lib/engine/roles";
 import * as B from "@/lib/engine/branding";
 import * as P from "@/lib/engine/payments";
 import * as T from "@/lib/engine/settle";
+import * as E from "@/lib/engine/eventAdmin";
 
 export interface Command<T> {
   name: string;
@@ -614,5 +615,68 @@ export const setPayoutAlias = (userId: UUID, raw: string): Command<RougeState["p
   remote: async (sb, row) => {
     if (row) must(await sb.from("payout_aliases").upsert({ user_id: userId, alias: row.alias }, { onConflict: "user_id" }));
     else must(await sb.from("payout_aliases").delete().eq("user_id", userId));
+  },
+});
+
+// ── Gestión del evento (organizador) ─────────────────────────────────
+
+/** Ítem del menú de la Barra Express del evento (alta, edición, precio, "Agotado"). */
+export const upsertMenuItem = (eventId: UUID, input: E.MenuItemInput): Command<RougeState["bar_menu"][number]> => ({
+  name: "upsertMenuItem",
+  local: guarded("admin.events", () => eventId, (s) => E.upsertMenuItem(s, input)),
+  remote: async (sb, i) => {
+    must(await sb.from("bar_menu_items").upsert({ id: i.id, event_id: eventId, name: i.name, category: i.category, price: i.price, emoji: i.emoji, is_available: i.is_available }, { onConflict: "event_id,id" }));
+  },
+});
+
+export const deleteMenuItem = (eventId: UUID, itemId: string): Command<undefined> => ({
+  name: "deleteMenuItem",
+  local: guarded("admin.events", () => eventId, (s) => E.deleteMenuItem(s, itemId)),
+  remote: async (sb) => {
+    must(await sb.from("bar_menu_items").delete().eq("event_id", eventId).eq("id", itemId));
+  },
+});
+
+/** Nueva edición del evento en otra fecha (con su menú y sus reglas de perks). */
+export const duplicateEvent = (eventId: UUID, startsAt: string): Command<{ event: RougeEvent; rules: PerkRule[] }> => ({
+  name: "duplicateEvent",
+  local: guarded("admin.events", () => eventId, (s) => E.duplicateEvent(s, eventId, startsAt, s.current_user_id)),
+  remote: async (sb, { event: e, rules }, before) => {
+    must(
+      await sb.from("events").insert({
+        id: e.id, slug: e.slug, name: e.name, description: e.description, venue_name: e.venue_name, venue_map_url: e.venue_map_url,
+        venue_layout_json: e.venue_layout_json, lineup_json: e.lineup_json, cover_url: e.cover_url, starts_at: e.starts_at, ends_at: e.ends_at,
+        lobby_opens_at: e.lobby_opens_at, lobby_expires_at: e.lobby_expires_at, max_capacity: e.max_capacity, master_invite_code: e.master_invite_code,
+        created_by: e.created_by, brand_id: e.brand_id, logo_url: e.logo_url, theme_primary: e.theme_primary, theme_accent: e.theme_accent,
+      }),
+    );
+    must(await sb.from("bar_menu_items").insert(before.bar_menu.map((i) => ({ id: i.id, event_id: e.id, name: i.name, category: i.category, price: i.price, emoji: i.emoji, is_available: i.is_available }))));
+    if (rules.length) must(await sb.from("perk_rules").insert(rules.map((r) => ({ id: r.id, event_id: r.event_id, title: r.title, perk_type: r.perk_type, trigger: r.trigger, is_active: r.is_active }))));
+  },
+});
+
+/** Expulsa a alguien del evento; con `ban` no puede volver a entrar a este evento. */
+export const removeAttendee = (eventId: UUID, userId: UUID, ban: boolean, reason: string | null = null): Command<{ banned: boolean }> => ({
+  name: "removeAttendee",
+  local: guarded("admin.events", () => eventId, (s) => E.removeAttendee(s, eventId, userId, ban, s.current_user_id, reason)),
+  remote: async (sb) => {
+    await rpc(sb, "remove_attendee", { p_event: eventId, p_user: userId, p_ban: ban, p_reason: reason });
+  },
+});
+
+export const unbanAttendee = (eventId: UUID, userId: UUID): Command<undefined> => ({
+  name: "unbanAttendee",
+  local: guarded("admin.events", () => eventId, (s) => E.unbanAttendee(s, eventId, userId)),
+  remote: async (sb) => {
+    must(await sb.from("event_bans").delete().eq("event_id", eventId).eq("user_id", userId));
+  },
+});
+
+/** Elimina un evento creado por error o de prueba (solo quien lo creó y si no entró nadie). */
+export const deleteEvent = (eventId: UUID): Command<undefined> => ({
+  name: "deleteEvent",
+  local: (s) => E.deleteEvent(s, eventId, s.current_user_id),
+  remote: async (sb) => {
+    must(await sb.from("events").delete().eq("id", eventId));
   },
 });

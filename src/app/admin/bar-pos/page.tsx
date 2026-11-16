@@ -2,7 +2,7 @@
 
 import * as C from "@/lib/store/commands";
 import { useMemo, useState } from "react";
-import { ArrowRight, Clock, PackageCheck, ScanLine } from "lucide-react";
+import { ArrowRight, Clock, PackageCheck, Printer, ScanLine } from "lucide-react";
 import type { BarOrder, BarOrderStatus } from "@/lib/types";
 import { nextOrderStatus, redeemPickupCode, setOrderStatus } from "@/lib/engine/actions";
 import { DELIVERY_META, STATUS_META } from "@/lib/engine/bar";
@@ -164,6 +164,16 @@ function OrderTicket({ order: o, now, onAdvance }: { order: BarOrder; now: numbe
         <span className={cn("flex items-center gap-1 text-xs", late ? "font-bold text-rouge" : "text-muted")}>
           <Clock className="size-3.5" /> {waited} min · {formatMoney(o.total_amount)}
         </span>
+        <a
+          href={`/admin/print-ticket?order=${o.id}`}
+          target="_blank"
+          rel="noopener"
+          aria-label={`Imprimir ticket del pedido ${o.pickup_code ?? ""}`.trim()}
+          title="Imprimir ticket"
+          className="ml-auto grid size-9 shrink-0 place-items-center rounded-xl text-muted hover:bg-white/10 hover:text-primary"
+        >
+          <Printer className="size-4" />
+        </a>
         {next && (
           <Button size="sm" variant={next === "completed" ? "squad" : "vip"} onClick={onAdvance} aria-label={`${NEXT_LABEL[next]} (${STATUS_META[o.status].label})`}>
             {NEXT_LABEL[next]} <ArrowRight />

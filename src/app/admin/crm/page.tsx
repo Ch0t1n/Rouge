@@ -1,11 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowDownUp, Download, MessageCircle, Search } from "lucide-react";
+import * as C from "@/lib/store/commands";
+import { ArrowDownUp, Ban, Download, MessageCircle, Search, UserX } from "lucide-react";
 import { MOOD_TAGS } from "@/lib/types";
 import { crmRows, SMART_TAG_META, type CrmRow, type SmartTag } from "@/lib/engine/analytics";
 import { formatPhone } from "@/lib/engine/profile";
-import { activeEvent } from "@/lib/engine/selectors";
+import { activeEvent, getProfile } from "@/lib/engine/selectors";
+import { staffRoleOf } from "@/lib/engine/roles";
 import { useRouge } from "@/lib/store/RougeContext";
 import { cn, formatMoney, toCSV, whatsappLink } from "@/lib/utils";
 import { AdminHeader, downloadCSV } from "@/components/admin/AdminChrome";
@@ -16,8 +18,17 @@ type SortKey = "total_spent" | "squad_size" | "matches" | "age" | "full_name";
 const GENDER: Record<CrmRow["gender"], string> = { female: "Mujer", male: "Hombre", non_binary: "No binarie", undisclosed: "—" };
 
 export default function AdminCrmPage() {
-  const { state } = useRouge();
+  const { state, exec, notify } = useRouge();
   const event = activeEvent(state)!;
+  const bans = state.event_bans.filter((b) => b.event_id === event.id);
+  /** Expulsar del evento: deja el lobby, su Squad de hoy y el plano; con bloqueo, no puede volver a entrar. */
+  const expel = async (r: CrmRow) => {
+    const first = r.full_name.split(" ")[0];
+    if (!window.confirm(`¿Expulsar a ${first} de ${event.name}? Sale del lobby, de su Squad de esta noche y del plano.`)) return;
+    const ban = window.confirm(`¿Bloquear también que ${first} vuelva a entrar a este evento (con cualquier código)?`);
+    const res = await exec(C.removeAttendee(event.id, r.user_id, ban));
+    if (res.ok) notify({ tone: "vip", title: `${first} fue expulsado/a`, description: ban ? "No puede volver a entrar a este evento." : "Puede volver a entrar con su código." });
+  };
   const all = useMemo(() => crmRows(state, event.id), [state, event.id]);
   const [q, setQ] = useState("");
   const [tag, setTag] = useState<SmartTag | null>(null);
@@ -111,7 +122,8 @@ export default function AdminCrmPage() {
                 <Th k="squad_size">Squad</Th>
                 <Th k="matches">Matches</Th>
                 <Th>Tags</Th>
-                <Th k="total_spent" className="pr-5 text-right">Gasto</Th>
+                <Th k="total_spent" className="text-right">Gasto</Th>
+                <Th className="pr-5"><span className="sr-only">Acciones</span></Th>
               </tr>
             </thead>
             <tbody>
@@ -141,19 +153,43 @@ export default function AdminCrmPage() {
                       ))}
                     </div>
                   </td>
-                  <td className="metric py-3 pl-3 pr-5 text-right text-vip">{formatMoney(r.total_spent)}</td>
+                  <td className="metric py-3 pl-3 text-right text-vip">{formatMoney(r.total_spent)}</td>
+                  <td className="py-3 pl-2 pr-5 text-right">
+                    {!staffRoleOf(state, event.id, r.user_id) && (
+                      <button type="button" onClick={() => expel(r)} aria-label={`Expulsar a ${r.full_name}`} title="Expulsar del evento" className="grid size-9 place-items-center rounded-xl text-muted hover:bg-rouge/15 hover:text-rouge">
+                        <UserX className="size-4" />
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
               <tr className="border-t border-white/10 text-sm">
                 <td colSpan={7} className="px-5 py-3 text-muted">{rows.length} asistentes</td>
-                <td className="metric py-3 pl-3 pr-5 text-right text-vip">{formatMoney(total)}</td>
+                <td className="metric py-3 pl-3 text-right text-vip">{formatMoney(total)}</td>
+                <td />
               </tr>
             </tfoot>
           </table>
         </div>
       </div>
+      {bans.length > 0 && (
+        <section className="glass rounded-3xl p-5" aria-labelledby="bans">
+          <h2 id="bans" className="flex items-center gap-2 text-lg"><Ban className="size-5 text-rouge" /> Bloqueados en este evento</h2>
+          <ul className="mt-3 divide-y divide-white/5">
+            {bans.map((b) => {
+              const p = getProfile(state, b.user_id);
+              return (
+                <li key={b.user_id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+                  <span>{p ? `${p.full_name} · @${p.username}` : "Perfil no disponible"}{b.reason ? <span className="text-muted"> — {b.reason}</span> : null}</span>
+                  <Button size="sm" variant="ghost" onClick={() => exec(C.unbanAttendee(event.id, b.user_id))}>Permitir que vuelva</Button>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
       <p className="text-xs text-muted">
         Smart Tags: 🏆 Top Spender = top 10% de consumo · 👑 Squad Leader = creó un Squad de 4+ o sumó 4+ amigos · 🔥 Power Matcher = 3+ matches en la noche.
       </p>

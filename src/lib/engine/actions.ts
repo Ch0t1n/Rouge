@@ -338,6 +338,8 @@ export function joinEvent(
   const resolved = resolveAccessCode(state, code);
   if (!resolved) return fail("Código o link inválido.");
   const { event, via, inviteCode, squad } = resolved;
+  // Expulsado por el organizador: mensaje genérico (mismo criterio que join_event → 'banned').
+  if (state.event_bans.some((b) => b.event_id === event.id && b.user_id === userId)) return fail("No podés entrar a este evento.");
 
   const phase = lobbyPhase(event, now);
   if (phase === "upcoming") return fail("El lobby todavía no abrió. Volvé más cerca de la fiesta.");
@@ -557,7 +559,7 @@ export function sendIcebreaker(
 
   if (input.giftDrinkItemId) {
     const item = state.bar_menu.find((i) => i.id === input.giftDrinkItemId);
-    if (!item) return fail("Trago inexistente.");
+    if (!item || item.is_available === false) return fail("Ese trago no está disponible.");
     if (!GIFTABLE_CATEGORIES.includes(item.category)) return fail("Solo se pueden regalar tragos individuales.");
     const order = makeOrder(state, eventId, senderId, "icebreaker_gift", [{ item_id: item.id, name: item.name, qty: 1, unit_price: item.price }], {}, now);
     const perk = makePerk(eventId, receiverId, null, `${item.emoji} ${item.name} — regalo Rompehielos`, "gifted_drink", "icebreaker_gift", order.id, now);
@@ -1157,7 +1159,7 @@ export function createBarOrder(
   const items: BarOrderItem[] = [];
   for (const line of cart) {
     const item = state.bar_menu.find((i) => i.id === line.itemId);
-    if (!item || line.qty < 1) continue;
+    if (!item || item.is_available === false || line.qty < 1) continue; // "Agotado" (mismo filtro que create_bar_order)
     items.push({ item_id: item.id, name: `${item.emoji} ${item.name}`, qty: Math.min(line.qty, 20), unit_price: item.price });
   }
   if (!items.length) return fail("El pedido está vacío.");

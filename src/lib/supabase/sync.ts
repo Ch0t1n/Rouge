@@ -95,6 +95,8 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
     byEvent<RougeState["squad_settlements"][number]>("squad_settlements").catch(() => []),
     q<RougeState["payout_aliases"][number]>(sb.from("payout_aliases").select("user_id,alias")).catch(() => []),
   ]);
+  // Expulsados del evento (RLS: el staff ve los del evento; cada uno, el propio).
+  const bans = await byEvent<RougeState["event_bans"][number]>("event_bans").catch(() => []);
   const brands = [...new Map([...myBrands, ...eventBrands].map((b) => [b.id, b])).values()];
   // Mis roles en todos los eventos (selector del panel) + el equipo completo del evento activo si soy staff.
   const teamRows = isStaff ? await byEvent<RougeState["event_staff"][number]>("event_staff") : [];
@@ -109,6 +111,7 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
   raffles.forEach((r) => r.winner_user_id && ids.add(r.winner_user_id));
   orders.forEach((o) => ids.add(o.user_id));
   expenses.forEach((e) => ids.add(e.paid_by));
+  bans.forEach((b) => ids.add(b.user_id));
   teamRows.forEach((r) => ids.add(r.user_id));
   // Por tandas: un `in (...)` con cientos de ids arma una URL que los gateways rechazan (evento real = miles de asistentes).
   const profiles = (await Promise.all(chunk([...ids], PROFILE_BATCH).map((part) => q<Profile>(sb.from("profiles").select(PROFILE_COLUMNS).in("id", part))))).flat();
@@ -142,6 +145,7 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
     event_staff: eventStaff,
     event_invite_codes: codes,
     api_keys: apiKeys,
+    event_bans: bans,
     event_attendees: attendees.map((a) => ({ ...a, total_spent: Number(a.total_spent), visited_sectors: a.visited_sectors ?? [] })),
     connections,
     squads,
@@ -154,7 +158,7 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
     raffles,
     song_requests: songs,
     bar_menu: menu.length
-      ? menu.filter((i) => i.is_available !== false).map((i) => ({ id: i.id, name: i.name, category: i.category, price: Number(i.price), emoji: i.emoji }))
+      ? menu.map((i) => ({ id: i.id, name: i.name, category: i.category, price: Number(i.price), emoji: i.emoji, is_available: i.is_available !== false }))
       : BAR_MENU,
     bar_orders: orders.map((o) => ({ ...o, total_amount: Number(o.total_amount), payment_status: o.payment_status ?? "pay_at_bar", payment_ref: o.payment_ref ?? null, paid_at: o.paid_at ?? null })),
     squad_expenses: expenses.map((e) => ({ ...e, amount: Number(e.amount) })),

@@ -90,12 +90,14 @@ export function roleHome(r: Role): string {
 export const ADMIN_ROUTE_PERMISSION: [string, Permission][] = [
   ["/admin/events", "admin.events"],
   ["/admin/brand", "admin.events"],
+  ["/admin/menu", "admin.events"],
   ["/admin/crm", "admin.crm"],
   ["/admin/blasts", "admin.blasts"],
   ["/admin/perks", "admin.perks"],
   ["/admin/bar-pos", "admin.bar"],
   ["/admin/live-wall", "admin.livewall"],
   ["/admin/print-codes", "admin.events"],
+  ["/admin/print-ticket", "admin.bar"],
   ["/admin", "admin.overview"],
 ];
 

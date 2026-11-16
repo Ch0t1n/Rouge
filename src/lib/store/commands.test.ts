@@ -199,6 +199,13 @@ describe("contrato comandos ↔ schema.sql", () => {
     ["respondSettlement", () => { const r = C.recordSettlement(DEMO_IDS.squadMain, id(2), ME, 1000, "cash").local(s0()); const s = (r as { state: RougeState }).state; return runRemote(C.respondSettlement(s.squad_settlements[0].id, ME, true), s); }],
     ["setPayoutAlias", () => runRemote(C.setPayoutAlias(ME, "sofi.noche.mp"), s0())],
     ["setPayoutAlias (borrar)", () => runRemote(C.setPayoutAlias(id(2), ""), s0())],
+    ["upsertMenuItem (nuevo)", () => runRemote(C.upsertMenuItem(EV, { name: "Gin Pomelo", category: "trago", price: 9000, emoji: "🍹" }), st())],
+    ["upsertMenuItem (agotado)", () => runRemote(C.upsertMenuItem(EV, { ...s0().bar_menu[0], is_available: false }), st())],
+    ["deleteMenuItem", () => runRemote(C.deleteMenuItem(EV, "gin"), st())],
+    ["duplicateEvent", () => runRemote(C.duplicateEvent(EV, new Date(NOW + 7 * 86_400_000).toISOString()), st())],
+    ["removeAttendee", () => runRemote(C.removeAttendee(EV, id(2), true, "motivo"), st())],
+    ["unbanAttendee", () => { const r = C.removeAttendee(EV, id(2), true).local(st()); const s = (r as { state: RougeState }).state; return runRemote(C.unbanAttendee(EV, id(2)), s); }],
+    ["deleteEvent", () => { const r = C.duplicateEvent(EV, new Date(NOW + 7 * 86_400_000).toISOString()).local(st()); const s = (r as { state: RougeState; data: { event: { id: string } } }); return runRemote(C.deleteEvent(s.data.event.id), s.state); }],
   ];
 
   it.each(cases)("%s respeta el esquema", async (_name, fn) => {
@@ -213,6 +220,14 @@ describe("contrato comandos ↔ schema.sql", () => {
     expect((raffle.data as { raffle: { winner_user_id: string } }).raffle.winner_user_id).toBe(id(8));
     const blast = await runRemote(C.sendBlast(EV, { title: "x", message: "y", segment: { kind: "all" } }), st(), { send_blast: 99 });
     expect((blast.data as { reach: number }).reach).toBe(99);
+  });
+
+  it("gestión del evento: solo dueño/a o producción; eliminar solo quien lo creó", () => {
+    const as = (u: string) => ({ ...s0(), current_user_id: u });
+    expect(C.upsertMenuItem(EV, { name: "Gin Pomelo", category: "trago", price: 1 }).local(as(DEMO_IDS.bartender)).ok).toBe(false);
+    expect(C.removeAttendee(EV, id(2), true).local(as(DEMO_IDS.security)).ok).toBe(false);
+    expect(C.removeAttendee(EV, id(2), true).local(as(DEMO_IDS.manager)).ok).toBe(true);
+    expect(C.deleteEvent(EV).local(as(DEMO_IDS.manager)).ok).toBe(false);
   });
 
   it("nunca se escribe el estado de pago ni el cobro de la marca desde el cliente", async () => {
