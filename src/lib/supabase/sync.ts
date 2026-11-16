@@ -84,6 +84,18 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
   // Mis claves de la API (la columna key_hash no es legible por clientes).
   const apiKeys = await q<RougeState["api_keys"][number]>(sb.from("api_keys").select("id,name,prefix,created_by,event_id,scopes,last_used_at,revoked_at,created_at").eq("created_by", userId).order("created_at", { ascending: false })).catch(() => []);
   const igRows = await q<{ username: string; account_type: string | null; connected_at: string }>(sb.rpc("my_instagram")).catch(() => []);
+  // Marcas: las mías (panel) + las de los eventos cargados (logo y colores). Cuenta de cobro: solo las mías, sin tokens.
+  // Cuentas de la mesa del evento activo y alias de quienes comparten Squad conmigo (RLS).
+  const eventBrandIds = [...new Set(events.map((e) => e.brand_id).filter((x): x is UUID => !!x))];
+  const [myBrands, eventBrands, payAccounts, expenses, settlements, aliases] = await Promise.all([
+    q<RougeState["brands"][number]>(sb.from("brands").select("*").eq("owner_id", userId)).catch(() => []),
+    eventBrandIds.length ? q<RougeState["brands"][number]>(sb.from("brands").select("*").in("id", eventBrandIds)).catch(() => []) : Promise.resolve([]),
+    q<RougeState["brand_payment_accounts"][number]>(sb.rpc("my_brand_payments")).catch(() => []),
+    byEvent<RougeState["squad_expenses"][number]>("squad_expenses").catch(() => []),
+    byEvent<RougeState["squad_settlements"][number]>("squad_settlements").catch(() => []),
+    q<RougeState["payout_aliases"][number]>(sb.from("payout_aliases").select("user_id,alias")).catch(() => []),
+  ]);
+  const brands = [...new Map([...myBrands, ...eventBrands].map((b) => [b.id, b])).values()];
   // Mis roles en todos los eventos (selector del panel) + el equipo completo del evento activo si soy staff.
   const teamRows = isStaff ? await byEvent<RougeState["event_staff"][number]>("event_staff") : [];
   const eventStaff = [...staffRows.filter((r) => r.event_id !== eventId || !isStaff), ...teamRows];
@@ -96,6 +108,7 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
   blocks.forEach((b) => b.blocked_user_id && ids.add(b.blocked_user_id));
   raffles.forEach((r) => r.winner_user_id && ids.add(r.winner_user_id));
   orders.forEach((o) => ids.add(o.user_id));
+  expenses.forEach((e) => ids.add(e.paid_by));
   teamRows.forEach((r) => ids.add(r.user_id));
   // Por tandas: un `in (...)` con cientos de ids arma una URL que los gateways rechazan (evento real = miles de asistentes).
   const profiles = (await Promise.all(chunk([...ids], PROFILE_BATCH).map((part) => q<Profile>(sb.from("profiles").select(PROFILE_COLUMNS).in("id", part))))).flat();
@@ -123,7 +136,9 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
     profiles: profiles.map((p) => ({ ...p, phone_normalized: phones.get(p.id) ?? null, photos: p.photos ?? [], music_genres: p.music_genres ?? [] })),
     instagram_links: igRows.map((r) => ({ user_id: userId, username: r.username, account_type: r.account_type, connected_at: r.connected_at })),
     user_blocks: blocks,
-    events,
+    events: events.map((e) => ({ ...e, brand_id: e.brand_id ?? null, logo_url: e.logo_url ?? null, theme_primary: e.theme_primary ?? null, theme_accent: e.theme_accent ?? null })),
+    brands,
+    brand_payment_accounts: payAccounts,
     event_staff: eventStaff,
     event_invite_codes: codes,
     api_keys: apiKeys,
@@ -141,14 +156,17 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
     bar_menu: menu.length
       ? menu.filter((i) => i.is_available !== false).map((i) => ({ id: i.id, name: i.name, category: i.category, price: Number(i.price), emoji: i.emoji }))
       : BAR_MENU,
-    bar_orders: orders.map((o) => ({ ...o, total_amount: Number(o.total_amount) })),
+    bar_orders: orders.map((o) => ({ ...o, total_amount: Number(o.total_amount), payment_status: o.payment_status ?? "pay_at_bar", payment_ref: o.payment_ref ?? null, paid_at: o.paid_at ?? null })),
+    squad_expenses: expenses.map((e) => ({ ...e, amount: Number(e.amount) })),
+    squad_settlements: settlements.map((t) => ({ ...t, amount: Number(t.amount) })),
+    payout_aliases: aliases,
     admin_stats: adminStats,
   };
   return { state, isStaff };
 }
 
 /** Tablas publicadas en `supabase_realtime` (ver schema.sql) que disparan una re-sincronización. */
-const REALTIME_TABLES = ["messages", "map_pins", "connections", "squad_members", "squads", "blast_deliveries", "user_perks_qrs", "bar_orders", "song_requests", "raffles", "event_attendees"];
+const REALTIME_TABLES = ["messages", "map_pins", "connections", "squad_members", "squads", "blast_deliveries", "user_perks_qrs", "bar_orders", "song_requests", "raffles", "event_attendees", "brands", "squad_expenses", "squad_settlements"];
 
 /**
  * Escucha cambios relevantes. Realtime respeta RLS: cada usuario solo recibe

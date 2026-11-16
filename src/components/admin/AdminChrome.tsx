@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { BarChart3, CalendarCog, Gift, Lock, LogOut, Megaphone, Martini, ShieldCheck, Tv, Users } from "lucide-react";
+import { BarChart3, CalendarCog, Gift, Lock, LogOut, Megaphone, Martini, Palette, ShieldCheck, Tv, Users } from "lucide-react";
 import { useRouge } from "@/lib/store/RougeContext";
 import { NO_PERMISSION, permissionForPath, ROLE_META, roleHome } from "@/lib/engine/roles";
 import { getProfile } from "@/lib/engine/selectors";
@@ -13,6 +13,7 @@ import { buttonVariants } from "@/components/ui/button";
 export const ADMIN_NAV = [
   { href: "/admin", label: "Resumen", icon: BarChart3 },
   { href: "/admin/events", label: "Eventos y accesos", icon: CalendarCog },
+  { href: "/admin/brand", label: "Marca y cobros", icon: Palette },
   { href: "/admin/crm", label: "CRM", icon: Users },
   { href: "/admin/blasts", label: "Text Blasts", icon: Megaphone },
   { href: "/admin/perks", label: "Perks y sorteos", icon: Gift },

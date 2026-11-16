@@ -7,6 +7,7 @@ import Link from "next/link";
 import type { LineupSlot, RougeEvent } from "@/lib/types";
 import { generateInviteCodes, upsertEvent } from "@/lib/engine/actions";
 import { lobbyPhase } from "@/lib/engine/selectors";
+import { myBrands } from "@/lib/engine/branding";
 import { compressImage } from "@/lib/media/compress";
 import { uploadMedia } from "@/lib/media/upload";
 import { useRouge } from "@/lib/store/RougeContext";
@@ -104,7 +105,8 @@ function EventEditor({ event, onSaved }: { event: RougeEvent | null; onSaved: (i
     const e = fromLocal(ends);
     const r = await exec(
       C.upsertEvent({
-        ...(event ? { id: event.id } : {}),
+        // Un evento nuevo arranca con mi marca (logo, colores y cobro); se cambia en Marca y cobros.
+        ...(event ? { id: event.id } : { brand_id: myBrands(state)[0]?.id ?? null }),
         name,
         slug: slug || undefined,
         venue_name: venue,

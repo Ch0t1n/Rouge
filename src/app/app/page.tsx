@@ -29,9 +29,12 @@ import { PersonaSwitcher } from "@/components/layout/PersonaSwitcher";
 import { VenueMap } from "@/components/venue/VenueMap";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge, LiveDot } from "@/components/ui/badge";
-import { cn, formatDateTime } from "@/lib/utils";
+import { cn, formatDateTime, formatMoney } from "@/lib/utils";
 import { useShare } from "@/components/share/ShareSheet";
 import { ROLE_META, roleHome } from "@/lib/engine/roles";
+import { eventTheme } from "@/lib/engine/branding";
+import { squadAccount } from "@/lib/engine/settle";
+import { BrandLogo } from "@/components/brand/BrandTheme";
 
 const PHASE_LABEL: Record<LobbyPhase, string> = {
   upcoming: "Próximamente",
@@ -73,6 +76,8 @@ function Home() {
 
   const hoursToClose = Math.max(0, Math.round((+new Date(event.lobby_expires_at) - now) / 3_600_000));
   const mood = MOOD_TAGS.find((m) => m.id === attendee?.mood_tag);
+  const theme = eventTheme(state, event.id);
+  const account = data.squad ? squadAccount(state, data.squad.squad.id, me.id) : null;
   const flashLeft = data.flash?.expires_at ? Math.max(0, Math.ceil((+new Date(data.flash.expires_at) - now) / 60_000)) : 0;
 
   return (
@@ -81,7 +86,11 @@ function Home() {
       {/* Header */}
       <header className="sticky top-0 z-30 flex items-center justify-between gap-3 bg-background/80 px-4 pb-3 pt-4 backdrop-blur-xl">
         <div className="flex items-center gap-2">
-          <span className="font-display text-[26px] font-bold leading-none tracking-tight text-rouge text-glow-rouge">ROUGE</span>
+          {theme.logo_url ? (
+            <BrandLogo theme={theme} className="h-9 max-w-[150px]" />
+          ) : (
+            <span className="font-display text-[26px] font-bold leading-none tracking-tight text-rouge text-glow-rouge">ROUGE</span>
+          )}
           <Badge tone={mode === "demo" ? "vip" : "squad"}>{mode === "demo" ? "Modo Demo" : "Supabase"}</Badge>
         </div>
         <div className="flex items-center gap-2">
@@ -190,7 +199,27 @@ function Home() {
               </p>
             )}
           </Link>
-        ) : (
+        ) : null}
+        {/* Cuentas de la mesa: quién pagó qué y cuánto transferir (sigue visible después del cierre). */}
+        {account && account.ledger.length > 0 && (
+          <Link href="/squad/cuentas" className="flex items-center gap-3 rounded-3xl border border-vip/30 bg-vip/[0.06] p-4" data-testid="home-cuentas">
+            <span className="text-2xl" aria-hidden>🧾</span>
+            <span className="min-w-0 flex-1 text-sm">
+              <b className="block">Cuentas de la mesa</b>
+              <span className="text-muted">
+                {account.iOwe.length
+                  ? `Te toca transferir ${formatMoney(account.iOwe.reduce((a, t) => a + t.amount, 0))}`
+                  : account.owedToMe.length
+                    ? `Te tienen que pasar ${formatMoney(account.owedToMe.reduce((a, t) => a + t.amount, 0))}`
+                    : "Están a mano 🙌"}
+                {" · "}
+                {formatMoney(account.total)} en total
+              </span>
+            </span>
+            <ArrowRight className="size-5 text-muted" />
+          </Link>
+        )}
+        {!data.squad && (
           attendee && (
             <Link href="/squad" className="flex items-center gap-3 rounded-3xl border border-squad/30 bg-squad/[0.06] p-4">
               <Users className="size-6 text-squad" />

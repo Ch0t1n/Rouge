@@ -51,7 +51,7 @@ export default function SquadPage() {
 
 const SAFETY: Record<SafetyStatus, { label: string; cls: string }> = {
   ok: { label: "En la fiesta", cls: "bg-white/[0.06] text-muted" },
-  rescue_needed: { label: "🚨 Pidió rescate", cls: "bg-rouge text-white shadow-glow-rouge" },
+  rescue_needed: { label: "🚨 Pidió rescate", cls: "bg-sos text-white shadow-glow-sos" },
   home_safe: { label: "🏠 En casa", cls: "bg-squad/15 text-squad" },
 };
 
@@ -73,14 +73,14 @@ function Squad() {
 
       <div className="space-y-4 px-4 pb-10">
         {alerts.map((a) => (
-          <section key={a.member.id} role="alert" className="rounded-3xl border border-rouge bg-rouge/15 p-4 shadow-glow-rouge">
+          <section key={a.member.id} role="alert" className="rounded-3xl border border-sos bg-sos/15 p-4 shadow-glow-sos">
             <div className="flex items-center gap-3">
               <span className="relative">
-                <span className="absolute inset-0 animate-ping rounded-full bg-rouge/60" />
+                <span className="absolute inset-0 animate-ping rounded-full bg-sos/60" />
                 <Avatar profile={a.profile} size={48} ring="rouge" />
               </span>
               <div className="min-w-0 flex-1">
-                <p className="font-display text-lg font-bold text-rouge">🚨 {a.profile.full_name.split(" ")[0]} necesita que vayan</p>
+                <p className="font-display text-lg font-bold text-sos">🚨 {a.profile.full_name.split(" ")[0]} necesita que vayan</p>
                 <p className="text-sm text-primary/90">{a.pin?.sector_name ? `📍 ${a.pin.sector_name}` : "Ubicación en el plano"}{a.pin ? ` · ${formatTime(a.pin.created_at)}` : ""}</p>
               </div>
             </div>
@@ -230,20 +230,20 @@ const meId = state.current_user_id;
       {/* Seguridad */}
       <section className="grid grid-cols-2 gap-3">
         {member.safety_status === "rescue_needed" ? (
-          <div className="col-span-2 space-y-2 rounded-3xl border border-rouge bg-rouge/10 p-4 shadow-glow-rouge" role="status">
-            <p className="font-display font-bold text-rouge">🚨 Tu Squad recibió la alerta</p>
+          <div className="col-span-2 space-y-2 rounded-3xl border border-sos bg-sos/10 p-4 shadow-glow-sos" role="status">
+            <p className="font-display font-bold text-sos">🚨 Tu Squad recibió la alerta</p>
             <p className="text-sm text-primary/90">
               Ven tu pin rojo{myRescuePin?.sector_name ? ` en ${myRescuePin.sector_name}` : ""}.{" "}
-              <Link href="/map?rescue=1" className="font-semibold text-rouge underline underline-offset-4">
+              <Link href="/map?rescue=1" className="font-semibold text-sos underline underline-offset-4">
                 Precisar mi ubicación
               </Link>
             </p>
-            <Button size="lg" variant="glass" block className="min-h-[56px] border-rouge/60 text-primary" onClick={() => exec(C.resolveRescue(event.id, meId))}>
+            <Button size="lg" variant="glass" block className="min-h-[56px] border-sos/60 text-primary" onClick={() => exec(C.resolveRescue(event.id, meId))}>
               ✅ Ya estoy bien · cancelar alerta
             </Button>
           </div>
         ) : (
-          <button type="button" onClick={rescue} className="flex min-h-[96px] flex-col items-center justify-center gap-1 rounded-3xl bg-rouge px-3 text-center font-display font-bold text-white shadow-glow-rouge transition active:scale-95">
+          <button type="button" onClick={rescue} className="flex min-h-[96px] flex-col items-center justify-center gap-1 rounded-3xl bg-sos px-3 text-center font-display font-bold text-white shadow-glow-sos transition active:scale-95">
             <Siren className="size-7" />
             <span className="leading-tight">Rescate</span>
             <span className="text-[11px] font-medium opacity-85">Vengan a mi pin</span>
@@ -358,6 +358,17 @@ const meId = state.current_user_id;
         </div>
       </Link>
 
+      {/* Cuentas de la mesa */}
+      <Link href="/squad/cuentas" className="glass flex min-h-[72px] items-center gap-3 rounded-3xl p-4 transition hover:bg-white/10" data-testid="squad-cuentas">
+        <span className="grid size-11 place-items-center rounded-2xl bg-vip/15 text-xl" aria-hidden>
+          🧾
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold">Cuentas de la mesa</p>
+          <p className="truncate text-sm text-muted">Quién pagó qué y cuánto le transfiere cada uno al final.</p>
+        </div>
+      </Link>
+
       {/* Mesa VIP */}
       <section className="glass rounded-3xl px-4 py-1">
         <Switch
@@ -458,7 +469,7 @@ const meId = state.current_user_id;
         }
       >
         <p className="flex items-center gap-2 text-sm text-muted">
-          <ShieldAlert className="size-4 text-rouge" /> Sin Squad no vas a tener Botón de Rescate.
+          <ShieldAlert className="size-4 text-sos" /> Sin Squad no vas a tener Botón de Rescate.
         </p>
       </BottomSheet>
     </>

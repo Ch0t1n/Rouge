@@ -18,20 +18,23 @@ const config: Config = {
           raised: "#1A1A20",
           sunken: "#0C0C0F",
         },
+        // rouge y vip son variables CSS: cada marca puede reemplazarlas (ver lib/engine/branding.ts y globals.css).
         rouge: {
-          DEFAULT: "#FF1E56", // Electric Rouge — matches, rompehielos, SOS
-          hover: "#E01145",
-          soft: "#FF1E561F",
+          DEFAULT: "rgb(var(--c-rouge) / <alpha-value>)", // Electric Rouge — matches, rompehielos
+          hover: "rgb(var(--c-rouge-hover) / <alpha-value>)",
+          soft: "rgb(var(--c-rouge) / 0.12)",
         },
+        // Rescate 🚨: SIEMPRE el rojo de ROUGE, aunque la marca cambie sus colores (señal de seguridad).
+        sos: "rgb(255 30 86 / <alpha-value>)",
         squad: {
           DEFAULT: "#00F0FF", // Cyber Cyan — amigos, pines de squad
           hover: "#00C8D6",
           soft: "#00F0FF1F",
         },
         vip: {
-          DEFAULT: "#FFB800", // Amber Gold — monetización, perks, punto base
-          hover: "#E0A200",
-          soft: "#FFB8001F",
+          DEFAULT: "rgb(var(--c-vip) / <alpha-value>)", // Amber Gold — monetización, perks, punto base
+          hover: "rgb(var(--c-vip-hover) / <alpha-value>)",
+          soft: "rgb(var(--c-vip) / 0.12)",
         },
         primary: "#F8FAFC", // text-primary
         muted: "#94A3B8", // text-muted
@@ -42,9 +45,10 @@ const config: Config = {
         sans: ["var(--font-body)", "ui-sans-serif", "system-ui", "sans-serif"],
       },
       boxShadow: {
-        "glow-rouge": "0 0 20px rgba(255,30,86,0.35)",
+        "glow-rouge": "0 0 20px rgb(var(--c-rouge) / 0.35)",
+        "glow-sos": "0 0 20px rgba(255,30,86,0.45)",
         "glow-squad": "0 0 15px rgba(0,240,255,0.3)",
-        "glow-vip": "0 0 18px rgba(255,184,0,0.3)",
+        "glow-vip": "0 0 18px rgb(var(--c-vip) / 0.3)",
         sheet: "0 -12px 40px rgba(0,0,0,0.6)",
       },
       minHeight: { touch: "44px" },

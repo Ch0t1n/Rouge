@@ -7,6 +7,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { ArrowLeft, Printer } from "lucide-react";
 import { useRouge } from "@/lib/store/RougeContext";
 import { formatDateTime } from "@/lib/utils";
+import { eventTheme } from "@/lib/engine/branding";
 import { Button, buttonVariants } from "@/components/ui/button";
 
 /**
@@ -54,7 +55,10 @@ export function PrintCodes() {
         <ul className="mx-auto grid max-w-5xl grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 print:max-w-none print:grid-cols-4 print:gap-3">
           {codes.map((c) => (
             <li key={c.id} className="flex break-inside-avoid flex-col items-center rounded-2xl border border-white/10 bg-white p-3 text-center text-[#070709] print:rounded-lg print:border-black/30">
-              <p className="font-display text-xs font-bold tracking-tight text-[#FF1E56]">ROUGE</p>
+              {/* Sobre papel blanco va el nombre de la marca en su color (un logo claro no se vería). */}
+              <p className="w-full truncate font-display text-xs font-bold tracking-tight" style={{ color: eventTheme(state, event.id).primary }}>
+                {eventTheme(state, event.id).brand_name ?? "ROUGE"}
+              </p>
               <p className="w-full truncate text-[10px] font-semibold">{event.name}</p>
               <QRCodeSVG value={`${origin}/join/${c.code}`} size={132} level="M" marginSize={1} bgColor="#FFFFFF" fgColor="#070709" className="my-2 h-auto w-full max-w-[132px]" />
               <p className="font-display text-lg font-bold tracking-[0.15em]">{c.code}</p>

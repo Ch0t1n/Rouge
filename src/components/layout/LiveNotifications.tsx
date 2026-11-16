@@ -35,7 +35,14 @@ function noticesFor(s: RougeState, meId: UUID, now: number): Notice[] {
     }
   }
 
+  // Cuentas de la mesa: alguien marcó que me transfirió → confirmar.
+  for (const t of s.squad_settlements) {
+    if (t.to_user !== meId || t.confirmed_at) continue;
+    out.push({ key: `settle:${t.id}`, toast: { tone: "squad", title: `💸 ${first(t.from_user)} dice que te pagó`, description: "Confirmalo en las cuentas de la mesa.", cta: { label: "Ver cuentas", href: "/squad/cuentas" } } });
+  }
+
   for (const o of ordersOf(s, meId, eventId)) {
+    if (o.payment_status === "paid" && o.user_id === meId) out.push({ key: `order:${o.id}:paid`, toast: { tone: "vip", title: "✅ Pago acreditado", description: "La barra ya tiene tu pedido." } });
     if (o.status === "ready_qr") out.push({ key: `order:${o.id}:ready`, toast: { tone: "squad", title: "🍸 ¡Tu pedido está listo!", description: `Retiralo en la ventanilla rápida · código ${o.pickup_code}`, duration: 0, cta: { label: "Ver QR", href: "/bar" } } });
     if (o.status === "delivering") out.push({ key: `order:${o.id}:delivering`, toast: { tone: "squad", title: "🛵 Tu pedido va en camino", description: `A ${o.sector_name ?? "tu ubicación"}` } });
   }

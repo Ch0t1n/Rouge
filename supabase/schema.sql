@@ -91,6 +91,76 @@ create table if not exists public.user_blocks (
   constraint user_blocks_not_self   check (blocked_user_id is distinct from blocker_id)
 );
 
+-- [v1.4] Colores de marca: mismas reglas que checkBrandColor() en src/lib/engine/branding.ts
+-- (contraste WCAG contra el fondo #070709 y el texto que va encima; nada parecido al cian del Squad).
+create or replace function public.color_luminance(p_hex text)
+returns double precision language sql immutable set search_path = public, extensions as $$
+  select (0.2126 * c[1] + 0.7152 * c[2] + 0.0722 * c[3])::double precision
+  from (select array_agg(case when v <= 0.03928 then v / 12.92 else power((v + 0.055) / 1.055, 2.4) end order by i) as c
+        from (select i, ('x' || substr(p_hex, 2 * i, 2))::bit(8)::int / 255.0 as v from generate_series(1, 3) as i) x) y;
+$$;
+
+create or replace function public.brand_color_error(p_hex text, p_kind text)
+returns text language plpgsql immutable set search_path = public, extensions as $$
+declare
+  l double precision; bg double precision := public.color_luminance('#070709');
+  r double precision; g double precision; b double precision; mx double precision; mn double precision; d double precision;
+  x double precision; h double precision; sat double precision; dh double precision;
+begin
+  if p_hex is null then return null; end if;
+  if p_hex !~ '^#[0-9A-F]{6}$' then return 'format'; end if;
+  r := ('x' || substr(p_hex, 2, 2))::bit(8)::int / 255.0;
+  g := ('x' || substr(p_hex, 4, 2))::bit(8)::int / 255.0;
+  b := ('x' || substr(p_hex, 6, 2))::bit(8)::int / 255.0;
+  mx := greatest(r, g, b); mn := least(r, g, b); d := mx - mn;
+  if d > 0 then
+    sat := d / (1 - abs(mx + mn - 1));
+    x := case when mx = r then (g - b) / d when mx = g then (b - r) / d + 2 else (r - g) / d + 4 end;
+    h := (x - 6 * trunc(x / 6)) * 60;            -- mismo resto que el % de JavaScript
+    if h < 0 then h := h + 360; end if;
+    dh := least(abs(h - 183.529), 360 - abs(h - 183.529));  -- 183.529° = tono del cian del Squad (#00F0FF)
+    if sat > 0.35 and dh < 22 then return 'like_squad'; end if;
+  end if;
+  l := public.color_luminance(p_hex);
+  if p_kind = 'primary' then
+    if (greatest(l, bg) + 0.05) / (least(l, bg) + 0.05) < 3 then return 'too_dark'; end if;
+    if (1.05) / (l + 0.05) < 3 then return 'too_light'; end if;
+  elsif (greatest(l, bg) + 0.05) / (least(l, bg) + 0.05) < 4.5 then
+    return 'too_dark';
+  end if;
+  return null;
+end $$;
+
+-- [v1.4] Marca de una productora o fiesta: logo y colores que personalizan la app de sus eventos.
+-- payments_enabled lo escribe SOLO el servidor (Mercado Pago conectado); el resto, su dueño/a.
+create table if not exists public.brands (
+  id                uuid primary key default gen_random_uuid(),
+  owner_id          uuid not null references public.profiles(id) on delete cascade,
+  name              text not null check (char_length(trim(name)) between 2 and 40),
+  logo_url          text,
+  primary_color     text check (public.brand_color_error(primary_color, 'primary') is null),
+  accent_color      text check (public.brand_color_error(accent_color, 'accent') is null),
+  payments_enabled  boolean not null default false,
+  created_at        timestamptz not null default now()
+);
+
+-- [v1.4] Cuenta de Mercado Pago de una marca (OAuth). Tokens CIFRADOS (AES-256-GCM) y SOLO para el servidor:
+-- RLS sin políticas + sin privilegios para anon/authenticated. La escribe /api/mercadopago con service role.
+create table if not exists public.brand_payment_accounts (
+  brand_id           uuid primary key references public.brands(id) on delete cascade,
+  provider           text not null default 'mercadopago' check (provider = 'mercadopago'),
+  provider_user_id   text not null,
+  account_label      text not null default '',
+  live_mode          boolean not null default true,
+  access_token_enc   text not null,
+  refresh_token_enc  text,
+  public_key         text,
+  expires_at         timestamptz,
+  connected_by       uuid references public.profiles(id) on delete set null,
+  connected_at       timestamptz not null default now(),
+  updated_at         timestamptz not null default now()
+);
+
 create table if not exists public.events (
   id                  uuid primary key default gen_random_uuid(),
   slug                text not null unique check (slug ~ '^[a-z0-9-]{3,60}$'),
@@ -111,6 +181,12 @@ create table if not exists public.events (
   created_at          timestamptz not null default now(),
   constraint events_time_chk check (lobby_opens_at <= starts_at and starts_at < ends_at and ends_at <= lobby_expires_at)
 );
+
+-- [v1.4] Marca y personalización del evento (si no tiene colores propios, usa los de su marca).
+alter table public.events add column if not exists brand_id uuid references public.brands(id) on delete set null;
+alter table public.events add column if not exists logo_url text;
+alter table public.events add column if not exists theme_primary text check (public.brand_color_error(theme_primary, 'primary') is null);
+alter table public.events add column if not exists theme_accent text check (public.brand_color_error(theme_accent, 'accent') is null);
 
 -- [ext] Staff del organizador (dueño, encargados, barra, camareros, seguridad).
 create table if not exists public.event_staff (
@@ -359,6 +435,51 @@ create table if not exists public.bar_orders (
   updated_at      timestamptz not null default now()               -- [ext]
 );
 
+-- [v1.4] Cobro online de la Barra Express (Mercado Pago de la marca). Solo el servidor marca "paid".
+alter table public.bar_orders add column if not exists payment_status text not null default 'pay_at_bar'
+  check (payment_status in ('pay_at_bar', 'awaiting_payment', 'paid'));
+alter table public.bar_orders add column if not exists payment_ref text;
+alter table public.bar_orders add column if not exists paid_at timestamptz;
+alter table public.bar_orders add column if not exists mp_preference_id text;
+
+-- [v1.4] Cuentas de la mesa: gastos cargados a mano y transferencias entre integrantes del Squad.
+create table if not exists public.squad_expenses (
+  id               uuid primary key default gen_random_uuid(),
+  squad_id         uuid not null references public.squads(id) on delete cascade,
+  event_id         uuid not null references public.events(id) on delete cascade,
+  paid_by          uuid not null references public.profiles(id) on delete cascade,
+  description      text not null check (char_length(trim(description)) between 1 and 60),
+  amount           numeric(12,2) not null check (amount > 0 and amount <= 50000000),
+  participant_ids  uuid[] not null check (cardinality(participant_ids) > 0),
+  created_at       timestamptz not null default now()
+);
+
+create table if not exists public.squad_settlements (
+  id            uuid primary key default gen_random_uuid(),
+  squad_id      uuid not null references public.squads(id) on delete cascade,
+  event_id      uuid not null references public.events(id) on delete cascade,
+  from_user     uuid not null references public.profiles(id) on delete cascade,
+  to_user       uuid not null references public.profiles(id) on delete cascade,
+  amount        numeric(12,2) not null check (amount > 0 and amount <= 50000000),
+  method        text not null default 'transfer' check (method in ('mercadopago', 'transfer', 'cash')),
+  confirmed_at  timestamptz,
+  created_at    timestamptz not null default now(),
+  constraint settlement_users_chk check (from_user <> to_user)
+);
+
+-- Alias o CBU/CVU para que el Squad te transfiera (solo lo ven quienes comparten un Squad con vos).
+create table if not exists public.payout_aliases (
+  user_id     uuid primary key references public.profiles(id) on delete cascade,
+  alias       text not null check (alias ~ '^[0-9]{22}$' or (alias ~ '^[a-z0-9.-]{6,20}$' and alias ~ '[a-z]')),
+  updated_at  timestamptz not null default now()
+);
+
+create index if not exists idx_brands_owner            on public.brands (owner_id);
+create index if not exists idx_events_brand            on public.events (brand_id) where brand_id is not null;
+create index if not exists idx_orders_awaiting         on public.bar_orders (event_id) where payment_status = 'awaiting_payment';
+create index if not exists idx_squad_expenses_squad    on public.squad_expenses (squad_id);
+create index if not exists idx_squad_settlements_squad on public.squad_settlements (squad_id);
+
 -- ════════════════════════════════════════════════════════════════════════
 -- ÍNDICES
 -- ════════════════════════════════════════════════════════════════════════
@@ -457,6 +578,14 @@ returns uuid language sql stable security definer set search_path = public, exte
   limit 1;
 $$;
 
+-- [v1.4] ¿Comparto un Squad con esta persona? (alias para cobrar en las cuentas de la mesa)
+create or replace function public.shares_squad(p_other uuid)
+returns boolean language sql stable security definer set search_path = public, extensions as $$
+  select exists (
+    select 1 from public.squad_members a join public.squad_members b on b.squad_id = a.squad_id
+    where a.user_id = auth.uid() and b.user_id = p_other and a.status = 'joined' and b.status = 'joined');
+$$;
+
 create or replace function public.are_squadmates(p_event uuid, a uuid, b uuid)
 returns boolean language sql stable security definer set search_path = public, extensions as $$
   select public.user_squad(p_event, a) is not null and public.user_squad(p_event, a) = public.user_squad(p_event, b);
@@ -518,6 +647,11 @@ alter table public.raffles             enable row level security;
 alter table public.song_requests       enable row level security;
 alter table public.bar_menu_items      enable row level security;
 alter table public.bar_orders          enable row level security;
+alter table public.brands              enable row level security;
+alter table public.brand_payment_accounts enable row level security;
+alter table public.squad_expenses      enable row level security;
+alter table public.squad_settlements   enable row level security;
+alter table public.payout_aliases      enable row level security;
 
 -- PROFILES ── el teléfono NUNCA es legible por otros usuarios (column privileges).
 drop policy if exists profiles_select on public.profiles;
@@ -582,8 +716,25 @@ drop policy if exists events_update on public.events;
 create policy events_update on public.events for update to authenticated using (public.is_event_manager(id)) with check (public.is_event_manager(id));
 -- El código maestro no se expone a anónimos (la landing /join solo necesita datos públicos)
 revoke all on public.events from anon;
-grant select (id, slug, name, description, venue_name, cover_url, starts_at, ends_at, lobby_opens_at, lobby_expires_at, max_capacity)
+grant select (id, slug, name, description, venue_name, cover_url, starts_at, ends_at, lobby_opens_at, lobby_expires_at, max_capacity,
+              brand_id, logo_url, theme_primary, theme_accent)
   on public.events to anon;
+
+-- BRANDS ── públicas (la app y /join muestran logo y colores); cada dueño/a edita las suyas.
+-- payments_enabled no es editable por clientes (column privileges): lo escribe el servidor al conectar Mercado Pago.
+drop policy if exists brands_select on public.brands;
+create policy brands_select on public.brands for select to anon, authenticated using (true);
+drop policy if exists brands_insert on public.brands;
+create policy brands_insert on public.brands for insert to authenticated with check (owner_id = auth.uid());
+drop policy if exists brands_update on public.brands;
+create policy brands_update on public.brands for update to authenticated using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+revoke all on public.brands from anon, authenticated;
+grant select on public.brands to anon, authenticated;
+grant insert (id, owner_id, name, logo_url, primary_color, accent_color) on public.brands to authenticated;
+grant update (name, logo_url, primary_color, accent_color) on public.brands to authenticated;
+
+-- BRAND PAYMENT ACCOUNTS ── ningún cliente ve los tokens; el estado (sin tokens) se lee con my_brand_payments().
+revoke all on public.brand_payment_accounts from anon, authenticated;
 
 drop policy if exists staff_select on public.event_staff;
 create policy staff_select on public.event_staff for select to authenticated using (user_id = auth.uid() or public.is_event_staff(event_id));
@@ -734,6 +885,23 @@ create policy orders_select on public.bar_orders for select to authenticated
 drop policy if exists orders_staff_update on public.bar_orders;
 create policy orders_staff_update on public.bar_orders for update to authenticated
   using (public.can_operate_bar(event_id)) with check (public.can_operate_bar(event_id));
+-- [v1.4] El estado de pago lo escribe solo el servidor (confirm_order_payment): el staff solo cambia `status`.
+revoke update on public.bar_orders from anon, authenticated;
+grant update (status, updated_at) on public.bar_orders to authenticated;
+
+-- CUENTAS DE LA MESA ── las ven los integrantes del Squad; altas por RPC (validan montos e integrantes).
+drop policy if exists expenses_select on public.squad_expenses;
+create policy expenses_select on public.squad_expenses for select to authenticated using (public.is_squad_member(squad_id));
+drop policy if exists expenses_delete on public.squad_expenses;
+create policy expenses_delete on public.squad_expenses for delete to authenticated using (paid_by = auth.uid());
+drop policy if exists settlements_select on public.squad_settlements;
+create policy settlements_select on public.squad_settlements for select to authenticated using (public.is_squad_member(squad_id));
+
+-- ALIAS PARA COBRAR ── el mío lo gestiono yo; el de otros solo si compartimos un Squad.
+drop policy if exists payout_own on public.payout_aliases;
+create policy payout_own on public.payout_aliases for all to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+drop policy if exists payout_squad on public.payout_aliases;
+create policy payout_squad on public.payout_aliases for select to authenticated using (public.shares_squad(user_id));
 
 -- ════════════════════════════════════════════════════════════════════════
 -- RPCs DE NEGOCIO (atómicas; replican src/lib/engine/actions.ts)
@@ -852,7 +1020,10 @@ begin
       'id', v_event.id, 'slug', v_event.slug, 'name', v_event.name, 'description', v_event.description,
       'venue_name', v_event.venue_name, 'cover_url', v_event.cover_url, 'lineup_json', v_event.lineup_json,
       'venue_layout_json', v_event.venue_layout_json, 'starts_at', v_event.starts_at, 'ends_at', v_event.ends_at,
-      'lobby_opens_at', v_event.lobby_opens_at, 'lobby_expires_at', v_event.lobby_expires_at, 'max_capacity', v_event.max_capacity),
+      'lobby_opens_at', v_event.lobby_opens_at, 'lobby_expires_at', v_event.lobby_expires_at, 'max_capacity', v_event.max_capacity,
+      'brand_id', v_event.brand_id, 'logo_url', v_event.logo_url, 'theme_primary', v_event.theme_primary, 'theme_accent', v_event.theme_accent),
+    'brand', (select jsonb_build_object('id', b.id, 'name', b.name, 'logo_url', b.logo_url, 'primary_color', b.primary_color, 'accent_color', b.accent_color)
+              from public.brands b where b.id = v_event.brand_id),
     'attendees', (select count(*) from public.event_attendees where event_id = v_event.id),
     'code_used_by_other', coalesce(v_code.is_used, false) and v_code.used_by_user_id is distinct from auth.uid(),
     'squad', case when v_squad.id is null then null else jsonb_build_object(
@@ -1185,14 +1356,29 @@ begin
   return v_p;
 end $$;
 
--- Barra Express: precios desde el servidor, vaquita reparte total_spent.
--- p_items: [{"item_id":"gin","qty":2}, ...]
-create or replace function public.create_bar_order(p_event uuid, p_items jsonb, p_delivery delivery_type_t)
+-- Gasto de un pedido (CRM): el compartido se reparte entre quienes lo consumen. Interna: solo la usan otras RPC.
+create or replace function public.apply_order_spend(p_order public.bar_orders)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if cardinality(p_order.split_user_ids) > 0 then
+    update public.event_attendees set total_spent = total_spent + round(p_order.total_amount / cardinality(p_order.split_user_ids), 2)
+     where event_id = p_order.event_id and user_id = any(p_order.split_user_ids);
+  else
+    update public.event_attendees set total_spent = total_spent + p_order.total_amount
+     where event_id = p_order.event_id and user_id = p_order.user_id;
+  end if;
+end $$;
+
+-- Barra Express: precios desde el servidor. p_items: [{"item_id":"gin","qty":2}, ...]
+-- [v1.4] p_split: integrantes del Squad que lo comparten (Vaquita / botella para la mesa → cuentas de la mesa).
+-- Si la marca cobra con Mercado Pago, nace awaiting_payment y el gasto se suma al confirmarse el pago.
+drop function if exists public.create_bar_order(uuid, jsonb, delivery_type_t);
+create or replace function public.create_bar_order(p_event uuid, p_items jsonb, p_delivery delivery_type_t, p_split uuid[] default null)
 returns public.bar_orders language plpgsql security definer set search_path = public, extensions as $$
 declare
-  v_uid uuid := auth.uid();
+  v_uid uuid := auth.uid(); v_delivery delivery_type_t := p_delivery;
   v_items jsonb; v_total numeric(12,2); v_squad uuid; v_split uuid[] := '{}';
-  v_pin public.map_pins; v_order public.bar_orders; v_share numeric(12,2);
+  v_pin public.map_pins; v_order public.bar_orders; v_pay text;
 begin
   if p_delivery = 'icebreaker_gift' then raise exception 'use_send_icebreaker'; end if;
   if not public.lobby_is_open(p_event) or not public.is_event_attendee(p_event, v_uid) then raise exception 'not_allowed'; end if;
@@ -1205,28 +1391,126 @@ begin
   if v_items is null then raise exception 'empty_order'; end if;
 
   v_squad := public.user_squad(p_event, v_uid);
-  if p_delivery = 'pin_delivery' then
+  if p_delivery = 'squad_split' or coalesce(cardinality(p_split), 0) > 0 then
+    if v_squad is null then raise exception 'squad_required'; end if;
+    if coalesce(cardinality(p_split), 0) > 0 then
+      select array_agg(distinct u) into v_split from unnest(p_split) as u;
+    else
+      select array_agg(user_id) into v_split from public.squad_members where squad_id = v_squad and status = 'joined';
+    end if;
+    if exists (select 1 from unnest(v_split) as u where not public.is_squad_member(v_squad, u)) then raise exception 'split_not_member'; end if;
+    if not exists (select 1 from unnest(v_split) as u where u <> v_uid) then raise exception 'split_required'; end if;
+    if v_delivery = 'fast_pickup' then v_delivery := 'squad_split'; end if;
+  end if;
+  if v_delivery = 'pin_delivery' then
     select * into v_pin from public.map_pins where event_id = p_event and user_id = v_uid and expires_at > now() order by created_at desc limit 1;
     if v_pin.id is null then raise exception 'pin_required'; end if;
-  elsif p_delivery = 'squad_split' then
-    if v_squad is null then raise exception 'squad_required'; end if;
-    select array_agg(user_id) into v_split from public.squad_members where squad_id = v_squad and status = 'joined';
   end if;
 
+  v_pay := case when exists (select 1 from public.events e join public.brands b on b.id = e.brand_id where e.id = p_event and b.payments_enabled)
+                then 'awaiting_payment' else 'pay_at_bar' end;
   insert into public.bar_orders (event_id, user_id, squad_id, delivery_type, items_json, total_amount, split_user_ids, pickup_code,
-                                 pin_coord_x, pin_coord_y, sector_name)
-  values (p_event, v_uid, v_squad, p_delivery, v_items, v_total, v_split,
-          case when p_delivery in ('fast_pickup','squad_split') then upper(encode(gen_random_bytes(2), 'hex')) end,
-          v_pin.coord_x, v_pin.coord_y, v_pin.sector_name)
+                                 pin_coord_x, pin_coord_y, sector_name, payment_status)
+  values (p_event, v_uid, v_squad, v_delivery, v_items, v_total, coalesce(v_split, '{}'),
+          case when v_delivery in ('fast_pickup','squad_split') then upper(encode(gen_random_bytes(2), 'hex')) end,
+          v_pin.coord_x, v_pin.coord_y, v_pin.sector_name, v_pay)
   returning * into v_order;
 
-  if p_delivery = 'squad_split' then
-    v_share := round(v_total / cardinality(v_split), 2);
-    update public.event_attendees set total_spent = total_spent + v_share where event_id = p_event and user_id = any(v_split);
-  else
-    update public.event_attendees set total_spent = total_spent + v_total where event_id = p_event and user_id = v_uid;
-  end if;
+  if v_pay = 'pay_at_bar' then perform public.apply_order_spend(v_order); end if;
   return v_order;
+end $$;
+
+-- [v1.4] Acredita un pago de Mercado Pago. SOLO el servidor (service role), después de verificar el pago con la API
+-- de Mercado Pago (estado aprobado, external_reference = pedido, monto exacto). Idempotente.
+create or replace function public.confirm_order_payment(p_order uuid, p_payment_ref text, p_amount numeric)
+returns public.bar_orders language plpgsql security definer set search_path = public, extensions as $$
+declare v_o public.bar_orders;
+begin
+  select * into v_o from public.bar_orders where id = p_order for update;
+  if not found then raise exception 'not_found'; end if;
+  if v_o.payment_status = 'paid' then return v_o; end if;
+  if v_o.payment_status <> 'awaiting_payment' then raise exception 'not_online_payment'; end if;
+  if abs(p_amount - v_o.total_amount) > 0.009 then raise exception 'amount_mismatch'; end if;
+  update public.bar_orders set payment_status = 'paid', payment_ref = p_payment_ref, paid_at = now(), updated_at = now()
+   where id = p_order returning * into v_o;
+  perform public.apply_order_spend(v_o);
+  return v_o;
+end $$;
+
+-- [v1.4] Quien pidió cancela un pedido que todavía no pagó.
+create or replace function public.cancel_unpaid_order(p_order uuid)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  delete from public.bar_orders where id = p_order and user_id = auth.uid() and payment_status = 'awaiting_payment';
+  if not found then raise exception 'not_found'; end if;
+end $$;
+
+-- [v1.4] Mis cuentas de cobro conectadas (sin tokens).
+create or replace function public.my_brand_payments()
+returns table (brand_id uuid, provider text, account_label text, live_mode boolean, connected_at timestamptz)
+language sql stable security definer set search_path = public, extensions as $$
+  select a.brand_id, a.provider, a.account_label, a.live_mode, a.connected_at
+  from public.brand_payment_accounts a join public.brands b on b.id = a.brand_id
+  where b.owner_id = auth.uid();
+$$;
+
+-- [v1.4] La marca de un evento tiene que ser de quien lo creó (espejo de checkEventBranding).
+create or replace function public.tg_event_brand_owner()
+returns trigger language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if new.brand_id is not null and not exists (select 1 from public.brands b where b.id = new.brand_id and b.owner_id = new.created_by) then
+    raise exception 'brand_not_owned';
+  end if;
+  return new;
+end $$;
+drop trigger if exists events_brand_owner on public.events;
+create trigger events_brand_owner before insert or update of brand_id on public.events
+  for each row execute function public.tg_event_brand_owner();
+
+-- [v1.4] Cuentas de la mesa (espejo de src/lib/engine/settle.ts). Funcionan también con el lobby cerrado.
+create or replace function public.add_squad_expense(p_squad uuid, p_description text, p_amount numeric, p_participants uuid[])
+returns public.squad_expenses language plpgsql security definer set search_path = public, extensions as $$
+declare v_row public.squad_expenses; v_parts uuid[];
+begin
+  if not public.is_squad_member(p_squad) then raise exception 'not_member'; end if;
+  if char_length(trim(coalesce(p_description, ''))) not between 1 and 60 then raise exception 'invalid_expense'; end if;
+  if p_amount is null or p_amount <= 0 or p_amount > 50000000 then raise exception 'invalid_amount'; end if;
+  select array_agg(distinct u) into v_parts from unnest(p_participants) as u;
+  if coalesce(cardinality(v_parts), 0) = 0 then raise exception 'split_required'; end if;
+  if exists (select 1 from unnest(v_parts) as u where not public.is_squad_member(p_squad, u)) then raise exception 'split_not_member'; end if;
+  insert into public.squad_expenses (squad_id, event_id, paid_by, description, amount, participant_ids)
+  values (p_squad, public.squad_event(p_squad), auth.uid(), trim(p_description), round(p_amount, 2), v_parts)
+  returning * into v_row;
+  return v_row;
+end $$;
+
+create or replace function public.record_settlement(p_squad uuid, p_to uuid, p_amount numeric, p_method text default 'transfer')
+returns public.squad_settlements language plpgsql security definer set search_path = public, extensions as $$
+declare v_row public.squad_settlements;
+begin
+  if not public.is_squad_member(p_squad) or not public.is_squad_member(p_squad, p_to) then raise exception 'not_member'; end if;
+  if p_to = auth.uid() then raise exception 'invalid_settlement'; end if;
+  if p_amount is null or p_amount <= 0 or p_amount > 50000000 then raise exception 'invalid_amount'; end if;
+  insert into public.squad_settlements (squad_id, event_id, from_user, to_user, amount, method)
+  values (p_squad, public.squad_event(p_squad), auth.uid(), p_to, round(p_amount, 2), coalesce(p_method, 'transfer'))
+  returning * into v_row;
+  return v_row;
+end $$;
+
+-- Quien recibe confirma ("Recibido") o rechaza ("No me llegó"); quien la envió puede anularla mientras no se confirme.
+create or replace function public.respond_settlement(p_settlement uuid, p_received boolean)
+returns public.squad_settlements language plpgsql security definer set search_path = public, extensions as $$
+declare v_row public.squad_settlements;
+begin
+  select * into v_row from public.squad_settlements where id = p_settlement for update;
+  if not found or (v_row.to_user <> auth.uid() and not (v_row.from_user = auth.uid() and not p_received)) then raise exception 'forbidden'; end if;
+  if v_row.confirmed_at is not null then raise exception 'already_confirmed'; end if;
+  if p_received then
+    update public.squad_settlements set confirmed_at = now() where id = p_settlement returning * into v_row;
+    return v_row;
+  end if;
+  delete from public.squad_settlements where id = p_settlement;
+  return null;
 end $$;
 
 -- Sectores visitados (alimenta el filtro post-fiesta "Coincidieron en tu zona")
@@ -1256,6 +1540,7 @@ begin
   select * into v_o from public.bar_orders where id = p_order for update;
   if not found then raise exception 'not_found'; end if;
   if not public.can_operate_bar(v_o.event_id) then raise exception 'forbidden'; end if;
+  if v_o.payment_status = 'awaiting_payment' then raise exception 'not_paid'; end if;
   v_flow := case when v_o.delivery_type = 'pin_delivery'
                  then array['pending','preparing','delivering','completed']::bar_order_status_t[]
                  else array['pending','preparing','ready_qr','completed']::bar_order_status_t[] end;
@@ -1274,6 +1559,7 @@ begin
   select * into v_o from public.bar_orders where event_id = p_event and upper(pickup_code) = v_code for update;
   if not found then raise exception 'not_found'; end if;
   if v_o.status = 'completed' then raise exception 'already_delivered'; end if;
+  if v_o.payment_status = 'awaiting_payment' then raise exception 'not_paid'; end if;
   if v_o.status <> 'ready_qr' then raise exception 'not_ready'; end if;
   update public.bar_orders set status = 'completed' where id = v_o.id returning * into v_o;
   return v_o;
@@ -1512,11 +1798,13 @@ grant execute on all functions in schema public to authenticated;
 -- Postgres concede EXECUTE a PUBLIC por defecto: las funciones internas se cierran también para PUBLIC.
 revoke execute on function public.purge_expired_pins() from public, anon, authenticated;
 revoke execute on function public.apply_squad_perk_rules(uuid) from public, anon, authenticated;
+revoke execute on function public.apply_order_spend(public.bar_orders) from public, anon, authenticated;
 grant execute on function public.resolve_access_code(text) to anon;
 -- API v1: solo el servidor (route handlers con service role) usa estas funciones.
 do $$ declare f text; begin
   foreach f in array array['public.api_authorize(uuid, uuid, text)', 'public.api_key_events(uuid)',
-                           'public.api_issue_codes(uuid, uuid, int, jsonb, text)', 'public.api_revoke_code(uuid, uuid, text)'] loop
+                           'public.api_issue_codes(uuid, uuid, int, jsonb, text)', 'public.api_revoke_code(uuid, uuid, text)',
+                           'public.confirm_order_payment(uuid, text, numeric)'] loop
     execute format('revoke execute on function %s from public, anon, authenticated', f);
     if exists (select 1 from pg_roles where rolname = 'service_role') then execute format('grant execute on function %s to service_role', f); end if;
   end loop;
@@ -1529,7 +1817,8 @@ do $$
 declare t text;
 begin
   foreach t in array array['messages','map_pins','connections','squad_members','squads','blast_deliveries',
-                           'user_perks_qrs','bar_orders','song_requests','raffles','event_attendees'] loop
+                           'user_perks_qrs','bar_orders','song_requests','raffles','event_attendees',
+                           'brands','squad_expenses','squad_settlements'] loop
     begin
       execute format('alter publication supabase_realtime add table public.%I', t);
     exception when duplicate_object then null; when undefined_object then null;

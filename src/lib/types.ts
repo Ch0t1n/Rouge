@@ -109,6 +109,36 @@ export interface VenueLayout {
   sectors: VenueSector[];
 }
 
+// ── Marcas (productoras / fiestas) ─────────────────────────────────
+
+/**
+ * Marca de una productora o fiesta: logo y colores que personalizan la app de sus eventos,
+ * y la cuenta de cobro (Mercado Pago). Los datos visibles son públicos (la pantalla de /join los usa sin sesión).
+ */
+export interface Brand {
+  id: UUID;
+  owner_id: UUID;
+  name: string;
+  logo_url: string | null;
+  /** #RRGGBB. Reemplaza al rouge (botones, matches). null = colores de ROUGE. */
+  primary_color: string | null;
+  /** #RRGGBB. Reemplaza al dorado (barra, perks, Mesa VIP). null = colores de ROUGE. */
+  accent_color: string | null;
+  /** Cobros online activos (lo escribe SOLO el servidor al conectar/desconectar Mercado Pago). */
+  payments_enabled: boolean;
+  created_at: ISODate;
+}
+
+/** Cuenta de cobro conectada de una marca, SIN tokens (solo la ve su dueño/a: RPC my_brand_payments). */
+export interface BrandPaymentAccount {
+  brand_id: UUID;
+  provider: "mercadopago";
+  /** Apodo o email de la cuenta de Mercado Pago. */
+  account_label: string;
+  live_mode: boolean;
+  connected_at: ISODate;
+}
+
 export interface RougeEvent {
   id: UUID;
   slug: string;
@@ -127,6 +157,13 @@ export interface RougeEvent {
   master_invite_code: string;
   created_by: UUID | null;
   created_at: ISODate;
+  /** Marca del evento (logo, colores y cuenta de cobro). Tiene que ser de quien creó el evento. */
+  brand_id: UUID | null;
+  /** Logo de esta edición (si no, el de la marca). */
+  logo_url: string | null;
+  /** Colores de esta edición (si no, los de la marca; si no, los de ROUGE). */
+  theme_primary: string | null;
+  theme_accent: string | null;
 }
 
 /** Equipo del evento (tabla `event_staff`). Quien crea el evento es "owner" aunque no tenga fila. */
@@ -367,6 +404,13 @@ export interface BarOrderItem {
   unit_price: number;
 }
 
+/**
+ * pay_at_bar: el evento no cobra online (se paga al retirar, como siempre).
+ * awaiting_payment: la marca cobra con Mercado Pago y el pago todavía no se acreditó (la barra no lo prepara).
+ * paid: pago acreditado (lo confirma el servidor con la API de Mercado Pago).
+ */
+export type PaymentStatus = "pay_at_bar" | "awaiting_payment" | "paid";
+
 export interface BarOrder {
   id: UUID;
   event_id: UUID;
@@ -375,14 +419,54 @@ export interface BarOrder {
   delivery_type: DeliveryType;
   items_json: BarOrderItem[];
   total_amount: number;
-  split_user_ids: UUID[]; // Vaquita de Squad
+  split_user_ids: UUID[]; // Vaquita / compartido: quiénes lo consumen (cuentas de la mesa)
   pickup_code: string | null;
   pin_coord_x: number | null;
   pin_coord_y: number | null;
   sector_name: string | null;
   status: BarOrderStatus;
+  payment_status: PaymentStatus;
+  /** Id del pago en Mercado Pago (o "demo-…" en el Modo Demo). */
+  payment_ref: string | null;
+  paid_at: ISODate | null;
   created_at: ISODate;
   updated_at: ISODate;
+}
+
+// ── Cuentas de la mesa ───────────────────────────────────────────────
+
+/** Gasto cargado a mano por un integrante del Squad (mesa, entradas, taxi…). */
+export interface SquadExpense {
+  id: UUID;
+  squad_id: UUID;
+  event_id: UUID;
+  paid_by: UUID;
+  description: string;
+  amount: number;
+  /** Quiénes lo comparten (partes iguales). */
+  participant_ids: UUID[];
+  created_at: ISODate;
+}
+
+export type SettlementMethod = "mercadopago" | "transfer" | "cash";
+
+/** Transferencia entre integrantes para saldar la cuenta ("Ya te pagué"). La confirma quien recibe. */
+export interface SquadSettlement {
+  id: UUID;
+  squad_id: UUID;
+  event_id: UUID;
+  from_user: UUID;
+  to_user: UUID;
+  amount: number;
+  method: SettlementMethod;
+  confirmed_at: ISODate | null;
+  created_at: ISODate;
+}
+
+/** Alias o CBU/CVU para que el Squad te transfiera (solo lo ven quienes comparten un Squad con vos). */
+export interface PayoutAlias {
+  user_id: UUID;
+  alias: string;
 }
 
 // ── Estado global ────────────────────────────────────────────────────
@@ -408,6 +492,9 @@ export interface RougeState {
   instagram_links: InstagramLink[];
   user_blocks: UserBlock[];
   events: RougeEvent[];
+  brands: Brand[];
+  /** Cuentas de cobro de MIS marcas (sin tokens). */
+  brand_payment_accounts: BrandPaymentAccount[];
   event_staff: EventStaff[];
   event_invite_codes: EventInviteCode[];
   /** Mis claves de la API (Supabase: solo las que creé). */
@@ -425,6 +512,9 @@ export interface RougeState {
   song_requests: SongRequest[];
   bar_menu: BarMenuItem[];
   bar_orders: BarOrder[];
+  squad_expenses: SquadExpense[];
+  squad_settlements: SquadSettlement[];
+  payout_aliases: PayoutAlias[];
   /** Solo staff en Modo Supabase: conteos de conexiones (que son privadas por RLS). */
   admin_stats?: AdminStats | null;
 }

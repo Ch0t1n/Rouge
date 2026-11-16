@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createSeedState, DEMO_IDS } from "@/lib/mock/seed";
 import * as A from "./actions";
 import { crmRows, liveWallData } from "./analytics";
+import { confirmOrderPayment } from "./payments";
 
 const NOW = Date.parse("2026-11-14T03:00:00.000Z");
 const EV = DEMO_IDS.event;
@@ -37,6 +38,10 @@ describe("barra / POS", () => {
     let s = createSeedState(NOW);
     const o = ok(A.createBarOrder(s, EV, DEMO_IDS.me, [{ itemId: "gin", qty: 1 }], "fast_pickup", NOW));
     s = o.state;
+    // La marca del seed cobra con Mercado Pago: sin pago, la barra no lo prepara ni lo entrega.
+    expect(o.data.payment_status).toBe("awaiting_payment");
+    expect(A.setOrderStatus(s, o.data.id, "preparing", NOW).ok).toBe(false);
+    s = ok(confirmOrderPayment(s, o.data.id, "mp-1", o.data.total_amount, NOW)).state;
     expect(A.redeemPickupCode(s, EV, o.data.pickup_code!, NOW).ok).toBe(false); // pending
     s = ok(A.setOrderStatus(s, o.data.id, "preparing", NOW)).state;
     s = ok(A.setOrderStatus(s, o.data.id, "ready_qr", NOW)).state;

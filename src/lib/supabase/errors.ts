@@ -44,6 +44,20 @@ const MESSAGES: Record<string, string> = {
   ig_not_connected: "Conectá tu Instagram primero.",
   ig_token_invalid: "Tu conexión con Instagram venció. Volvé a conectarla.",
   ig_api_error: "Instagram no respondió. Probá en un rato.",
+  not_paid: "El pedido todavía no está pago.",
+  split_not_member: "Solo podés compartirlo con integrantes de tu Squad.",
+  split_required: "Elegí con quién lo compartís.",
+  invalid_expense: "Contá en qué fue el gasto (máximo 60 caracteres).",
+  invalid_amount: "Ingresá un monto válido.",
+  invalid_settlement: "No te podés transferir a vos.",
+  already_confirmed: "Esa transferencia ya está confirmada.",
+  brand_not_owned: "Esa marca no es de quien creó el evento.",
+  not_online_payment: "Este pedido se paga en la barra.",
+  amount_mismatch: "El monto pagado no coincide con el pedido.",
+  mp_not_configured: "Los cobros con Mercado Pago todavía no están activados en este sitio.",
+  mp_token_invalid: "La conexión con Mercado Pago venció. Volvé a conectarla.",
+  mp_not_connected: "La marca no tiene Mercado Pago conectado.",
+  mp_api_error: "Mercado Pago no respondió. Probá en un rato.",
 };
 
 export interface SupabaseLikeError {

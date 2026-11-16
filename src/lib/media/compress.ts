@@ -8,6 +8,8 @@ export const IMAGE_PRESETS = {
   profile: { maxSizeMB: 0.25, maxWidthOrHeight: 1080 },
   /** Fotos enviadas por chat */
   chat: { maxSizeMB: 0.18, maxWidthOrHeight: 1280 },
+  /** Logo de marca/evento (se muestra chico; WebP conserva la transparencia) */
+  logo: { maxSizeMB: 0.12, maxWidthOrHeight: 640 },
   /** Plano de la discoteca (admin) — necesita más detalle */
   venueMap: { maxSizeMB: 0.6, maxWidthOrHeight: 2400 },
 } as const;

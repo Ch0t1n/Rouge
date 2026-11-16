@@ -39,12 +39,13 @@ interface VenueMapProps {
 const W = 300;
 
 const SECTOR_STYLE: Record<VenueSector["kind"], { fill: string; stroke: string; label: string }> = {
-  dancefloor: { fill: "rgba(255,30,86,0.07)", stroke: "rgba(255,30,86,0.55)", label: "#FF7A9A" },
+  // Pista, cabina y VIP siguen los colores de la marca (variables CSS): se aplican con style, no con atributos SVG.
+  dancefloor: { fill: "rgb(var(--c-rouge) / 0.07)", stroke: "rgb(var(--c-rouge) / 0.55)", label: "color-mix(in srgb, rgb(var(--c-rouge)) 62%, white)" },
   bar: { fill: "rgba(0,240,255,0.06)", stroke: "rgba(0,240,255,0.5)", label: "#7DF7FF" },
-  vip: { fill: "rgba(255,184,0,0.07)", stroke: "rgba(255,184,0,0.6)", label: "#FFD466" },
+  vip: { fill: "rgb(var(--c-vip) / 0.07)", stroke: "rgb(var(--c-vip) / 0.6)", label: "color-mix(in srgb, rgb(var(--c-vip)) 70%, white)" },
   outdoor: { fill: "rgba(148,163,184,0.05)", stroke: "rgba(148,163,184,0.35)", label: "#94A3B8" },
   entrance: { fill: "rgba(248,250,252,0.04)", stroke: "rgba(248,250,252,0.3)", label: "#CBD5E1" },
-  booth: { fill: "rgba(255,30,86,0.14)", stroke: "rgba(255,30,86,0.8)", label: "#FFFFFF" },
+  booth: { fill: "rgb(var(--c-rouge) / 0.14)", stroke: "rgb(var(--c-rouge) / 0.8)", label: "#FFFFFF" },
   restroom: { fill: "rgba(148,163,184,0.05)", stroke: "rgba(148,163,184,0.25)", label: "#94A3B8" },
   lounge: { fill: "rgba(148,163,184,0.04)", stroke: "rgba(148,163,184,0.28)", label: "#94A3B8" },
 };
@@ -246,11 +247,11 @@ export function VenueMap({
                 <path d="M10 0H0V10" fill="none" stroke="rgba(255,255,255,0.035)" strokeWidth="0.6" />
               </pattern>
               <pattern id="vm-floor" width="14" height="14" patternUnits="userSpaceOnUse">
-                <rect width="14" height="14" fill="none" stroke="rgba(255,30,86,0.10)" strokeWidth="0.5" />
+                <rect width="14" height="14" fill="none" style={{ stroke: "rgb(var(--c-rouge) / 0.1)" }} strokeWidth="0.5" />
               </pattern>
               <radialGradient id="vm-floor-glow" cx="50%" cy="20%" r="80%">
-                <stop offset="0" stopColor="rgba(255,30,86,0.22)" />
-                <stop offset="1" stopColor="rgba(255,30,86,0)" />
+                <stop offset="0" style={{ stopColor: "rgb(var(--c-rouge) / 0.22)" }} />
+                <stop offset="1" style={{ stopColor: "rgb(var(--c-rouge) / 0)" }} />
               </radialGradient>
               <filter id="vm-neon" x="-20%" y="-20%" width="140%" height="140%">
                 <feGaussianBlur stdDeviation="1.6" result="b" />
@@ -273,7 +274,7 @@ export function VenueMap({
                 const hl = highlightSector === s.name;
                 return (
                   <g key={s.id}>
-                    <rect x={x} y={y} width={w} height={h} rx={6} fill={st.fill} stroke={st.stroke} strokeWidth={hl ? 1.8 : 0.9} filter={s.kind === "booth" || hl ? "url(#vm-neon)" : undefined} />
+                    <rect x={x} y={y} width={w} height={h} rx={6} style={{ fill: st.fill, stroke: st.stroke }} strokeWidth={hl ? 1.8 : 0.9} filter={s.kind === "booth" || hl ? "url(#vm-neon)" : undefined} />
                     {s.kind === "dancefloor" && (
                       <>
                         <rect x={x} y={y} width={w} height={h} rx={6} fill="url(#vm-floor)" />
@@ -283,23 +284,22 @@ export function VenueMap({
                     {s.kind === "bar" && <line x1={x + 6} y1={y + h - 4} x2={x + w - 6} y2={y + h - 4} stroke={st.stroke} strokeWidth={2.2} strokeLinecap="round" />}
                     {s.kind === "vip" &&
                       [0, 1, 2].map((i) => (
-                        <circle key={i} cx={x + w / 2} cy={y + h * (0.28 + i * 0.26)} r={Math.min(w, h) * 0.12} fill="none" stroke="rgba(255,184,0,0.45)" strokeWidth={0.8} />
+                        <circle key={i} cx={x + w / 2} cy={y + h * (0.28 + i * 0.26)} r={Math.min(w, h) * 0.12} fill="none" style={{ stroke: "rgb(var(--c-vip) / 0.45)" }} strokeWidth={0.8} />
                       ))}
                     {s.kind === "booth" &&
                       [0, 1, 2, 3, 4, 5, 6].map((i) => (
-                        <rect key={i} x={x + w * 0.2 + i * (w * 0.6) / 7} y={y + h * 0.55 - ((i * 37) % 5) * 1.6} width={w * 0.05} height={2 + ((i * 37) % 5) * 1.6} fill="rgba(255,30,86,0.8)" rx={0.6} />
+                        <rect key={i} x={x + w * 0.2 + i * (w * 0.6) / 7} y={y + h * 0.55 - ((i * 37) % 5) * 1.6} width={w * 0.05} height={2 + ((i * 37) % 5) * 1.6} style={{ fill: "rgb(var(--c-rouge) / 0.8)" }} rx={0.6} />
                       ))}
                     {s.kind === "entrance" && <path d={`M${x + w / 2 - 6} ${y + h - 6} L${x + w / 2} ${y + 6} L${x + w / 2 + 6} ${y + h - 6}`} fill="none" stroke={st.stroke} strokeWidth={1.2} />}
                     <text
                       x={x + (s.kind === "booth" ? w / 2 : 6)}
                       y={y + (s.kind === "booth" ? h * 0.38 : labelAtBottom.has(s.id) ? h - 5 : 11)}
                       textAnchor={s.kind === "booth" ? "middle" : "start"}
-                      fill={st.label}
                       fontSize={Math.min(s.kind === "dancefloor" ? 9 : 6.4, (w - 10) / (s.name.length * 0.7))}
                       fontFamily="var(--font-display)"
                       fontWeight={700}
                       letterSpacing="0.04em"
-                      style={{ textTransform: "uppercase" }}
+                      style={{ textTransform: "uppercase", fill: st.label }}
                     >
                       {s.name}
                     </text>
@@ -322,7 +322,7 @@ export function VenueMap({
 
           {pins.map((vp) => {
             const tone = vp.pin.is_rescue_alert ? "rescue" : vp.audience === "match" ? "rouge" : vp.audience === "squad" ? "squad" : "self";
-            const color = { rescue: "bg-rouge", rouge: "bg-rouge", squad: "bg-squad", self: "bg-white" }[tone];
+            const color = { rescue: "bg-sos", rouge: "bg-rouge", squad: "bg-squad", self: "bg-white" }[tone];
             const ring = { rescue: "rouge", rouge: "rouge", squad: "squad", self: "none" }[tone] as "rouge" | "squad" | "none";
             return (
               <MapMarker key={vp.pin.id} x={vp.pin.coord_x} y={vp.pin.coord_y} z={view.z} nudge={nudge.get(vp.pin.id)}>
@@ -337,7 +337,7 @@ export function VenueMap({
                   <span className="relative">
                     <Avatar profile={vp.profile} size={tone === "rescue" ? 40 : 34} ring={ring} className={tone === "self" ? "ring-2 ring-white" : undefined} />
                     {tone === "rescue" && (
-                      <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-rouge text-white ring-2 ring-background">
+                      <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-sos text-white ring-2 ring-background">
                         <Siren className="size-3" />
                       </span>
                     )}
@@ -346,7 +346,7 @@ export function VenueMap({
                     <span
                       className={cn(
                         "mt-1 whitespace-nowrap rounded-full px-1.5 py-0.5 font-display text-[10px] font-bold",
-                        tone === "squad" ? "bg-squad text-background" : tone === "self" ? "bg-white text-background" : "bg-rouge text-white",
+                        tone === "squad" ? "bg-squad text-background" : tone === "self" ? "bg-white text-background" : tone === "rescue" ? "bg-sos text-white" : "bg-rouge text-white",
                       )}
                     >
                       {tone === "self" ? "Vos" : vp.profile.full_name.split(" ")[0]} · {vp.minutesLeft}m

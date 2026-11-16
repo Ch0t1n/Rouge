@@ -6,6 +6,7 @@ import * as S from "./selectors";
 import { crmRows } from "./analytics";
 import { musicAffinity } from "./affinity";
 import { parseInstagram } from "./profile";
+import { confirmOrderPayment } from "./payments";
 const { upsertProfile, linkInstagram, unlinkInstagram } = A;
 
 const NOW = Date.parse("2026-11-14T03:00:00.000Z");
@@ -197,7 +198,10 @@ describe("B2B", () => {
     const before = S.getAttendee(s, EV, id(2))!.total_spent;
     const r = unwrap(A.createBarOrder(s, EV, ME, [{ itemId: "champagne", qty: 1 }], "squad_split", NOW));
     expect(r.data.split_user_ids).toHaveLength(4);
-    expect(S.getAttendee(r.state, EV, id(2))!.total_spent).toBe(before + 15000);
+    // Con cobro online, el gasto se suma cuando se acredita el pago (no al pedir).
+    expect(S.getAttendee(r.state, EV, id(2))!.total_spent).toBe(before);
+    const paid = unwrap(confirmOrderPayment(r.state, r.data.id, "mp-1", r.data.total_amount, NOW));
+    expect(S.getAttendee(paid.state, EV, id(2))!.total_spent).toBe(before + 15000);
   });
 });
 

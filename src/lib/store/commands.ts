@@ -13,6 +13,9 @@ import type { ApiKey, BarOrder, Connection, EventAttendee, EventInviteCode, Mood
 import * as A from "@/lib/engine/actions";
 import type { Result } from "@/lib/engine/actions";
 import { can, NO_PERMISSION, type Permission } from "@/lib/engine/roles";
+import * as B from "@/lib/engine/branding";
+import * as P from "@/lib/engine/payments";
+import * as T from "@/lib/engine/settle";
 
 export interface Command<T> {
   name: string;
@@ -333,13 +336,36 @@ export const createBarOrder = (
   userId: UUID,
   cart: { itemId: string; qty: number }[],
   delivery: Exclude<BarOrder["delivery_type"], "icebreaker_gift">,
+  splitWith: UUID[] = [],
 ): Command<BarOrder> => ({
   name: "createBarOrder",
-  optimistic: false, // el código de retiro (QR) lo genera el servidor
-  local: (s) => A.createBarOrder(s, eventId, userId, cart, delivery),
+  optimistic: false, // el código de retiro (QR) y el estado de pago los fija el servidor
+  local: (s) => A.createBarOrder(s, eventId, userId, cart, delivery, Date.now(), { splitWith }),
   // El servidor fija precios y código de retiro: se usa SU pedido (el QR tiene que coincidir).
   remote: async (sb) =>
-    rpc<BarOrder>(sb, "create_bar_order", { p_event: eventId, p_items: cart.map((c) => ({ item_id: c.itemId, qty: c.qty })), p_delivery: delivery }),
+    rpc<BarOrder>(sb, "create_bar_order", {
+      p_event: eventId,
+      p_items: cart.map((c) => ({ item_id: c.itemId, qty: c.qty })),
+      p_delivery: delivery,
+      p_split: splitWith.length ? splitWith : null,
+    }),
+});
+
+/** Modo Demo: el checkout simulado de Mercado Pago acredita el pago (en Supabase lo hace SOLO el servidor). */
+export const payOrderDemo = (orderId: UUID): Command<BarOrder> => ({
+  name: "payOrderDemo",
+  local: (s) => {
+    const o = s.bar_orders.find((x) => x.id === orderId);
+    return o ? P.confirmOrderPayment(s, orderId, `demo-${Date.now().toString(36)}`, o.total_amount) : { ok: false, error: "Pedido inexistente." };
+  },
+});
+
+export const cancelUnpaidOrder = (orderId: UUID, userId: UUID): Command<undefined> => ({
+  name: "cancelUnpaidOrder",
+  local: (s) => P.cancelUnpaidOrder(s, orderId, userId),
+  remote: async (sb) => {
+    await rpc(sb, "cancel_unpaid_order", { p_order: orderId });
+  },
 });
 
 /** `simulate`: botón "Simular barra" del Modo Demo (lo aprieta el asistente para probar el flujo). */
@@ -439,6 +465,10 @@ export const upsertEvent = (input: Parameters<typeof A.upsertEvent>[1]): Command
       lobby_opens_at: e.lobby_opens_at,
       lobby_expires_at: e.lobby_expires_at,
       max_capacity: e.max_capacity,
+      brand_id: e.brand_id,
+      logo_url: e.logo_url,
+      theme_primary: e.theme_primary,
+      theme_accent: e.theme_accent,
       ...(isNew ? { master_invite_code: e.master_invite_code, created_by: e.created_by } : {}),
     };
     if (isNew) {
@@ -509,5 +539,80 @@ export const revokeApiKey = (keyId: UUID): Command<undefined> => ({
   local: (s) => A.revokeApiKey(s, s.current_user_id, keyId),
   remote: async (sb) => {
     await rpc(sb, "revoke_api_key", { p_id: keyId });
+  },
+});
+
+// ── Marca y cobros ───────────────────────────────────────────────────
+
+/** Crear o editar una marca propia (logo + colores). payments_enabled no se escribe desde el cliente. */
+export const upsertBrand = (input: B.BrandInput): Command<RougeState["brands"][number]> => ({
+  name: "upsertBrand",
+  local: (s) => B.upsertBrand(s, s.current_user_id, input),
+  remote: async (sb, b, before) => {
+    const fields = { name: b.name, logo_url: b.logo_url, primary_color: b.primary_color, accent_color: b.accent_color };
+    if (before.brands.some((x) => x.id === b.id)) must(await sb.from("brands").update(fields).eq("id", b.id));
+    else must(await sb.from("brands").insert({ id: b.id, owner_id: b.owner_id, ...fields }));
+  },
+});
+
+/** Modo Demo: simula conectar Mercado Pago (en Supabase lo hace el OAuth de /api/mercadopago, solo servidor). */
+export const connectPaymentsDemo = (brandId: UUID): Command<RougeState["brand_payment_accounts"][number]> => ({
+  name: "connectPaymentsDemo",
+  local: (s) => P.connectPaymentsDemo(s, s.current_user_id, brandId),
+});
+
+/** Desconecta la cuenta de cobro: el servidor borra los tokens y apaga payments_enabled. */
+export const disconnectPayments = (brandId: UUID): Command<undefined> => ({
+  name: "disconnectPayments",
+  local: (s) => P.disconnectPayments(s, s.current_user_id, brandId),
+  remote: async () => {
+    const { disconnectMercadoPago } = await import("@/lib/payments/client");
+    await disconnectMercadoPago(brandId);
+  },
+});
+
+// ── Cuentas de la mesa ───────────────────────────────────────────────
+
+export const addSquadExpense = (squadId: UUID, userId: UUID, input: T.ExpenseInput): Command<RougeState["squad_expenses"][number]> => ({
+  name: "addSquadExpense",
+  local: (s) => T.addSquadExpense(s, squadId, userId, input),
+  remote: async (sb) =>
+    rpc<RougeState["squad_expenses"][number]>(sb, "add_squad_expense", {
+      p_squad: squadId,
+      p_description: input.description.trim(),
+      p_amount: input.amount,
+      p_participants: input.participantIds,
+    }),
+});
+
+export const deleteSquadExpense = (expenseId: UUID, userId: UUID): Command<undefined> => ({
+  name: "deleteSquadExpense",
+  local: (s) => T.deleteSquadExpense(s, expenseId, userId),
+  remote: async (sb) => {
+    must(await sb.from("squad_expenses").delete().eq("id", expenseId));
+  },
+});
+
+export const recordSettlement = (squadId: UUID, fromUser: UUID, toUser: UUID, amount: number, method: RougeState["squad_settlements"][number]["method"]): Command<RougeState["squad_settlements"][number]> => ({
+  name: "recordSettlement",
+  local: (s) => T.recordSettlement(s, squadId, fromUser, toUser, amount, method),
+  remote: async (sb) => rpc<RougeState["squad_settlements"][number]>(sb, "record_settlement", { p_squad: squadId, p_to: toUser, p_amount: amount, p_method: method }),
+});
+
+export const respondSettlement = (settlementId: UUID, userId: UUID, received: boolean): Command<RougeState["squad_settlements"][number] | null> => ({
+  name: "respondSettlement",
+  local: (s) => T.respondSettlement(s, settlementId, userId, received),
+  remote: async (sb) => {
+    await rpc(sb, "respond_settlement", { p_settlement: settlementId, p_received: received });
+  },
+});
+
+/** Mi alias o CBU/CVU para cobrar (vacío = lo borra). */
+export const setPayoutAlias = (userId: UUID, raw: string): Command<RougeState["payout_aliases"][number] | null> => ({
+  name: "setPayoutAlias",
+  local: (s) => T.setPayoutAlias(s, userId, raw),
+  remote: async (sb, row) => {
+    if (row) must(await sb.from("payout_aliases").upsert({ user_id: userId, alias: row.alias }, { onConflict: "user_id" }));
+    else must(await sb.from("payout_aliases").delete().eq("user_id", userId));
   },
 });

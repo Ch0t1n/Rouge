@@ -2,12 +2,15 @@
 
 import * as C from "@/lib/store/commands";
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import { Check, ChefHat, Minus, Plus, ShoppingBag } from "lucide-react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Check, ChefHat, Minus, Plus, ShoppingBag, Users, Wallet, X } from "lucide-react";
 import type { BarMenuItem, BarOrder, DeliveryType } from "@/lib/types";
-import { ORDER_FLOW, createBarOrder, nextOrderStatus, setOrderStatus } from "@/lib/engine/actions";
+import { ORDER_FLOW, nextOrderStatus } from "@/lib/engine/actions";
+import { eventChargesOnline } from "@/lib/engine/payments";
+import { MP_ENABLED, mpErrorMessage, payWithMercadoPago, syncOrderPayment } from "@/lib/payments/client";
 import { DELIVERY_META, orderQrValue, STATUS_META } from "@/lib/engine/bar";
-import { activeEvent, activePinOf, getAttendee, isLobbyInteractive, ordersOf, squadMembers, squadOf } from "@/lib/engine/selectors";
+import { activeEvent, activePinOf, getAttendee, getProfile, isLobbyInteractive, ordersOf, squadMembers, squadOf } from "@/lib/engine/selectors";
 import { useNow, useRouge } from "@/lib/store/RougeContext";
 import { useRequireProfile } from "@/lib/store/hooks";
 import { cn, formatMoney, formatTime } from "@/lib/utils";
@@ -15,6 +18,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { QrBlock } from "@/components/perks/QrCard";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
+import { Avatar } from "@/components/ui/avatar";
 
 const CATEGORIES: { id: BarMenuItem["category"]; label: string }[] = [
   { id: "trago", label: "Tragos" },
@@ -24,16 +28,21 @@ const CATEGORIES: { id: BarMenuItem["category"]; label: string }[] = [
   { id: "botella", label: "Botellas VIP" },
 ];
 
-type UserDelivery = Exclude<DeliveryType, "icebreaker_gift">;
+/** El "compartido" es aparte (con quién se divide): acá solo se elige cómo llega. */
+type UserDelivery = Extract<DeliveryType, "fast_pickup" | "pin_delivery">;
 
 export default function BarPage() {
   const me = useRequireProfile();
   if (!me) return null;
-  return <Bar />;
+  return (
+    <Suspense>
+      <Bar />
+    </Suspense>
+  );
 }
 
 function Bar() {
-  const { state, exec, notify, mode } = useRouge();
+  const { state, exec, notify, mode, refresh } = useRouge();
   const now = useNow(15_000);
   const event = activeEvent(state)!;
   const meId = state.current_user_id;
@@ -41,16 +50,24 @@ function Bar() {
   const [cart, setCart] = useState<Record<string, number>>({});
   const [checkout, setCheckout] = useState(false);
   const [delivery, setDelivery] = useState<UserDelivery>("fast_pickup");
+  const [splitWith, setSplitWith] = useState<string[]>([]);
   const [qrOrder, setQrOrder] = useState<BarOrder | null>(null);
+  const [payOrder, setPayOrder] = useState<BarOrder | null>(null); // checkout simulado (Modo Demo)
+  const [busy, setBusy] = useState(false);
 
   const mine = squadOf(state, event.id, meId);
+  const members = mine ? squadMembers(state, mine.squad.id) : [];
   const pin = activePinOf(state, event.id, meId, now);
   const vipBase = mine?.squad.has_vip_table_to_share && mine.squad.base_pin_x != null;
+  const online = eventChargesOnline(state, event.id);
   const orders = ordersOf(state, meId, event.id);
   const active = orders.filter((o) => o.status !== "completed");
   const lines = useMemo(() => state.bar_menu.filter((i) => cart[i.id]).map((i) => ({ item: i, qty: cart[i.id] })), [cart, state.bar_menu]);
   const total = lines.reduce((a, l) => a + l.item.price * l.qty, 0);
-  const splitN = mine ? squadMembers(state, mine.squad.id).length : 1;
+  const sharing = splitWith.some((u) => u !== meId);
+  const each = sharing ? Math.round(total / splitWith.length) : total;
+
+  useReturnFromCheckout(mode, notify, refresh);
 
   if (!attendee || !isLobbyInteractive(event, now)) {
     return (
@@ -68,11 +85,6 @@ function Bar() {
       available: !!pin || !!vipBase,
       detail: pin ? `A tu pin en ${pin.sector_name ?? "el plano"}` : vipBase ? `A la mesa: ${mine!.squad.base_pin_label}` : "Necesitás un pin activo en el plano o Mesa VIP con Punto Base.",
     },
-    {
-      id: "squad_split",
-      available: !!mine && splitN > 1,
-      detail: mine ? `${formatMoney(Math.round(total / splitN))} c/u entre ${splitN} del Squad` : "Necesitás un Squad.",
-    },
   ];
 
   const set = (id: string, qty: number) => setCart((c) => {
@@ -82,26 +94,65 @@ function Bar() {
     return next;
   });
 
-  const pay = async () => {
-    const r = await exec(
-      C.createBarOrder(event.id, meId, Object.entries(cart).map(([itemId, qty]) => ({ itemId, qty })), delivery),
-    );
+  const toggleSplit = (uid: string) =>
+    setSplitWith((cur) => {
+      const base = cur.length ? cur : [meId];
+      const next = base.includes(uid) ? base.filter((x) => x !== uid) : [...base, uid];
+      return next.some((x) => x !== meId) ? next : [];
+    });
+
+  /** Paga un pedido que espera pago: checkout real de Mercado Pago o, en demo, el simulado. */
+  const pay = async (order: BarOrder) => {
+    if (mode === "demo") return setPayOrder(order);
+    if (!MP_ENABLED) return notify({ tone: "rouge", title: "Pago no disponible", description: "Los cobros online no están activados en este sitio." });
+    setBusy(true);
+    try {
+      await payWithMercadoPago(order.id);
+    } catch (e) {
+      setBusy(false);
+      notify({ tone: "rouge", title: "No se pudo abrir Mercado Pago", description: mpErrorMessage(e) });
+    }
+  };
+
+  const order = async () => {
+    const delivered = sharing && delivery === "fast_pickup" ? "squad_split" : delivery;
+    const r = await exec(C.createBarOrder(event.id, meId, Object.entries(cart).map(([itemId, qty]) => ({ itemId, qty })), delivered, sharing ? splitWith : []));
     if (!r.ok) return;
     setCart({});
+    setSplitWith([]);
     setCheckout(false);
-    notify({ tone: "vip", title: "🧾 Pedido enviado a la barra", description: delivery === "pin_delivery" ? "Te lo llevan a tu ubicación." : "Te avisamos cuando esté listo para retirar." });
+    if (r.data.payment_status === "awaiting_payment") return pay(r.data);
+    notify({ tone: "vip", title: "🧾 Pedido enviado a la barra", description: delivery === "pin_delivery" ? "Te lo llevan a tu ubicación. Pagás al recibirlo." : "Pagás al retirar. Te avisamos cuando esté listo." });
+    if (r.data.pickup_code) setQrOrder(r.data);
+  };
+
+  const confirmDemoPayment = async () => {
+    if (!payOrder) return;
+    const r = await exec(C.payOrderDemo(payOrder.id));
+    setPayOrder(null);
+    if (!r.ok) return;
+    // El aviso "Pago acreditado" lo muestra LiveNotifications (igual que cuando llega por el webhook).
     if (r.data.pickup_code) setQrOrder(r.data);
   };
 
   return (
     <main className="pb-32">
-      <PageHeader title="Barra Express" subtitle="Pedí sin hacer fila" backHref="/app" />
+      <PageHeader title="Barra Express" subtitle={online ? "Pedí y pagá con Mercado Pago, sin fila" : "Pedí sin hacer fila"} backHref="/app" />
       <div className="space-y-5 px-4">
         {active.map((o) => (
-          <OrderCard key={o.id} order={o} meId={meId} onQr={() => setQrOrder(o)} onSimulate={mode === "demo" ? () => {
-            const next = nextOrderStatus(o);
-            if (next) void exec(C.advanceOrder(o, { simulate: true }));
-          } : undefined} />
+          <OrderCard
+            key={o.id}
+            order={o}
+            meId={meId}
+            onQr={() => setQrOrder(o)}
+            onPay={() => pay(o)}
+            onCancel={() => exec(C.cancelUnpaidOrder(o.id, meId))}
+            payBusy={busy}
+            onSimulate={mode === "demo" ? () => {
+              const next = nextOrderStatus(o);
+              if (next) void exec(C.advanceOrder(o, { simulate: true }));
+            } : undefined}
+          />
         ))}
 
         {CATEGORIES.map((cat) => {
@@ -137,6 +188,12 @@ function Bar() {
           );
         })}
 
+        {mine && (
+          <Link href="/squad/cuentas" className="glass flex items-center gap-3 rounded-2xl p-4 text-sm">
+            <span className="text-2xl">🧾</span>
+            <span className="flex-1"><b>Cuentas de la mesa:</b> lo que comparten con el Squad se suma solo, y al final te decimos quién le transfiere a quién.</span>
+          </Link>
+        )}
         <Link href="/lobby" className="glass flex items-center gap-3 rounded-2xl p-4 text-sm">
           <span className="text-2xl">🍸</span>
           <span className="flex-1"><b>Trago Rompehielos:</b> regalale un trago a alguien al mandarle tu Rompehielos desde su perfil.</span>
@@ -156,9 +213,9 @@ function Bar() {
         onClose={() => setCheckout(false)}
         title="¿Cómo lo querés?"
         footer={
-          <Button block size="lg" variant="vip" onClick={pay} disabled={!options.find((o) => o.id === delivery)?.available}>
-            Pagar {delivery === "squad_split" ? `mi parte ${formatMoney(Math.round(total / splitN))}` : formatMoney(total)}
-            <span className="text-xs font-medium opacity-70">(simulado)</span>
+          <Button block size="lg" variant="vip" onClick={order} disabled={!options.find((o) => o.id === delivery)?.available}>
+            {online ? <Wallet /> : <ShoppingBag />}
+            {online ? `Pagar ${formatMoney(total)} con Mercado Pago` : `Pedir · pagás ${formatMoney(total)} en la barra`}
           </Button>
         }
       >
@@ -190,6 +247,62 @@ function Bar() {
             </button>
           ))}
         </div>
+
+        {/* Compartir con el Squad: entra en las cuentas de la mesa (quién le transfiere a quién al final). */}
+        {members.length > 1 && (
+          <section className="mt-4 rounded-2xl border border-squad/25 bg-squad/[0.05] p-3" aria-label="Compartir con el Squad">
+            <div className="flex items-center justify-between gap-2">
+              <p className="flex items-center gap-2 font-display text-sm font-semibold"><Users className="size-4 text-squad" /> ¿Lo comparten?</p>
+              <button type="button" onClick={() => setSplitWith(sharing && splitWith.length === members.length ? [] : members.map((m) => m.user_id))} className="min-h-[36px] rounded-full px-3 text-xs font-semibold text-squad hover:bg-squad/10">
+                {sharing && splitWith.length === members.length ? "Solo para mí" : "Todo el Squad"}
+              </button>
+            </div>
+            <ul className="no-scrollbar -mx-1 mt-2 flex gap-2 overflow-x-auto px-1 pb-1">
+              {members.map((m) => {
+                const p = getProfile(state, m.user_id);
+                const on = sharing ? splitWith.includes(m.user_id) : m.user_id === meId;
+                return (
+                  <li key={m.id}>
+                    <button
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => toggleSplit(m.user_id)}
+                      className={cn("flex min-h-[44px] items-center gap-2 rounded-full border py-1 pl-1 pr-3 text-sm transition", on ? "border-squad bg-squad/15 text-primary" : "border-white/10 bg-white/[0.03] text-muted")}
+                    >
+                      {p && <Avatar profile={p} size={32} />}
+                      {m.user_id === meId ? "Yo" : p?.full_name.split(" ")[0]}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            <p className="mt-1 text-xs text-muted" role="status">
+              {sharing
+                ? `Pagás vos ${formatMoney(total)} · ${formatMoney(each)} c/u entre ${splitWith.length}. Se suma a las cuentas de la mesa.`
+                : "Tocá a quienes lo comparten: al final te decimos cuánto te transfiere cada uno."}
+            </p>
+          </section>
+        )}
+        {online && <p className="mt-3 text-center text-xs text-muted">Pagás con la billetera de Mercado Pago, dinero en cuenta o tarjeta. La barra lo prepara apenas se acredita.</p>}
+      </BottomSheet>
+
+      {/* Checkout simulado de Mercado Pago (solo Modo Demo: en producción se abre el de Mercado Pago). */}
+      <BottomSheet open={!!payOrder} onClose={() => setPayOrder(null)} title="Mercado Pago · demo" description="Así se ve el cobro: en el sitio real se abre el checkout de Mercado Pago.">
+        {payOrder && (
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <p className="text-xs uppercase tracking-wider text-muted">Pagás a {state.brands.find((b) => b.id === event.brand_id)?.name ?? event.name}</p>
+              <p className="metric mt-1 text-3xl text-primary">{formatMoney(payOrder.total_amount)}</p>
+              <p className="mt-1 truncate text-sm text-muted">{payOrder.items_json.map((i) => `${i.qty}× ${i.name}`).join(", ")}</p>
+            </div>
+            <Button block size="lg" variant="vip" onClick={confirmDemoPayment}>
+              <Wallet /> Pagar con dinero en cuenta
+            </Button>
+            <Button block variant="ghost" onClick={() => setPayOrder(null)}>
+              Ahora no (queda esperando pago)
+            </Button>
+          </div>
+        )}
       </BottomSheet>
 
       <BottomSheet open={!!qrOrder} onClose={() => setQrOrder(null)} title={`Retiro · código ${qrOrder?.pickup_code ?? ""}`} description="Mostralo en la ventanilla rápida cuando te avisemos.">
@@ -197,13 +310,59 @@ function Bar() {
       </BottomSheet>
     </main>
   );
+
 }
 
+/** Vuelta del checkout de Mercado Pago (/bar?pago=ok&pedido=<id>): concilia y recarga el estado real. */
+function useReturnFromCheckout(mode: string, notify: ReturnType<typeof useRouge>["notify"], refresh: () => Promise<void>) {
+  const params = useSearchParams();
+  const router = useRouter();
+  const done = useRef(false);
+  useEffect(() => {
+    const status = params.get("pago");
+    const orderId = params.get("pedido");
+    if (!status || !orderId || done.current || mode !== "supabase") return;
+    done.current = true;
+    (async () => {
+      if (status === "error") notify({ tone: "rouge", title: "El pago no se completó", description: "Podés reintentarlo desde el pedido." });
+      else {
+        const st = await syncOrderPayment(orderId).catch(() => "awaiting_payment");
+        await refresh();
+        if (st !== "paid") notify({ tone: "vip", title: "Confirmando tu pago…", description: "Te avisamos apenas Mercado Pago lo acredite." });
+      }
+      router.replace("/bar");
+    })();
+  }, [params, router, mode, notify, refresh]);
+}
 
-function OrderCard({ order: o, meId, onQr, onSimulate }: { order: BarOrder; meId: string; onQr: () => void; onSimulate?: () => void }) {
+function OrderCard({ order: o, meId, onQr, onPay, onCancel, payBusy, onSimulate }: { order: BarOrder; meId: string; onQr: () => void; onPay: () => void; onCancel: () => void; payBusy: boolean; onSimulate?: () => void }) {
   const steps = ORDER_FLOW[o.delivery_type];
   const idx = steps.indexOf(o.status);
   const ready = o.status === "ready_qr" || o.status === "delivering";
+  if (o.payment_status === "awaiting_payment") {
+    return (
+      <section className="rounded-3xl border border-dashed border-vip/50 bg-vip/[0.04] p-4" data-testid="order-awaiting">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="font-display text-lg font-bold text-vip">Esperando pago</p>
+            <p className="truncate text-sm">{o.items_json.map((i) => `${i.qty}× ${i.name}`).join(", ")}</p>
+            <p className="text-xs text-muted">La barra lo prepara apenas se acredita.</p>
+          </div>
+          <span className="metric text-vip">{formatMoney(o.total_amount)}</span>
+        </div>
+        {o.user_id === meId && (
+          <div className="mt-3 flex gap-2">
+            <Button size="sm" variant="vip" onClick={onPay} disabled={payBusy}>
+              <Wallet /> Pagar con Mercado Pago
+            </Button>
+            <Button size="sm" variant="ghost" onClick={onCancel}>
+              <X /> Cancelar
+            </Button>
+          </div>
+        )}
+      </section>
+    );
+  }
   return (
     <section className={cn("rounded-3xl border p-4", ready ? "border-squad bg-squad/10 shadow-glow-squad" : "border-vip/30 bg-vip/[0.05]")}>
       <div className="flex items-start justify-between gap-3">
@@ -211,7 +370,8 @@ function OrderCard({ order: o, meId, onQr, onSimulate }: { order: BarOrder; meId
           <p className={cn("font-display text-lg font-bold", ready ? "text-squad" : "text-vip")}>{STATUS_META[o.status].label}</p>
           <p className="text-xs text-muted">
             {DELIVERY_META[o.delivery_type].emoji} {DELIVERY_META[o.delivery_type].label} · {formatTime(o.created_at)}
-            {o.user_id !== meId && " · vaquita"}
+            {o.user_id !== meId && " · compartido"}
+            {o.payment_status === "paid" && " · pagado ✓"}
           </p>
         </div>
         <span className="metric text-vip">{formatMoney(o.total_amount)}</span>

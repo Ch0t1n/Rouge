@@ -25,7 +25,7 @@ export function SecurityPanel({ event, className }: { event: RougeEvent; classNa
       className={cn(alerts.length && "border-rouge/50 shadow-glow-rouge", className)}
       title={
         <span className="flex items-center gap-2">
-          <Siren className={cn("size-5", alerts.length ? "text-rouge" : "text-muted")} /> Alertas de rescate
+          <Siren className={cn("size-5", alerts.length ? "text-sos" : "text-muted")} /> Alertas de rescate
         </span>
       }
       action={alerts.length ? <Badge tone="live" size="md"><LiveDot /> {alerts.length} activa{alerts.length > 1 && "s"}</Badge> : <Badge tone="squad" size="md">Todo tranquilo</Badge>}

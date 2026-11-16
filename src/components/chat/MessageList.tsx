@@ -61,7 +61,7 @@ function SystemAlert({ message: m }: { message: Message }) {
         role={rescue ? "alert" : undefined}
         className={cn(
           "max-w-[92%] rounded-2xl px-3.5 py-2 text-center text-[13px] font-semibold",
-          rescue ? "border border-rouge/60 bg-rouge/15 text-rouge shadow-glow-rouge" : ok ? "bg-squad/10 text-squad" : base ? "bg-vip/10 text-vip" : "bg-white/[0.05] text-muted",
+          rescue ? "border border-sos/60 bg-sos/15 text-sos shadow-glow-sos" : ok ? "bg-squad/10 text-squad" : base ? "bg-vip/10 text-vip" : "bg-white/[0.05] text-muted",
         )}
       >
         {m.content} <span className="ml-1 text-[10px] font-normal opacity-70">{formatTime(m.created_at)}</span>

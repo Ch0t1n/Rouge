@@ -8,6 +8,8 @@ import { liveWallData } from "@/lib/engine/analytics";
 import { useNow, useRouge } from "@/lib/store/RougeContext";
 import { cn, formatTime } from "@/lib/utils";
 import { Avatar } from "@/components/ui/avatar";
+import { BrandLogo } from "@/components/brand/BrandTheme";
+import { eventTheme } from "@/lib/engine/branding";
 
 /** Número que "cuenta" hasta el valor nuevo (efecto marcador). */
 function useCountUp(value: number, ms = 900) {
@@ -40,6 +42,7 @@ export default function LiveWallPage() {
   const [slide, setSlide] = useState(0);
   const { event, metrics, lineup, flash, lastRaffle } = data;
   const joinUrl = `${origin}/join/${event.slug}`;
+  const theme = eventTheme(state, event.id);
 
   useEffect(() => {
     setOrigin(window.location.origin);
@@ -98,7 +101,11 @@ export default function LiveWallPage() {
         {/* Header */}
         <header className="col-span-12 flex items-center justify-between">
           <div className="flex items-baseline gap-[1.5vw]">
-            <span className="font-display text-[4vw] font-bold leading-none tracking-tight text-rouge text-glow-rouge animate-neon-flicker">ROUGE</span>
+            {theme.logo_url ? (
+              <BrandLogo theme={theme} className="h-[min(5vw,9vh)] max-w-[22vw] self-center" />
+            ) : (
+              <span className="font-display text-[4vw] font-bold leading-none tracking-tight text-rouge text-glow-rouge animate-neon-flicker">ROUGE</span>
+            )}
             <span className="font-display text-[1.8vw] font-semibold text-primary/90">{event.name}</span>
           </div>
           <div className="flex items-center gap-[1vw] font-display text-[1.6vw] font-bold">
@@ -110,7 +117,7 @@ export default function LiveWallPage() {
         </header>
 
         {/* Matches */}
-        <section className="col-span-5 flex min-h-0 flex-col justify-center overflow-hidden rounded-[2vw] border border-rouge/40 bg-rouge/[0.07] p-[2.4vw] shadow-[0_0_80px_rgba(255,30,86,0.25)]">
+        <section className="col-span-5 flex min-h-0 flex-col justify-center overflow-hidden rounded-[2vw] border border-rouge/40 bg-rouge/[0.07] p-[2.4vw] shadow-[0_0_80px_rgb(var(--c-rouge)/0.25)]">
           <p className="font-display text-[1.6vw] font-bold uppercase tracking-[0.3em] text-rouge">Matches de la noche</p>
           <p className="font-display text-[min(13vw,24vh)] font-bold leading-[0.85] tabular-nums text-glow-rouge">{matches}</p>
           <p className="mt-[1vw] text-[1.6vw] text-primary/85">
@@ -138,7 +145,7 @@ export default function LiveWallPage() {
         </section>
 
         {/* QR */}
-        <section className="col-span-3 row-span-2 flex min-h-0 flex-col items-center justify-center overflow-hidden rounded-[2vw] border border-vip/40 bg-vip/[0.06] p-[2vw] text-center shadow-[0_0_80px_rgba(255,184,0,0.18)]">
+        <section className="col-span-3 row-span-2 flex min-h-0 flex-col items-center justify-center overflow-hidden rounded-[2vw] border border-vip/40 bg-vip/[0.06] p-[2vw] text-center shadow-[0_0_80px_rgb(var(--c-vip)/0.18)]">
           <p className="font-display text-[1.6vw] font-bold leading-tight">Escaneá y entrá al lobby</p>
           <div className="mt-[1.2vw] rounded-[1.4vw] bg-white p-[1vw]">
             {origin && <QRCodeSVG value={joinUrl} size={512} level="M" bgColor="#FFFFFF" fgColor="#070709" className="size-[min(17vw,38vh)]" aria-label="QR para entrar al lobby" />}

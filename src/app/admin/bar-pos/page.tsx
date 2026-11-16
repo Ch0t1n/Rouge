@@ -33,9 +33,13 @@ export default function AdminBarPosPage() {
   const now = useNow(10_000);
   const event = activeEvent(state)!;
   const [code, setCode] = useState("");
-  const orders = useMemo(() => state.bar_orders.filter((o) => o.event_id === event.id).sort((a, b) => +new Date(a.created_at) - +new Date(b.created_at)), [state.bar_orders, event.id]);
+  const all = useMemo(() => state.bar_orders.filter((o) => o.event_id === event.id).sort((a, b) => +new Date(a.created_at) - +new Date(b.created_at)), [state.bar_orders, event.id]);
+  // Los que esperan el pago de Mercado Pago no se preparan: quedan aparte hasta que se acreditan.
+  const orders = all.filter((o) => o.payment_status !== "awaiting_payment");
+  const awaiting = all.filter((o) => o.payment_status === "awaiting_payment");
   const completed = orders.filter((o) => o.status === "completed").reverse();
   const revenue = orders.reduce((a, o) => a + o.total_amount, 0);
+  const paidOnline = orders.filter((o) => o.payment_status === "paid").reduce((a, o) => a + o.total_amount, 0);
 
   const advance = async (o: BarOrder) => {
     const next = nextOrderStatus(o);
@@ -48,7 +52,7 @@ export default function AdminBarPosPage() {
     <main className="mx-auto max-w-[1500px] space-y-6 px-5 py-6 lg:px-10 lg:py-10">
       <AdminHeader
         title="Barra / Comandas"
-        subtitle={`${orders.length - completed.length} pedidos abiertos · ${formatMoney(revenue)} vendidos por la app`}
+        subtitle={`${orders.length - completed.length} pedidos abiertos · ${formatMoney(revenue)} vendidos por la app${paidOnline ? ` · ${formatMoney(paidOnline)} cobrados con Mercado Pago` : ""}${awaiting.length ? ` · ${awaiting.length} esperando pago` : ""}`}
         actions={
           <form
             className="flex w-full items-center gap-2 sm:w-auto"
@@ -142,7 +146,8 @@ function OrderTicket({ order: o, now, onAdvance }: { order: BarOrder; now: numbe
           </li>
         ))}
       </ul>
-      {o.delivery_type === "squad_split" && <p className="mt-1 text-[11px] text-squad">🐮 Vaquita entre {o.split_user_ids.length}</p>}
+      {o.split_user_ids.length > 0 && <p className="mt-1 text-[11px] text-squad">🐮 Compartido entre {o.split_user_ids.length}</p>}
+      <p className={cn("mt-1 text-[11px] font-semibold", o.payment_status === "paid" ? "text-squad" : "text-vip")}>{o.payment_status === "paid" ? "✓ Pagado con Mercado Pago" : "💵 Cobrar al entregar"}</p>
       {(o.status === "delivering" || o.delivery_type === "pin_delivery") && o.pin_coord_x != null && o.pin_coord_y != null && (
         <div className="mt-2">
           <VenueMap

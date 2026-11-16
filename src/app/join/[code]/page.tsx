@@ -15,6 +15,9 @@ import { MoodPicker } from "@/components/event/MoodPicker";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { BrandLogo, useBrandTheme } from "@/components/brand/BrandTheme";
+import { eventTheme, resolveTheme, type EventTheme } from "@/lib/engine/branding";
+import type { Brand } from "@/lib/types";
 
 interface Preview {
   event: Pick<RougeEvent, "id" | "name" | "description" | "venue_name" | "starts_at" | "ends_at" | "lineup_json" | "lobby_opens_at" | "lobby_expires_at" | "max_capacity">;
@@ -24,6 +27,8 @@ interface Preview {
   squad?: { name: string; members: number; creator?: Profile; creatorFirstName?: string };
   /** true si lo resolvió el servidor (el cliente no puede ver el código por RLS) */
   fromServer: boolean;
+  /** Logo y colores del evento (su marca): la invitación ya se ve con la identidad de la fiesta. */
+  theme: EventTheme;
 }
 
 export default function JoinPage() {
@@ -46,6 +51,7 @@ export default function JoinPage() {
           ? { name: local.squad.name, members: squadMembers(state, local.squad.id).length, creator: getProfile(state, local.squad.created_by) }
           : undefined,
         fromServer: false,
+        theme: eventTheme(state, local.event.id),
       }
     : null;
 
@@ -58,11 +64,18 @@ export default function JoinPage() {
     let alive = true;
     sb.rpc("resolve_access_code", { p_code: code }).then(({ data }) => {
       if (!alive) return;
-      const d = data as null | { via: Preview["via"]; event: Preview["event"]; attendees: number; code_used_by_other: boolean; squad: null | { name: string; members: number; creator_first_name: string | null } };
+      const d = data as null | {
+        via: Preview["via"];
+        event: Preview["event"] & Pick<RougeEvent, "logo_url" | "theme_primary" | "theme_accent">;
+        brand: Pick<Brand, "name" | "logo_url" | "primary_color" | "accent_color"> | null;
+        attendees: number;
+        code_used_by_other: boolean;
+        squad: null | { name: string; members: number; creator_first_name: string | null };
+      };
       setRemote({
         code,
         preview: d
-          ? { event: d.event, via: d.via, attendees: d.attendees, codeUsedByOther: d.code_used_by_other, squad: d.squad ? { name: d.squad.name, members: d.squad.members, creatorFirstName: d.squad.creator_first_name ?? undefined } : undefined, fromServer: true }
+          ? { event: d.event, via: d.via, attendees: d.attendees, codeUsedByOther: d.code_used_by_other, squad: d.squad ? { name: d.squad.name, members: d.squad.members, creatorFirstName: d.squad.creator_first_name ?? undefined } : undefined, fromServer: true, theme: resolveTheme(d.event, d.brand) }
           : null,
       });
     });
@@ -76,6 +89,7 @@ export default function JoinPage() {
   const preview = localPreview ?? (mode === "demo" ? null : remote?.code === code ? remote.preview : undefined);
   const existing = preview ? getAttendee(state, preview.event.id, state.current_user_id) : undefined;
   const [mood, setMood] = useState<MoodTag | null>(existing?.mood_tag ?? null);
+  useBrandTheme(preview?.theme.custom ? preview.theme : null);
 
   if (preview === undefined) {
     return (
@@ -140,6 +154,7 @@ export default function JoinPage() {
       <section className="relative overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-br from-rouge/30 via-surface to-squad/15 p-5">
         <div aria-hidden className="absolute -right-12 -top-12 size-44 rounded-full bg-rouge/35 blur-3xl" />
         <div className="relative">
+          {preview.theme.logo_url && <BrandLogo theme={preview.theme} className="mb-4 h-12 max-w-[200px]" />}
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={via === "single_use_code" ? "vip" : via === "squad_link" ? "squad" : "rouge"} size="md">
               {via === "single_use_code" ? "🎟️ Entrada única" : via === "squad_link" ? "👯 Invitación de Squad" : "🔗 Link del evento"}

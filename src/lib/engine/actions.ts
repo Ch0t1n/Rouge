@@ -55,6 +55,8 @@ import {
   squadOf,
 } from "./selectors";
 import { BIO_MAX, MAX_PHOTOS, NAME_MAX, checkBirthDate, checkGenres, checkUsername, parseInstagram, parseSpotify } from "./profile";
+import { checkEventBranding, normalizeHex } from "./branding";
+import { NOT_PAID, addSpend, initialPaymentStatus, isPayable, spendShares } from "./payments";
 
 export type Result<T = undefined> = { ok: true; state: RougeState; data: T } | { ok: false; error: string };
 
@@ -1109,7 +1111,7 @@ function makeOrder(
   userId: UUID,
   type: DeliveryType,
   items: BarOrderItem[],
-  extra: Partial<Pick<BarOrder, "squad_id" | "split_user_ids" | "pin_coord_x" | "pin_coord_y" | "sector_name">>,
+  extra: Partial<Pick<BarOrder, "squad_id" | "split_user_ids" | "pin_coord_x" | "pin_coord_y" | "sector_name" | "payment_status">>,
   now: number,
 ): BarOrder {
   return {
@@ -1126,21 +1128,20 @@ function makeOrder(
     pin_coord_y: extra.pin_coord_y ?? null,
     sector_name: extra.sector_name ?? null,
     status: "pending",
+    // El Trago Rompehielos todavía se cobra en la barra (ver CHANGELOG → pendientes).
+    payment_status: extra.payment_status ?? "pay_at_bar",
+    payment_ref: null,
+    paid_at: null,
     created_at: iso(now),
     updated_at: iso(now),
   };
 }
 
-function addSpend(state: RougeState, eventId: UUID, shares: [UUID, number][]): RougeState {
-  const map = new Map(shares);
-  return {
-    ...state,
-    event_attendees: state.event_attendees.map((a) =>
-      a.event_id === eventId && map.has(a.user_id) ? { ...a, total_spent: a.total_spent + (map.get(a.user_id) ?? 0) } : a,
-    ),
-  };
-}
-
+/**
+ * Pedido de Barra Express. `splitWith`: integrantes del Squad que lo comparten (Vaquita o botella para la
+ * mesa); entra en las cuentas de la mesa (settle.ts). Con retiro, un pedido compartido es `squad_split`.
+ * Si la marca cobra online nace `awaiting_payment` y el gasto se suma al acreditarse el pago (payments.ts).
+ */
 export function createBarOrder(
   state: RougeState,
   eventId: UUID,
@@ -1148,6 +1149,7 @@ export function createBarOrder(
   cart: { itemId: string; qty: number }[],
   deliveryType: Exclude<DeliveryType, "icebreaker_gift">,
   now = Date.now(),
+  opts: { splitWith?: UUID[] } = {},
 ): Result<BarOrder> {
   const gate = requireInteractive(state, eventId, now);
   if (gate) return gate;
@@ -1161,9 +1163,22 @@ export function createBarOrder(
   if (!items.length) return fail("El pedido está vacío.");
 
   const sq = squadOf(state, eventId, userId);
-  const extra: Parameters<typeof makeOrder>[5] = { squad_id: sq?.squad.id ?? null };
+  const extra: Parameters<typeof makeOrder>[5] = { squad_id: sq?.squad.id ?? null, payment_status: initialPaymentStatus(state, eventId) };
 
-  if (deliveryType === "pin_delivery") {
+  // Compartido: la Vaquita sin lista explícita se divide entre todo el Squad.
+  let type = deliveryType;
+  const wantsSplit = deliveryType === "squad_split" || (opts.splitWith?.length ?? 0) > 0;
+  if (wantsSplit) {
+    if (!sq) return fail("La Vaquita requiere un Squad.");
+    const members = squadMembers(state, sq.squad.id).map((m) => m.user_id);
+    const split = [...new Set(opts.splitWith?.length ? opts.splitWith : members)];
+    if (split.some((u) => !members.includes(u))) return fail("Solo podés compartirlo con integrantes de tu Squad.");
+    if (!split.some((u) => u !== userId)) return fail("Elegí con quién lo compartís.");
+    extra.split_user_ids = split;
+    if (type === "fast_pickup") type = "squad_split";
+  }
+
+  if (type === "pin_delivery") {
     const pin = activePinOf(state, eventId, userId, now);
     const base = sq?.squad.has_vip_table_to_share && sq.squad.base_pin_x != null ? sq.squad : null;
     if (!pin && !base) return fail("Para delivery necesitás un pin activo en el plano o una Mesa VIP con Punto Base.");
@@ -1173,20 +1188,9 @@ export function createBarOrder(
     Object.assign(extra, { pin_coord_x: x, pin_coord_y: y, sector_name: pin?.sector_name ?? sectorAt(ev.venue_layout_json.sectors, x, y)?.name ?? null });
   }
 
-  let shares: [UUID, number][];
-  const total = items.reduce((a, i) => a + i.qty * i.unit_price, 0);
-  if (deliveryType === "squad_split") {
-    if (!sq) return fail("La Vaquita requiere un Squad.");
-    const members = squadMembers(state, sq.squad.id).map((m) => m.user_id);
-    extra.split_user_ids = members;
-    const share = Math.round(total / members.length);
-    shares = members.map((m) => [m, share]);
-  } else {
-    shares = [[userId, total]];
-  }
-
-  const order = makeOrder(state, eventId, userId, deliveryType, items, extra, now);
-  const next = addSpend({ ...state, bar_orders: [...state.bar_orders, order] }, eventId, shares);
+  const order = makeOrder(state, eventId, userId, type, items, extra, now);
+  let next: RougeState = { ...state, bar_orders: [...state.bar_orders, order] };
+  if (isPayable(order)) next = addSpend(next, eventId, spendShares(order));
   return ok(touch(next, eventId, userId, now), order);
 }
 
@@ -1207,6 +1211,7 @@ export function setOrderStatus(state: RougeState, orderId: UUID, status: BarOrde
   const o = state.bar_orders.find((x) => x.id === orderId);
   if (!o) return fail("Pedido inexistente.");
   if (!ORDER_FLOW[o.delivery_type].includes(status)) return fail("Estado inválido para este tipo de pedido.");
+  if (!isPayable(o) && status !== "pending") return fail(NOT_PAID);
   const updated = { ...o, status, updated_at: iso(now) };
   return ok({ ...state, bar_orders: state.bar_orders.map((x) => (x.id === orderId ? updated : x)) }, updated);
 }
@@ -1257,6 +1262,11 @@ export function upsertEvent(state: RougeState, input: Partial<RougeEvent> & Pick
   if (slug.length < 3) return fail("El link del evento necesita al menos 3 caracteres.");
   if (state.events.some((e) => e.slug === slug && e.id !== input.id)) return fail("Ya existe un evento con ese link.");
   const existing = input.id ? getEvent(state, input.id) : undefined;
+  const brandError = checkEventBranding(state, existing?.created_by ?? state.current_user_id, input);
+  if (brandError) return fail(brandError);
+  const theme: Partial<RougeEvent> = {};
+  if (input.theme_primary !== undefined) theme.theme_primary = normalizeHex(input.theme_primary);
+  if (input.theme_accent !== undefined) theme.theme_accent = normalizeHex(input.theme_accent);
   const base: RougeEvent = existing ?? {
     id: uid(),
     slug,
@@ -1275,8 +1285,12 @@ export function upsertEvent(state: RougeState, input: Partial<RougeEvent> & Pick
     master_invite_code: shortCode(6, "RG"),
     created_by: state.current_user_id,
     created_at: iso(now),
+    brand_id: null,
+    logo_url: null,
+    theme_primary: null,
+    theme_accent: null,
   };
-  const event: RougeEvent = { ...base, ...input, slug } as RougeEvent;
+  const event: RougeEvent = { ...base, ...input, ...theme, slug } as RougeEvent;
   return ok({ ...state, events: existing ? state.events.map((e) => (e.id === event.id ? event : e)) : [...state.events, event] }, event);
 }
 
@@ -1341,6 +1355,7 @@ export function redeemPickupCode(state: RougeState, eventId: UUID, rawCode: stri
   const order = state.bar_orders.find((o) => o.event_id === eventId && o.pickup_code?.toUpperCase() === code);
   if (!order) return fail("No existe un pedido con ese código.");
   if (order.status === "completed") return fail("Ese pedido ya fue entregado.");
+  if (!isPayable(order)) return fail(NOT_PAID);
   if (order.status !== "ready_qr") return fail("El pedido todavía no está listo para retirar.");
   return setOrderStatus(state, order.id, "completed", now);
 }

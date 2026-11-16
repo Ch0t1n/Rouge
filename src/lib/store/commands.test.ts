@@ -132,6 +132,9 @@ describe("contrato comandos ↔ schema.sql", () => {
     if (o.ok) o.state.current_user_id = DEMO_IDS.organizer;
     if (!o.ok) throw new Error(o.error);
     s = o.state;
+    const paid = C.payOrderDemo(o.data.id).local(s); // la marca del seed cobra online
+    if (!paid.ok) throw new Error(paid.error);
+    s = paid.state;
     for (const _ of [0, 1]) {
       const cur = s.bar_orders.find((x) => x.id === o.data.id)!;
       const r = C.advanceOrder(cur).local(s);
@@ -185,6 +188,17 @@ describe("contrato comandos ↔ schema.sql", () => {
     ["createApiKey (todos mis eventos)", () => runRemote(C.createApiKey("Productora", null), st(), { create_api_key: { id: id(9), key: "rk_live_x_y", prefix: "rk_live_x" } })],
     ["revokeApiKey", () => { const r = C.createApiKey("T", EV).local(st()); const s = (r as { state: RougeState }).state; return runRemote(C.revokeApiKey(s.api_keys[0].id), s); }],
     ["setStaffRole (quitar)", () => runRemote(C.setStaffRole(EV, "dani.barra", null), st(), { set_staff_role: DEMO_IDS.bartender })],
+    ["createBarOrder (compartido)", () => runRemote(C.createBarOrder(EV, ME, [{ itemId: "gin", qty: 2 }], "squad_split", [ME, id(2)]), s0(), { create_bar_order: { pickup_code: "ABCD" } })],
+    ["cancelUnpaidOrder", () => { const o = C.createBarOrder(EV, ME, [{ itemId: "gin", qty: 1 }], "fast_pickup").local(s0()); const s = (o as { state: RougeState }).state; return runRemote(C.cancelUnpaidOrder(s.bar_orders.at(-1)!.id, ME), s); }],
+    ["upsertBrand (nueva)", () => runRemote(C.upsertBrand({ name: "Noche Neón", primary_color: "#8B5CF6" }), s0())],
+    ["upsertBrand (edición)", () => runRemote(C.upsertBrand({ id: DEMO_IDS.brand, name: "ROUGE Night", accent_color: "#C6FF3D" }), st())],
+    ["upsertEvent (marca y colores)", () => runRemote(C.upsertEvent({ ...s0().events[0], theme_primary: "#2F6BFF", logo_url: "/x.png" }), st())],
+    ["addSquadExpense", () => runRemote(C.addSquadExpense(DEMO_IDS.squadMain, ME, { description: "Mesa", amount: 20000, participantIds: [ME, id(2)] }), s0(), { add_squad_expense: {} })],
+    ["deleteSquadExpense", () => runRemote(C.deleteSquadExpense(id(16003), id(10)), s0())],
+    ["recordSettlement", () => runRemote(C.recordSettlement(DEMO_IDS.squadMain, ME, id(2), 1000, "mercadopago"), s0(), { record_settlement: {} })],
+    ["respondSettlement", () => { const r = C.recordSettlement(DEMO_IDS.squadMain, id(2), ME, 1000, "cash").local(s0()); const s = (r as { state: RougeState }).state; return runRemote(C.respondSettlement(s.squad_settlements[0].id, ME, true), s); }],
+    ["setPayoutAlias", () => runRemote(C.setPayoutAlias(ME, "sofi.noche.mp"), s0())],
+    ["setPayoutAlias (borrar)", () => runRemote(C.setPayoutAlias(id(2), ""), s0())],
   ];
 
   it.each(cases)("%s respeta el esquema", async (_name, fn) => {
@@ -199,6 +213,13 @@ describe("contrato comandos ↔ schema.sql", () => {
     expect((raffle.data as { raffle: { winner_user_id: string } }).raffle.winner_user_id).toBe(id(8));
     const blast = await runRemote(C.sendBlast(EV, { title: "x", message: "y", segment: { kind: "all" } }), st(), { send_blast: 99 });
     expect((blast.data as { reach: number }).reach).toBe(99);
+  });
+
+  it("nunca se escribe el estado de pago ni el cobro de la marca desde el cliente", async () => {
+    const brand = await runRemote(C.upsertBrand({ id: DEMO_IDS.brand, name: "ROUGE Night" }), st());
+    expect(Object.keys((brand.calls[0] as { payload: object }).payload)).not.toContain("payments_enabled");
+    expect(C.payOrderDemo("x").remote).toBeUndefined();
+    expect(C.connectPaymentsDemo(DEMO_IDS.brand).remote).toBeUndefined();
   });
 
   it("el perfil nuevo se inserta y el existente se actualiza sin tocar el id", async () => {

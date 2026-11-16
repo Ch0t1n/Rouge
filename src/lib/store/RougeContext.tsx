@@ -145,6 +145,8 @@ function emptyState(userId: UUID = ""): RougeState {
     instagram_links: [],
     user_blocks: [],
     events: [],
+    brands: [],
+    brand_payment_accounts: [],
     event_staff: [],
     event_invite_codes: [],
     api_keys: [],
@@ -161,6 +163,9 @@ function emptyState(userId: UUID = ""): RougeState {
     song_requests: [],
     bar_menu: BAR_MENU,
     bar_orders: [],
+    squad_expenses: [],
+    squad_settlements: [],
+    payout_aliases: [],
   };
 }
 

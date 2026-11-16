@@ -79,7 +79,8 @@ export function eventMetrics(s: RougeState, eventId: UUID, now = Date.now()) {
   const conns = s.connections.filter((c) => c.event_id === eventId);
   const squads = s.squads.filter((sq) => sq.event_id === eventId);
   const sizes = squads.map((sq) => ({ squad: sq, size: squadMembers(s, sq.id).length }));
-  const orders = s.bar_orders.filter((o) => o.event_id === eventId);
+  // Los pedidos que esperan el pago de Mercado Pago todavía no son ventas.
+  const orders = s.bar_orders.filter((o) => o.event_id === eventId && o.payment_status !== "awaiting_payment");
   const female = attendees.filter((a) => getProfile(s, a.user_id)?.gender === "female").length;
   const biggest = sizes.sort((a, b) => b.size - a.size)[0];
 

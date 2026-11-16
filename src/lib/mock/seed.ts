@@ -6,6 +6,10 @@
  * puede probar el 100% de los flujos en cualquier momento.
  */
 import type {
+  Brand,
+  BrandPaymentAccount,
+  PayoutAlias,
+  SquadExpense,
   InstagramLink,
   BarMenuItem,
   EventStaff,
@@ -33,7 +37,7 @@ import type {
   VenueLayout,
 } from "@/lib/types";
 
-export const STATE_VERSION = 5;
+export const STATE_VERSION = 6;
 
 // IDs estables → los links de demo (/join/..., /u/...) no cambian entre re-siembras.
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -48,6 +52,7 @@ export const DEMO_IDS = {
   me: id(1),
   squadMain: id(2001),
   squadVip: id(2002),
+  brand: id(3001),
 } as const;
 
 export const VENUE_LAYOUT: VenueLayout = {
@@ -246,7 +251,20 @@ export function createSeedState(now = Date.now()): RougeState {
     master_invite_code: "BRESH26",
     created_by: DEMO_IDS.organizer,
     created_at: t(-60 * 24 * 7),
+    brand_id: DEMO_IDS.brand,
+    logo_url: null,
+    theme_primary: null,
+    theme_accent: null,
   };
+
+  // ── Marca (logo + colores) y cuenta de cobro de Mercado Pago (simulada) ──
+  // Colores en null = los de ROUGE: la demo se ve igual y en /admin/brand se prueban paletas en vivo.
+  const brands: Brand[] = [
+    { id: DEMO_IDS.brand, owner_id: DEMO_IDS.organizer, name: "ROUGE Night", logo_url: "/demo/brands/rouge-night.svg", primary_color: null, accent_color: null, payments_enabled: true, created_at: t(-60 * 24 * 30) },
+  ];
+  const brand_payment_accounts: BrandPaymentAccount[] = [
+    { brand_id: DEMO_IDS.brand, provider: "mercadopago", account_label: "ROUGE Night (demo)", live_mode: false, connected_at: t(-60 * 24 * 20) },
+  ];
 
   const invite_codes: EventInviteCode[] = Array.from({ length: 24 }, (_, i) => {
     const used = i < 6;
@@ -492,13 +510,17 @@ export function createSeedState(now = Date.now()): RougeState {
     pin_coord_y: null,
     sector_name: null,
     status,
+    // La marca cobra con Mercado Pago: los pedidos del seed ya están pagos (el trago Rompehielos se cobra en barra).
+    payment_status: type === "icebreaker_gift" ? "pay_at_bar" : "paid",
+    payment_ref: type === "icebreaker_gift" ? null : `demo-${15000 + n}`,
+    paid_at: type === "icebreaker_gift" ? null : t(-minAgo),
     created_at: t(-minAgo),
     updated_at: t(-Math.max(0, minAgo - 3)),
     ...extra,
   });
 
   const bar_orders: BarOrder[] = [
-    order(1, 10, "pin_delivery", [line("botella-vodka", 1)], "delivering", 8, { squad_id: DEMO_IDS.squadVip, pin_coord_x: 85, pin_coord_y: 66, sector_name: "Sector VIP" }),
+    order(1, 10, "pin_delivery", [line("botella-vodka", 1)], "delivering", 8, { squad_id: DEMO_IDS.squadVip, split_user_ids: [10, 11, 6].map(id), pin_coord_x: 85, pin_coord_y: 66, sector_name: "Sector VIP" }),
     order(2, 5, "fast_pickup", [line("gin", 2)], "ready_qr", 6),
     order(3, 1, "squad_split", [line("combo-fernet", 1)], "preparing", 4, { squad_id: DEMO_IDS.squadMain, split_user_ids: [1, 2, 3, 4].map(id) }),
     order(4, 11, "fast_pickup", [line("fernet", 1), line("energy", 1)], "pending", 1),
@@ -506,6 +528,28 @@ export function createSeedState(now = Date.now()): RougeState {
     order(6, 7, "icebreaker_gift", [line("gin", 1)], "ready_qr", 9),
     order(7, 4, "fast_pickup", [line("aperol", 1)], "completed", 40),
     order(8, 2, "fast_pickup", [line("speed", 1)], "completed", 55),
+  ];
+
+  // ── Cuentas de la mesa ───────────────────────────────────────────
+  const expense = (n: number, squad: string, payer: number, description: string, amount: number, participants: number[], minAgo: number): SquadExpense => ({
+    id: id(16000 + n),
+    squad_id: squad,
+    event_id: event.id,
+    paid_by: id(payer),
+    description,
+    amount,
+    participant_ids: participants.map(id),
+    created_at: t(-minAgo),
+  });
+  const squad_expenses: SquadExpense[] = [
+    expense(1, DEMO_IDS.squadMain, 2, "🚕 Uber de ida", 12000, [1, 2, 3, 4], 230),
+    expense(2, DEMO_IDS.squadMain, 3, "🍻 Previa en lo de Juli", 18000, [1, 2, 3, 4], 260),
+    expense(3, DEMO_IDS.squadVip, 10, "🛋️ Reserva Mesa 7", 120000, [10, 11, 6], 60 * 24),
+  ];
+  const payout_aliases: PayoutAlias[] = [
+    { user_id: id(2), alias: "cami.beats.mp" },
+    { user_id: id(3), alias: "juli.previa" },
+    { user_id: id(10), alias: "tomi.mesa7" },
   ];
 
   // Vincular el trago rompehielos de Bruno a su conexión con Sofi
@@ -521,6 +565,8 @@ export function createSeedState(now = Date.now()): RougeState {
     instagram_links,
     user_blocks,
     events: [event],
+    brands,
+    brand_payment_accounts,
     event_staff: STAFF.map<EventStaff>((m) => ({ event_id: event.id, user_id: m.id, role: m.role, created_at: t(-60 * 24 * 5) })),
     event_invite_codes: invite_codes,
     api_keys: [],
@@ -537,5 +583,8 @@ export function createSeedState(now = Date.now()): RougeState {
     song_requests,
     bar_menu: BAR_MENU,
     bar_orders,
+    squad_expenses,
+    squad_settlements: [],
+    payout_aliases,
   };
 }

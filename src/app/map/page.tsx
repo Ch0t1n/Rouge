@@ -129,7 +129,7 @@ function LiveMap() {
       <div className="space-y-3 px-4 pb-8">
         {/* Modo */}
         {mode !== "pin" ? (
-          <div className={cn("flex items-center gap-3 rounded-2xl border p-3 text-sm", mode === "rescue" ? "border-rouge bg-rouge/15 text-rouge shadow-glow-rouge" : "border-vip/50 bg-vip/10 text-vip")}>
+          <div className={cn("flex items-center gap-3 rounded-2xl border p-3 text-sm", mode === "rescue" ? "border-sos bg-sos/15 text-sos shadow-glow-sos" : "border-vip/50 bg-vip/10 text-vip")}>
             {mode === "rescue" ? <Siren className="size-5 shrink-0" /> : <Flag className="size-5 shrink-0" />}
             <p className="flex-1 font-semibold">{mode === "rescue" ? "Tocá dónde estás: le mandamos tu pin rojo al Squad." : "Tocá el plano para fijar el Punto Base del Squad."}</p>
             <Button size="sm" variant="ghost" onClick={() => setMode("pin")}>
@@ -137,8 +137,8 @@ function LiveMap() {
             </Button>
           </div>
         ) : myPin ? (
-          <div className={cn("flex items-center gap-3 rounded-2xl border p-3", myPin.is_rescue_alert ? "border-rouge bg-rouge/10" : "border-white/10 bg-white/[0.04]")}>
-            <span className={cn("grid size-10 shrink-0 place-items-center rounded-xl", myPin.is_rescue_alert ? "bg-rouge text-white" : "bg-squad/15 text-squad")}>
+          <div className={cn("flex items-center gap-3 rounded-2xl border p-3", myPin.is_rescue_alert ? "border-sos bg-sos/10" : "border-white/10 bg-white/[0.04]")}>
+            <span className={cn("grid size-10 shrink-0 place-items-center rounded-xl", myPin.is_rescue_alert ? "bg-sos text-white" : "bg-squad/15 text-squad")}>
               {myPin.is_rescue_alert ? <Siren className="size-5" /> : <MapPin className="size-5" />}
             </span>
             <div className="min-w-0 flex-1">
@@ -273,7 +273,7 @@ function PinDetail({ vp, onClose, go }: { vp: VisiblePin; onClose: () => void; g
           <p className="font-display text-lg font-bold">{vp.audience === "self" ? "Vos" : vp.profile.full_name.split(" ")[0]}</p>
           <p className="text-sm text-muted">📍 {sector ?? "En el plano"} · expira en {vp.minutesLeft} min</p>
         </div>
-        <span className={cn("rounded-full px-2.5 py-1 font-display text-[11px] font-bold", tone === "rescue" ? "bg-rouge text-white" : tone === "squad" ? "bg-squad/15 text-squad" : tone === "match" ? "bg-rouge/15 text-rouge" : "bg-white/10 text-muted")}>
+        <span className={cn("rounded-full px-2.5 py-1 font-display text-[11px] font-bold", tone === "rescue" ? "bg-sos text-white" : tone === "squad" ? "bg-squad/15 text-squad" : tone === "match" ? "bg-rouge/15 text-rouge" : "bg-white/10 text-muted")}>
           {tone === "rescue" ? "🚨 RESCATE" : tone === "squad" ? "Squad" : tone === "match" ? "Match" : "Tu pin"}
         </span>
       </div>

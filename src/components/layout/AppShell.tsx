@@ -9,6 +9,8 @@ import { useRouge } from "@/lib/store/RougeContext";
 import { Toaster } from "@/components/ui/toaster";
 import { BottomNav, NAV_ROUTES } from "./BottomNav";
 import { LiveNotifications } from "./LiveNotifications";
+import { useBrandTheme } from "@/components/brand/BrandTheme";
+import { eventTheme } from "@/lib/engine/branding";
 import { cn } from "@/lib/utils";
 
 /**
@@ -35,6 +37,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   // Rutas que no dependen de un evento activo (perfil, ingreso, chats 1:1, alta de eventos…)
   const eventFree = landing || demoPage || ["/login", "/onboarding", "/join", "/profile", "/settings", "/u/", "/chat", "/inbox", "/offline", "/admin/events"].some((p) => pathname.startsWith(p));
   const missingEvent = !eventFree && !activeEvent(state);
+  // Colores de la marca del evento en la app del asistente y en la Pantalla LED. La landing, la demo, el login,
+  // /join (aplica el tema del evento del link) y el panel del staff quedan con los colores de ROUGE.
+  const branded = !landing && !demoPage && !["/login", "/join"].some((p) => pathname.startsWith(p)) && (!pathname.startsWith("/admin") || pathname.startsWith("/admin/live-wall"));
+  const theme = eventTheme(state, state.active_event_id);
+  useBrandTheme(branded && theme.custom ? theme : null);
 
   return (
     <>
