@@ -1,12 +1,16 @@
-# ROUGE — Guía de arquitectura para Claude Code
+# Rouge Pass — Guía de arquitectura para Claude Code
 
-ROUGE es una **PWA social y operativa para eventos, fiestas y discotecas (B2B2C)**.
+> El producto se llama **Rouge Pass** (antes ROUGE). Lo interno conserva "rouge": el token de color `rouge`, los QR
+> `ROUGE:ORDER:` / `ROUGE:PASS:`, las claves `rouge:*` de localStorage, `RougeContext`/`useRouge` y el email interno de
+> Instagram. Los textos visibles usan `APP_NAME` (`src/lib/brand.ts`) y el wordmark `<Wordmark />` (`components/brand`).
+
+Rouge Pass es una **PWA social y operativa para eventos, fiestas y discotecas (B2B2C)**.
 Los asistentes entran a un lobby privado del evento (link maestro o código de 1 uso),
 conectan con gente afín, arman su **Squad** (seguridad grupal + perks), se ubican en el
 **plano** con pines de 15 min y piden en la **Barra Express**. El organizador paga
 (fee por evento / por asistente activo / comisión de barra-VIP) y opera todo desde `/admin`.
 
-> **Tesis:** ROUGE gana cuando la gente conecta rápido, no pierde a su grupo, consume sin
+> **Tesis:** Rouge Pass gana cuando la gente conecta rápido, no pierde a su grupo, consume sin
 > filas y vuelve a comprar entrada. Nunca diseñar features que retengan usuarios frustrados.
 
 ---
@@ -248,7 +252,7 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
    el ticker vuelve a su lagSmoothing): /app y /admin no cargan ni heredan nada de esto. Ojo con `cn()` (tailwind-merge)
    y clases `text-glow-*`: las confunde con colores de texto; en SplitReveal se concatenan sin `cn`.
 20. **Marca y tema.** `rouge` y `vip` son variables CSS (`rgb(var(--c-rouge) / <alpha>)`); el tema del evento
-   (`eventTheme`: evento → marca → ROUGE) lo aplica `AppShell` con `useBrandTheme` en la app del asistente y la LED
+   (`eventTheme`: evento → marca → Rouge Pass) lo aplica `AppShell` con `useBrandTheme` en la app del asistente y la LED
    (no en landing, demo, login ni panel); `/join` aplica el del link. **Rescate = token `sos` fijo**, Squad = cian: nunca
    usar `rouge` para seguridad. En SVG, los colores con variables van en `style`, no en atributos. Opacidades de Tailwind
    solo de su escala (5, 10, 15…): `/12` o `/8` no se generan.

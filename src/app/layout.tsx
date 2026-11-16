@@ -20,11 +20,11 @@ const body = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: { default: "ROUGE — La noche, conectada", template: "%s · ROUGE" },
+  title: { default: "Rouge Pass — La noche, conectada", template: "%s · Rouge Pass" },
   description: "Lobby privado de tu fiesta: conectá con gente afín, no pierdas a tu Squad y pedí en la barra sin filas.",
-  applicationName: "ROUGE",
+  applicationName: "Rouge Pass",
   manifest: "/manifest.json",
-  appleWebApp: { capable: true, title: "ROUGE", statusBarStyle: "black-translucent" },
+  appleWebApp: { capable: true, title: "Rouge Pass", statusBarStyle: "black-translucent" },
   formatDetection: { telephone: false },
   icons: {
     icon: [

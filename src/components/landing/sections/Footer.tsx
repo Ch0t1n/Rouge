@@ -98,19 +98,19 @@ export function Footer() {
         </div>
       </div>
 
-      <p data-giant aria-label="ROUGE® Nightlife OS" className="mt-20 select-none overflow-hidden whitespace-nowrap text-center font-display text-[28vw] font-bold uppercase leading-[0.8] tracking-tighter">
-        {"ROUGE®".split("").map((c, i) => (
+      <p data-giant aria-label="Rouge Pass®" className="mt-20 select-none overflow-hidden whitespace-nowrap text-center font-display text-[28vw] font-bold uppercase leading-[0.8] tracking-tighter">
+        {"ROUGE".split("").map((c, i) => (
           <span key={i} aria-hidden className="inline-block text-rouge text-glow-rouge">
             {c}
           </span>
         ))}
       </p>
-      <p aria-hidden className="text-outline select-none whitespace-nowrap text-center font-display text-[16.8vw] font-bold uppercase leading-[0.9] tracking-tighter">
-        Nightlife OS
+      <p aria-hidden className="text-outline select-none whitespace-nowrap text-center font-display text-[28vw] font-bold uppercase leading-[0.8] tracking-tighter">
+        Pass®
       </p>
 
       <div className="mt-10 flex flex-wrap items-center gap-4 border-t border-white/10 pt-5 font-mono text-[11px] uppercase tracking-[0.2em] text-muted">
-        <span>© {new Date().getFullYear()} ROUGE</span>
+        <span>© {new Date().getFullYear()} Rouge Pass</span>
         <span>+18 · Tomá con moderación</span>
         {!org && (
           <Link href="/login?as=staff" className="min-h-[32px] content-center hover:text-primary">

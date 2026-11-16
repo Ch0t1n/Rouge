@@ -1,6 +1,6 @@
 # Demo comercial y Modo Demo
 
-Cómo mostrarle ROUGE a dueños de boliches y productoras, y cómo usar el Modo Demo para redes.
+Cómo mostrarle Rouge Pass a dueños de boliches y productoras, y cómo usar el Modo Demo para redes.
 
 ## Qué es el Modo Demo
 

@@ -9,6 +9,7 @@ import { useRouge } from "@/lib/store/RougeContext";
 import { formatDateTime } from "@/lib/utils";
 import { eventTheme } from "@/lib/engine/branding";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { APP_WORDMARK } from "@/lib/brand";
 
 /**
  * Hoja imprimible con un QR por código de 1 uso libre (para la puerta, pulseras o
@@ -57,7 +58,7 @@ export function PrintCodes() {
             <li key={c.id} className="flex break-inside-avoid flex-col items-center rounded-2xl border border-white/10 bg-white p-3 text-center text-[#070709] print:rounded-lg print:border-black/30">
               {/* Sobre papel blanco va el nombre de la marca en su color (un logo claro no se vería). */}
               <p className="w-full truncate font-display text-xs font-bold tracking-tight" style={{ color: eventTheme(state, event.id).primary }}>
-                {eventTheme(state, event.id).brand_name ?? "ROUGE"}
+                {eventTheme(state, event.id).brand_name ?? APP_WORDMARK}
               </p>
               <p className="w-full truncate text-[10px] font-semibold">{event.name}</p>
               <QRCodeSVG value={`${origin}/join/${c.code}`} size={132} level="M" marginSize={1} bgColor="#FFFFFF" fgColor="#070709" className="my-2 h-auto w-full max-w-[132px]" />

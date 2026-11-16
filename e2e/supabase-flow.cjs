@@ -44,7 +44,7 @@ async function onboard(page, name, user, phone, genres) {
   await page.click("text=Continuar");
   for (const g of genres) await page.click(`button[aria-pressed]:has-text("${g}")`);
   await page.click("text=Continuar");
-  await page.click("text=Entrar a ROUGE");
+  await page.click("text=Entrar a Rouge Pass");
 }
 
 (async () => {

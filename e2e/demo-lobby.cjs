@@ -103,7 +103,7 @@ const log = (...a) => console.log(...a);
   await p.click("text=Continuar");
   await p.click('button[aria-pressed]:has-text("Reggaetón")');
   await p.click("text=Continuar");
-  await p.click("text=Entrar a ROUGE");
+  await p.click("text=Entrar a Rouge Pass");
   await p.waitForURL("**/join/SQ-PIBAS");
   log("✔ vuelve a /join tras onboarding");
   await p.screenshot({ path: `${SP}/p3-join.png`, fullPage: true });

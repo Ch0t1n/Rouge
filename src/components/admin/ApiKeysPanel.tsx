@@ -59,7 +59,7 @@ export function ApiKeysPanel({ event }: { event: RougeEvent }) {
       className="xl:col-span-3"
     >
       <p className="max-w-3xl text-sm text-muted">
-        Tu ticketera genera un código de ROUGE por cada entrada que vende y lo manda en el mail de la entrada (link + QR). Si la entrada se reembolsa, el código se anula. Documentación:{" "}
+        Tu ticketera genera un código de Rouge Pass por cada entrada que vende y lo manda en el mail de la entrada (link + QR). Si la entrada se reembolsa, el código se anula. Documentación:{" "}
         <a href="/api/v1/openapi.json" target="_blank" rel="noreferrer" className="font-semibold text-vip underline">
           especificación OpenAPI
         </a>

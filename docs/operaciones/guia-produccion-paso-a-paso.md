@@ -1,6 +1,6 @@
 # Guía paso a paso para salir a producción
 
-Checklist para tener **todas** las funciones de ROUGE andando con gente real: logins, cobros, registros legales y la
+Checklist para tener **todas** las funciones de Rouge Pass andando con gente real: logins, cobros, registros legales y la
 operación de la primera fiesta. Marcado con ✅ lo que ya quedó hecho en el proyecto actual
 (`rouge-neon.vercel.app` + Supabase `dwfuxhmpuitvtuepfwiv`).
 
@@ -40,16 +40,16 @@ Hoy los mails salen del servidor de prueba de Supabase: **solo 2 por hora**. Una
    indican: SPF, DKIM).
 2. Supabase → **Authentication → Emails → SMTP Settings** → *Enable custom SMTP*:
    host `smtp.resend.com`, puerto `465`, usuario `resend`, contraseña = API key de Resend, remitente
-   `ROUGE <hola@tudominio.com>`.
+   `Rouge Pass <hola@tudominio.com>`.
 3. **Authentication → Rate Limits**: subí "emails por hora" (ej. 300).
 4. **Authentication → Emails → Templates**: traducí el asunto y el texto del "Magic Link" al español
-   ("Tu link para entrar a ROUGE").
+   ("Tu link para entrar a Rouge Pass").
 5. Probá: entrá a `/login`, pedí el link y abrilo en el celular.
 
 ## 3. Login con Google (30 min)
 
-1. [Google Cloud Console](https://console.cloud.google.com) → proyecto nuevo "ROUGE".
-2. **APIs y servicios → Pantalla de consentimiento OAuth**: tipo *Externo*, nombre ROUGE, logo, mail de soporte,
+1. [Google Cloud Console](https://console.cloud.google.com) → proyecto nuevo "Rouge Pass".
+2. **APIs y servicios → Pantalla de consentimiento OAuth**: tipo *Externo*, nombre Rouge Pass, logo, mail de soporte,
    dominio, links a tus Términos y Política de privacidad (paso 7). Publicala ("En producción").
 3. **Credenciales → Crear ID de cliente OAuth** → *Aplicación web*. URI de redireccionamiento autorizada:
    `https://dwfuxhmpuitvtuepfwiv.supabase.co/auth/v1/callback`.
@@ -71,9 +71,9 @@ Solo funciona con cuentas **profesionales** de Instagram (Creador o Empresa), po
 
 ## 5. Cobros con Mercado Pago (1 día + aprobación)
 
-Cada marca conecta SU cuenta; la plata le entra directo y Mercado Pago le separa a ROUGE la comisión.
+Cada marca conecta SU cuenta; la plata le entra directo y Mercado Pago le separa a Rouge Pass la comisión.
 
-1. Con la cuenta de Mercado Pago **de ROUGE** (la que cobra las comisiones): [Mercado Pago Developers](https://www.mercadopago.com.ar/developers)
+1. Con la cuenta de Mercado Pago **de Rouge Pass** (la que cobra las comisiones): [Mercado Pago Developers](https://www.mercadopago.com.ar/developers)
    → *Tus integraciones* → **Crear aplicación** → producto *Checkout Pro*, modelo **Marketplace**.
 2. *Redirect URL*: `https://rouge-neon.vercel.app/api/mercadopago/callback`.
 3. *Webhooks*: URL `https://rouge-neon.vercel.app/api/mercadopago/webhook`, evento **Pagos**. Copiá la clave secreta.
@@ -99,12 +99,12 @@ No es asesoramiento legal: validalo con tu contador/abogado.
 | Qué | Dónde | Por qué |
 |---|---|---|
 | **CUIT y alta impositiva** (monotributo o responsable inscripto) | ARCA (ex AFIP) | Para facturar a los organizadores la comisión y el fee por evento. |
-| **Facturación electrónica** | ARCA → Comprobantes en línea / Factura electrónica | Tu facturación a los clientes. Las ventas de la barra las factura cada boliche (el ticket de ROUGE no es factura). |
-| **Registro de bases de datos personales** | AAIP — Registro Nacional de Bases de Datos (Ley 25.326) | ROUGE guarda nombre, teléfono, fotos y gustos de los asistentes. |
+| **Facturación electrónica** | ARCA → Comprobantes en línea / Factura electrónica | Tu facturación a los clientes. Las ventas de la barra las factura cada boliche (el ticket de Rouge Pass no es factura). |
+| **Registro de bases de datos personales** | AAIP — Registro Nacional de Bases de Datos (Ley 25.326) | Rouge Pass guarda nombre, teléfono, fotos y gustos de los asistentes. |
 | **Términos y condiciones + Política de privacidad** | Páginas públicas en tu dominio | Las piden Google, Meta y Mercado Pago, y la Ley 25.326. Incluí: datos que se guardan, para qué, quién los ve (organizador), cómo borrar la cuenta, +18. |
 | **Contrato con cada organizador** | Plantilla propia | Fee, comisión, responsabilidad por la venta de alcohol a mayores de 18 (Ley 24.788) y uso de los datos del CRM. |
 | **Defensa del consumidor** | Ley 24.240 / Res. 424/2020 | Si vendés servicios online a consumidores: "botón de arrepentimiento" y datos de contacto visibles. |
-| **Marca "ROUGE"** | INPI | Registrar la marca antes de invertir en publicidad. |
+| **Marca "Rouge Pass"** | INPI | Registrar la marca antes de invertir en publicidad. |
 
 ## 8. Supabase para el primer evento real
 

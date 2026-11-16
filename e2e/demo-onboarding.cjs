@@ -82,7 +82,7 @@ const log = (...a) => console.log(...a);
   await p.click("text=Bloquear número");
   await p.waitForSelector("text=+54 9 •• ••••-1002");
   await p.screenshot({ path: `${SP}/ob-4.png` });
-  await p.click("text=Entrar a ROUGE");
+  await p.click("text=Entrar a Rouge Pass");
   await p.waitForURL(`${B}/app`);
   log("✔ onboarding completo → home");
 

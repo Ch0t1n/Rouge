@@ -2,7 +2,7 @@
   "name": "rouge",
   "version": "1.6.0",
   "private": true,
-  "description": "ROUGE — plataforma social y operativa para eventos, fiestas y discotecas (PWA B2B2C).",
+  "description": "Rouge Pass — plataforma social y operativa para eventos, fiestas y discotecas (PWA B2B2C).",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

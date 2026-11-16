@@ -67,7 +67,7 @@ async function magicLink(page, email) {
   await p.click("text=Continuar");
   await p.click('button[aria-pressed]:has-text("Techno")');
   await p.click("text=Continuar");
-  await p.click("text=Entrar a ROUGE");
+  await p.click("text=Entrar a Rouge Pass");
   await p.waitForURL("**/app", { timeout: 20000 });
 
   const { data: prof } = await admin.from("profiles").select("id, photos, instagram_username, instagram_verified").eq("instagram_username", igUser).single();
@@ -132,7 +132,7 @@ async function magicLink(page, email) {
   // ── Instagram ya usado por otra cuenta ──
   await identity({ id: igId, username: igUser });
   await p4.click("text=Conectar Instagram");
-  await p4.waitForSelector("text=Esa cuenta de Instagram ya está conectada a otro perfil de ROUGE.");
+  await p4.waitForSelector("text=Esa cuenta de Instagram ya está conectada a otro perfil de Rouge Pass.");
   assert(true, "una cuenta de Instagram no se puede conectar a dos perfiles");
 
   // ── Google: el botón abre el OAuth de Supabase con la vuelta correcta ──

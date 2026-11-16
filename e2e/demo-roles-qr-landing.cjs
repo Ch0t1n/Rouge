@@ -156,7 +156,7 @@ const assert = (c, m) => { if (!c) throw new Error("✘ " + m); log("✔ " + m);
   await ig.click("text=Continuar");
   await ig.click('button[aria-pressed]:has-text("House")');
   await ig.click("text=Continuar");
-  await ig.click("text=Entrar a ROUGE");
+  await ig.click("text=Entrar a Rouge Pass");
   await ig.waitForURL("**/app");
   await ig.goto(`${B}/profile`, { waitUntil: "networkidle" });
   assert(await ig.isVisible(`text=@${sug}`) && await ig.isVisible("text=Cuenta conectada"), "demo: el perfil muestra el Instagram verificado");

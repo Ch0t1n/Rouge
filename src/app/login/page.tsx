@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
 import { OrDivider, SocialLoginButtons } from "@/components/social/SocialLoginButtons";
 import { useInstagramReturn } from "@/components/social/InstagramField";
+import { Wordmark } from "@/components/brand/Wordmark";
 
 /**
  * Ingreso e identificación del tipo de usuario.
@@ -58,7 +59,7 @@ function Login() {
     <main className="safe-top relative flex min-h-dvh flex-col overflow-hidden px-6 pb-10 pt-10">
       <div aria-hidden className="pointer-events-none absolute -top-40 left-1/2 size-[420px] -translate-x-1/2 rounded-full bg-rouge/20 blur-[120px]" />
       <Link href="/" className="relative font-display text-5xl font-bold tracking-tight text-rouge text-glow-rouge">
-        ROUGE
+        <Wordmark />
       </Link>
       <h1 className="relative mt-5 text-[28px] leading-tight">¿Cómo entrás esta noche?</h1>
       <p className="relative mt-2 text-sm text-muted">Cada tipo de usuario ve su propia pantalla: la fiesta para asistentes, el panel para el equipo.</p>

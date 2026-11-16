@@ -2,6 +2,17 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y [SemVer](https://semver.org/lang/es/).
 
+## [Sin publicar]
+
+### Cambiado
+- **Nuevo nombre: Rouge Pass** (antes ROUGE). Cambian los textos visibles: wordmark (ROUGE **PASS**), metadata y
+  nombre de la PWA, landing pública y de organizadores, demo, login, onboarding, mensajes al compartir, ticket y QRs
+  impresos, nombre de la API (`Rouge Pass API`) y documentación. Constante única `APP_NAME` en `src/lib/brand.ts` y
+  componente `<Wordmark />`.
+- **Sin cambios internos** (compatibles con lo que ya está en producción): token de color `rouge`, QR
+  `ROUGE:ORDER:` / `ROUGE:PASS:` (entradas y tickets ya emitidos siguen andando), claves `rouge:*` del navegador y
+  email interno de las cuentas de Instagram.
+
 ## [1.6.0] — 2026-11-16
 
 ### Agregado

@@ -38,8 +38,8 @@ const PLANS = [
 
 /** Preguntas del público (landing "/"): nada de planes, CRM ni ventas. */
 export const FAQ_PUBLIC = [
-  { q: "¿Tengo que descargar una app?", a: "No. ROUGE funciona en el navegador: abrís el link o el QR de tu entrada y listo. Si querés, la agregás a la pantalla de inicio." },
-  { q: "¿Cuánto me cuesta?", a: "Nada. ROUGE lo pone la fiesta. Solo pagás lo que pidas en la barra, como siempre (y sin hacer fila)." },
+  { q: "¿Tengo que descargar una app?", a: "No. Rouge Pass funciona en el navegador: abrís el link o el QR de tu entrada y listo. Si querés, la agregás a la pantalla de inicio." },
+  { q: "¿Cuánto me cuesta?", a: "Nada. Rouge Pass lo pone la fiesta. Solo pagás lo que pidas en la barra, como siempre (y sin hacer fila)." },
   { q: "¿Quién ve mi número de teléfono?", a: "Ningún otro asistente. Y si bloqueás un número, nunca te revelamos si esa persona tiene cuenta." },
   { q: "¿Qué pasa cuando termina la fiesta?", a: "Efecto Cenicienta: el lobby, el plano y los Squads se cierran a la hora que fija la fiesta. Tus Matches y sus chats quedan para siempre." },
   { q: "¿Cómo me ubican si adentro no hay GPS?", a: "Con el Pin-Drop: tocás el plano real del lugar y tu pin dura 15 minutos. Lo ven solo tu Squad y los Matches que elijas." },
@@ -49,12 +49,12 @@ export const FAQ_PUBLIC = [
 
 /** Preguntas de organizadores (página oculta "/organizadores"). */
 const FAQ = [
-  { q: "¿Tengo que descargar una app?", a: "No. ROUGE es una PWA: abrís el link o el QR de tu entrada y funciona en el navegador. Si querés, la agregás a la pantalla de inicio." },
+  { q: "¿Tengo que descargar una app?", a: "No. Rouge Pass es una PWA: abrís el link o el QR de tu entrada y funciona en el navegador. Si querés, la agregás a la pantalla de inicio." },
   { q: "¿Quién ve mi número de teléfono?", a: "Ningún otro asistente. Solo lo usa el equipo del evento en su CRM. Y si bloqueás un número, nunca te revelamos si esa persona tiene cuenta." },
   { q: "¿Qué pasa cuando termina la fiesta?", a: "Efecto Cenicienta: el lobby, el plano y los Squads se cierran a la hora que fijó el organizador. Tus Matches y sus chats quedan para siempre." },
   { q: "¿Cómo me ubican si adentro no hay GPS?", a: "Con el Pin-Drop: tocás el plano real del lugar y tu pin dura 15 minutos. Lo ven solo tu Squad y los Matches que elijas." },
   { q: "¿Cómo se integra con mi ticketera?", a: "Con la API v1: generás un código de 1 uso por entrada (idempotente), lo anulás si hay reembolso y consultás el check-in. Cada código tiene su QR listo para el mail." },
-  { q: "¿Cómo cobra ROUGE?", a: "Según tu operación: fee por evento, por asistente activo o comisión sobre barra y VIP. ROUGE gana cuando tu fiesta funciona." },
+  { q: "¿Cómo cobra Rouge Pass?", a: "Según tu operación: fee por evento, por asistente activo o comisión sobre barra y VIP. Rouge Pass gana cuando tu fiesta funciona." },
   { q: "¿Los datos del CRM son míos?", a: "Sí: tus asistentes, su consumo y sus Smart Tags se exportan a CSV cuando quieras. Las conexiones entre asistentes son privadas y el staff no las ve." },
 ];
 
