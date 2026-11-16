@@ -132,7 +132,7 @@ function page({ kicker, title, sub, bullets, visual, accent = "rouge", footer = 
   .qr img { width:340px; height:340px; display:block; }
 </style></head><body><div class="wrap">
   <div class="glow g1"></div><div class="glow g2"></div>
-  <div class="top"><span class="logo">ROUGE</span><span class="kicker">${kicker}</span></div>
+  <div class="top"><span class="logo">ROUGE <b style="color:#F8FAFC;text-shadow:none">PASS</b></span><span class="kicker">${kicker}</span></div>
   <h1>${title}</h1>
   ${sub ? `<p class="sub">${sub}</p>` : ""}
   <div class="body ${visual.stack ? "stack" : ""}">

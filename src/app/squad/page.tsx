@@ -42,6 +42,7 @@ import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
+import { APP_NAME } from "@/lib/brand";
 
 export default function SquadPage() {
   const me = useRequireProfile();
@@ -222,7 +223,7 @@ const meId = state.current_user_id;
 
   const shareSheet = useShare();
   const share = () =>
-    shareSheet.open({ url: link, title: `Sumate a ${squad.name}`, text: `Sumate a mi Squad "${squad.name}" en ROUGE 👯 (entrás al evento y quedás en el grupo)`, fileName: `rouge-squad-${squad.invite_code}`, accent: "squad", caption: squad.invite_code });
+    shareSheet.open({ url: link, title: `Sumate a ${squad.name}`, text: `Sumate a mi Squad "${squad.name}" en ${APP_NAME} 👯 (entrás al evento y quedás en el grupo)`, fileName: `rouge-pass-squad-${squad.invite_code}`, accent: "squad", caption: squad.invite_code });
 
   return (
     <>

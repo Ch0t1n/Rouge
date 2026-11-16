@@ -18,6 +18,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { BrandLogo, useBrandTheme } from "@/components/brand/BrandTheme";
 import { eventTheme, resolveTheme, type EventTheme } from "@/lib/engine/branding";
 import type { Brand } from "@/lib/types";
+import { Wordmark } from "@/components/brand/Wordmark";
 
 interface Preview {
   event: Pick<RougeEvent, "id" | "name" | "description" | "venue_name" | "starts_at" | "ends_at" | "lineup_json" | "lobby_opens_at" | "lobby_expires_at" | "max_capacity">;
@@ -239,7 +240,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   return (
     <main className="safe-top space-y-5 px-4 pb-10 pt-4">
       <Link href="/" className="font-display text-2xl font-bold tracking-tight text-rouge text-glow-rouge">
-        ROUGE
+        <Wordmark />
       </Link>
       {children}
     </main>

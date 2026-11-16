@@ -1,10 +1,10 @@
-# ROUGE v1.0 — Catálogo de funcionalidades
+# Rouge Pass v1.0 — Catálogo de funcionalidades
 
-ROUGE es una **PWA social y operativa para eventos, fiestas y boliches**. El asistente entra al lobby privado
+Rouge Pass es una **PWA social y operativa para eventos, fiestas y boliches**. El asistente entra al lobby privado
 del evento, conecta con gente afín, arma su Squad, no pierde a su grupo y pide en la barra sin hacer fila. El
 organizador opera toda la noche desde un panel y paga por evento, por asistente activo o con comisión de barra/VIP.
 
-> **Tesis de producto:** ROUGE gana cuando la gente conecta rápido, no pierde a su grupo, consume sin filas y
+> **Tesis de producto:** Rouge Pass gana cuando la gente conecta rápido, no pierde a su grupo, consume sin filas y
 > vuelve a comprar entrada. Ninguna función retiene a usuarios frustrados.
 
 Cada función existe en los dos modos de la app:
@@ -44,10 +44,12 @@ Un solo perfil que sirve para **todas las fiestas**.
 
 - **Onboarding en 4 pasos** que guarda en cada paso: (1) nombre, @username, fecha de nacimiento (+18), género y
   teléfono; (2) hasta 4 fotos y un loop de 5 s; (3) géneros musicales y Spotify; (4) lista negra por teléfono.
-- **Fotos:** hasta 4, formato 3:4, comprimidas en el teléfono a WebP antes de subir (avisa el ahorro: "2,1 MB → 240 KB").
-  Se elige la principal y se reordenan.
+- **Fotos:** hasta 4, **siempre verticales 3:4**. Al subir cada una (del teléfono o importada de Instagram) se abre el
+  **encuadre**: la persona arrastra y acerca para elegir qué se ve; la app nunca recorta sola. Después se comprime en el
+  teléfono a WebP (avisa el ahorro: "2,1 MB → 240 KB"). Se ven enteras en la grilla, el perfil, los avatares (también
+  verticales 3:4) y la puerta. Se elige la principal y se reordenan.
 - **Importar de Instagram:** con Instagram conectado se eligen fotos del feed; se descargan, se comprimen y se suben
-  al almacenamiento de ROUGE (los links de Instagram vencen, nunca se guardan).
+  al almacenamiento de Rouge Pass (los links de Instagram vencen, nunca se guardan).
 - **Loop de 5 s:** video tipo GIF, recodificado en el teléfono **sin audio**.
 - **Música:** hasta 5 géneros (Techno, House, Reggaetón, Cachengue, Pop, RKT, Indie, Urbano, Electrónica) y un
   tema/playlist de Spotify (se pega el link; el reproductor solo carga al tocar "Escuchar").
@@ -228,7 +230,7 @@ Para clientes empresariales que venden entradas con su propio sistema. Guía com
 
 ## 18. Demo en vivo para anfitriones
 
-Página separada para mostrarle ROUGE a dueños de boliches y productoras: **`/demo`** (se comparte por link o QR; no se
+Página separada para mostrarle Rouge Pass a dueños de boliches y productoras: **`/demo`** (se comparte por link o QR; no se
 indexa en buscadores). Funciona en el sitio de demostración (Modo Demo); en el sitio con datos reales muestra un aviso
 con link a `NEXT_PUBLIC_DEMO_URL`.
 
@@ -259,16 +261,16 @@ ve con ella. Pensado para hacerse en dos minutos:
 - **Seguridad sin marca:** el botón de **Rescate 🚨 siempre es rojo** y los pines del Squad siempre cian.
 - **Por edición:** cada evento usa la marca de quien lo creó o personaliza su logo y colores solo para esa noche.
 - **Dónde se ve:** inicio y toda la app del asistente, la invitación `/join` (también sin cuenta), la Pantalla LED y la
-  hoja de QRs impresos. El panel del equipo mantiene los colores de ROUGE.
+  hoja de QRs impresos. El panel del equipo mantiene los colores de Rouge Pass.
 - Una persona puede tener varias marcas (por ejemplo, dos fiestas distintas).
 
 ## 20. Cobros con Mercado Pago
 
-- La marca conecta **su** cuenta de Mercado Pago (autorización en Mercado Pago; ROUGE nunca ve la clave y los tokens
+- La marca conecta **su** cuenta de Mercado Pago (autorización en Mercado Pago; Rouge Pass nunca ve la clave y los tokens
   se guardan cifrados). Se desconecta cuando quiera.
 - Con la cuenta conectada, cada pedido de la Barra Express se **paga desde la app** (billetera de Mercado Pago, dinero
   en cuenta o tarjeta) y la plata entra directo a la cuenta de la marca.
-- **Comisión de ROUGE automática:** Mercado Pago la separa en cada cobro (`marketplace_fee`), sin facturarla aparte.
+- **Comisión de Rouge Pass automática:** Mercado Pago la separa en cada cobro (`marketplace_fee`), sin facturarla aparte.
 - **La barra solo prepara lo que está pago:** los pedidos que esperan pago no aparecen en comandas; el panel muestra
   cuántos hay y cuánto se cobró por Mercado Pago. Cada comanda dice "Pagado con Mercado Pago" o "Cobrar al entregar".
 - El pago lo confirma el servidor consultando a Mercado Pago (aviso firmado + verificación de monto y pedido), nunca

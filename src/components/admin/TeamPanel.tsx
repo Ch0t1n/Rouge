@@ -40,7 +40,7 @@ export function TeamPanel({ event }: { event: RougeEvent }) {
 
   return (
     <Panel title="Equipo del evento">
-      <p className="text-sm text-muted">Cada rol entra a su pantalla y solo puede hacer lo suyo. Sumá gente por su @usuario de ROUGE.</p>
+      <p className="text-sm text-muted">Cada rol entra a su pantalla y solo puede hacer lo suyo. Sumá gente por su @usuario de Rouge Pass.</p>
       <form
         className="mt-4 flex flex-wrap items-end gap-2"
         onSubmit={(e) => {

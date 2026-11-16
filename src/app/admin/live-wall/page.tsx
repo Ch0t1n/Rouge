@@ -10,6 +10,7 @@ import { cn, formatTime } from "@/lib/utils";
 import { Avatar } from "@/components/ui/avatar";
 import { BrandLogo } from "@/components/brand/BrandTheme";
 import { eventTheme } from "@/lib/engine/branding";
+import { Wordmark } from "@/components/brand/Wordmark";
 
 /** Número que "cuenta" hasta el valor nuevo (efecto marcador). */
 function useCountUp(value: number, ms = 900) {
@@ -104,7 +105,7 @@ export default function LiveWallPage() {
             {theme.logo_url ? (
               <BrandLogo theme={theme} className="h-[min(5vw,9vh)] max-w-[22vw] self-center" />
             ) : (
-              <span className="font-display text-[4vw] font-bold leading-none tracking-tight text-rouge text-glow-rouge animate-neon-flicker">ROUGE</span>
+              <span className="font-display text-[4vw] font-bold leading-none tracking-tight text-rouge text-glow-rouge animate-neon-flicker"><Wordmark /></span>
             )}
             <span className="font-display text-[1.8vw] font-semibold text-primary/90">{event.name}</span>
           </div>

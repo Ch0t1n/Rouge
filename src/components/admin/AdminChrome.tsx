@@ -9,6 +9,7 @@ import { NO_PERMISSION, permissionForPath, ROLE_META, roleHome } from "@/lib/eng
 import { getProfile } from "@/lib/engine/selectors";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
+import { Wordmark } from "@/components/brand/Wordmark";
 
 export const ADMIN_NAV = [
   { href: "/admin", label: "Resumen", icon: BarChart3 },
@@ -61,7 +62,7 @@ export function AdminChrome({ children }: { children: ReactNode }) {
     <div className="flex min-h-screen">
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-white/10 bg-surface/60 p-5 lg:flex">
         <Link href="/app" className="font-display text-2xl font-bold tracking-tight text-rouge text-glow-rouge">
-          ROUGE
+          <Wordmark />
         </Link>
         <p className="mt-1 text-xs font-semibold uppercase tracking-widest text-vip">Organizer Suite</p>
         <div className="mt-6">{eventSelect}</div>
@@ -102,7 +103,7 @@ export function AdminChrome({ children }: { children: ReactNode }) {
       <div className="min-w-0 flex-1">
         <div className="sticky top-0 z-30 border-b border-white/10 bg-background/90 backdrop-blur-xl lg:hidden">
           <div className="flex items-center gap-3 px-4 pt-3">
-            <Link href="/app" className="font-display text-xl font-bold text-rouge">ROUGE</Link>
+            <Link href="/app" className="font-display text-xl font-bold text-rouge"><Wordmark /></Link>
             <div className="min-w-0 flex-1">{eventSelect}</div>
             <Link href="/login?as=staff" aria-label={`${meta.label}: cambiar de rol`} className="flex min-h-touch shrink-0 items-center gap-1 rounded-full bg-vip/15 px-3 font-display text-xs font-semibold text-vip">
               <span aria-hidden>{meta.emoji}</span> {meta.label}

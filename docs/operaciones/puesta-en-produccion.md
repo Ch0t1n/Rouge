@@ -62,7 +62,7 @@ Opcionales (tests o casos especiales): `INSTAGRAM_OAUTH_URL`, `INSTAGRAM_TOKEN_U
 ### 3. Google
 
 1. [Google Cloud Console](https://console.cloud.google.com/) → proyecto → *APIs y servicios*:
-   - *Pantalla de consentimiento OAuth*: nombre ROUGE, logo, email de soporte, dominio y **política de privacidad**.
+   - *Pantalla de consentimiento OAuth*: nombre Rouge Pass, logo, email de soporte, dominio y **política de privacidad**.
      Publicarla (con muchos usuarios Google pide verificación).
    - *Credenciales → Crear ID de cliente OAuth* (aplicación web). URI de redireccionamiento autorizada:
      `https://<proyecto>.supabase.co/auth/v1/callback`.
@@ -91,7 +91,7 @@ Cada organizador crea sus claves desde el panel. Guía para pasarle a la tickete
 
 ### 5b. Cobros con Mercado Pago (opcional)
 
-Para que cada marca cobre la Barra Express con su cuenta de Mercado Pago (y ROUGE reciba su comisión automática),
+Para que cada marca cobre la Barra Express con su cuenta de Mercado Pago (y Rouge Pass reciba su comisión automática),
 seguí [Mercado Pago](../tecnica/mercadopago.md): app de Marketplace, `MP_CLIENT_ID`, `MP_CLIENT_SECRET`,
 `MP_TOKEN_KEY`, `MP_WEBHOOK_SECRET`, `MP_MARKETPLACE_FEE_PERCENT` y `NEXT_PUBLIC_PAYMENTS_MP=1`.
 

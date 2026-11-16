@@ -1,6 +1,6 @@
 {
-  "name": "ROUGE — La noche, conectada",
-  "short_name": "ROUGE",
+  "name": "Rouge Pass — La noche, conectada",
+  "short_name": "Rouge Pass",
   "description": "Lobby privado de tu fiesta: conectá, armá tu Squad, encontrá a tus amigas en el plano y pedí en la barra sin filas.",
   "id": "/",
   "start_url": "/app?source=pwa",

@@ -1,12 +1,16 @@
-# ROUGE — Guía de arquitectura para Claude Code
+# Rouge Pass — Guía de arquitectura para Claude Code
 
-ROUGE es una **PWA social y operativa para eventos, fiestas y discotecas (B2B2C)**.
+> El producto se llama **Rouge Pass** (antes ROUGE). Lo interno conserva "rouge": el token de color `rouge`, los QR
+> `ROUGE:ORDER:` / `ROUGE:PASS:`, las claves `rouge:*` de localStorage, `RougeContext`/`useRouge` y el email interno de
+> Instagram. Los textos visibles usan `APP_NAME` (`src/lib/brand.ts`) y el wordmark `<Wordmark />` (`components/brand`).
+
+Rouge Pass es una **PWA social y operativa para eventos, fiestas y discotecas (B2B2C)**.
 Los asistentes entran a un lobby privado del evento (link maestro o código de 1 uso),
 conectan con gente afín, arman su **Squad** (seguridad grupal + perks), se ubican en el
 **plano** con pines de 15 min y piden en la **Barra Express**. El organizador paga
 (fee por evento / por asistente activo / comisión de barra-VIP) y opera todo desde `/admin`.
 
-> **Tesis:** ROUGE gana cuando la gente conecta rápido, no pierde a su grupo, consume sin
+> **Tesis:** Rouge Pass gana cuando la gente conecta rápido, no pierde a su grupo, consume sin
 > filas y vuelve a comprar entrada. Nunca diseñar features que retengan usuarios frustrados.
 
 ---
@@ -251,7 +255,7 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
    el ticker vuelve a su lagSmoothing): /app y /admin no cargan ni heredan nada de esto. Ojo con `cn()` (tailwind-merge)
    y clases `text-glow-*`: las confunde con colores de texto; en SplitReveal se concatenan sin `cn`.
 20. **Marca y tema.** `rouge` y `vip` son variables CSS (`rgb(var(--c-rouge) / <alpha>)`); el tema del evento
-   (`eventTheme`: evento → marca → ROUGE) lo aplica `AppShell` con `useBrandTheme` en la app del asistente y la LED
+   (`eventTheme`: evento → marca → Rouge Pass) lo aplica `AppShell` con `useBrandTheme` en la app del asistente y la LED
    (no en landing, demo, login ni panel); `/join` aplica el del link. **Rescate = token `sos` fijo**, Squad = cian: nunca
    usar `rouge` para seguridad. En SVG, los colores con variables van en `style`, no en atributos. Opacidades de Tailwind
    solo de su escala (5, 10, 15…): `/12` o `/8` no se generan.
@@ -353,8 +357,11 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
 - **Tipografía:** `font-display` = Space Grotesk (títulos, badges, métricas, contadores; 600/700,
   tracking tight) · `font-sans` = Plus Jakarta Sans (cuerpo, bios, chat; 400/500/600).
 - **Plano:** Squad pulsa cian, Match pulsa rouge, Punto Base es bandera dorada.
-- **Tarjetas de grilla:** `aspect-card` (3:4), imagen a sangre, `.card-fade`, badge de % afinidad,
-  `.glass-pill` con el Mood.
+- **Tarjetas de grilla:** `aspect-card` (3:4), `.card-fade`, badge de % afinidad, `.glass-pill` con el Mood.
+- **Fotos de perfil: siempre verticales 3:4 y las encuadra la persona.** Al subir pasan por `PhotoCropper`
+  (`react-easy-crop`, `lib/media/crop.ts`): la app nunca recorta sola. Se muestran enteras (`object-contain`);
+  `MediaImage` rellena con la foto difuminada si queda alguna vieja con otra proporción. `Avatar` también es 3:4
+  (`size` = alto, ancho = 3/4) con esquinas suaves, nunca un círculo. El loop también va entero.
 - **Ergonomía:** botones ≥ 44px (`min-h-touch`), modales `BottomSheet`, una mano.
 - No inventar colores nuevos: si hace falta un estado, usar opacidades de los tokens.
 - Respetar `prefers-reduced-motion` (ya global en `globals.css`).

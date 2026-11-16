@@ -29,6 +29,7 @@ import { fetchRemoteState, subscribeRealtime } from "@/lib/supabase/sync";
 import { uid } from "@/lib/utils";
 import { grantDemoAccess, hasDemoAccess, isDemoPath } from "@/lib/demo/access";
 import type { Command } from "./commands";
+import { Wordmark } from "@/components/brand/Wordmark";
 
 const STORAGE_KEY = "rouge:state";
 /** Persona activa POR PESTAÑA (Modo Demo): cada pestaña simula un teléfono distinto. */
@@ -459,7 +460,7 @@ export function useNow(intervalMs = 15_000) {
 function BootScreen() {
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-background" aria-busy="true" aria-live="polite">
-      <span className="font-display text-4xl font-bold tracking-tight text-rouge text-glow-rouge animate-neon-flicker">ROUGE</span>
+      <span className="font-display text-4xl font-bold tracking-tight text-rouge text-glow-rouge animate-neon-flicker"><Wordmark /></span>
       <span className="sr-only">Cargando</span>
       <div className="flex h-6 items-end gap-1" aria-hidden>
         {[0, 1, 2, 3, 4].map((i) => (

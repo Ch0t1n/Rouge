@@ -26,7 +26,7 @@ const PILLARS = [
     tag: "03 / PLANO PIN-DROP 15 MIN",
     title: "Geolocalización indoor que sí funciona.",
     tone: "squad" as const,
-    body: "El GPS no entra a un subsuelo lleno de gente. En ROUGE tocás el plano real del boliche y dejás un pin que vence a los 15 minutos. Vos elegís quién lo ve: tu Squad en Cyber Cyan y solo los Matches que selecciones en Electric Rouge.",
+    body: "El GPS no entra a un subsuelo lleno de gente. En Rouge Pass tocás el plano real del boliche y dejás un pin que vence a los 15 minutos. Vos elegís quién lo ve: tu Squad en Cyber Cyan y solo los Matches que selecciones en Electric Rouge.",
     bullets: ["Pin manual: precisión de sector", "Expira solo a los 15 min", "Nunca se comparte con matches no elegidos"],
   },
   {
@@ -73,7 +73,7 @@ export function Pillars() {
   return (
     <section ref={root} id="experiencia" data-stage="1" className="relative scroll-mt-20 px-4 pt-28 sm:px-8">
       <p className="font-mono text-xs uppercase tracking-[0.25em] text-muted">[ 01 {"//"} LA EXPERIENCIA ]</p>
-      <SplitReveal lines={["LOS 4 PILARES", { text: "DE ROUGE.", className: "text-outline" }]} className="mt-4 font-display text-[13vw] font-bold uppercase leading-[0.85] tracking-tighter lg:text-[8.5vw]" />
+      <SplitReveal lines={["LOS 4 PILARES", { text: "DE ROUGE PASS.", className: "text-outline" }]} className="mt-4 font-display text-[13vw] font-bold uppercase leading-[0.85] tracking-tighter lg:text-[8.5vw]" />
 
       <div data-pillars-track className="relative mt-10 lg:grid lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:gap-16">
         {/* Columna fija (desktop) */}

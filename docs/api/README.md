@@ -1,6 +1,6 @@
-# API de ROUGE para ticketeras y productoras (v1)
+# API de Rouge Pass para ticketeras y productoras (v1)
 
-Permite que tu sistema de entradas **genere los códigos de acceso de ROUGE y los mande junto con cada entrada**.
+Permite que tu sistema de entradas **genere los códigos de acceso de Rouge Pass y los mande junto con cada entrada**.
 Quien compra recibe en el mail de su entrada un botón y un QR que lo llevan directo al lobby del evento.
 
 - **Base URL:** `https://<tu-dominio-rouge>/api/v1`
@@ -9,11 +9,11 @@ Quien compra recibe en el mail de su entrada un botón y un QR que lo llevan dir
 
 ## 1. Obtener una clave
 
-1. En el panel de ROUGE, como **dueño/a o producción** del evento: *Eventos y accesos → API para ticketeras*.
+1. En el panel de Rouge Pass, como **dueño/a o producción** del evento: *Eventos y accesos → API para ticketeras*.
 2. Poné un nombre (ej. "Ticketera Pasaje") y elegí el alcance:
    - **Solo este evento**, o
    - **Todos mis eventos** (los que administra quien crea la clave, presentes y futuros).
-3. Copiá la clave `rk_live_…`. **Se muestra una sola vez**: ROUGE guarda solo su huella (SHA-256).
+3. Copiá la clave `rk_live_…`. **Se muestra una sola vez**: Rouge Pass guarda solo su huella (SHA-256).
 
 Usala en cada request:
 
@@ -30,7 +30,7 @@ Authorization: Bearer rk_live_xxxxxxxxxx_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```mermaid
 sequenceDiagram
   participant T as Tu sistema de entradas
-  participant R as API de ROUGE
+  participant R as API de Rouge Pass
   participant C as Comprador/a
   T->>R: POST /events/{evento}/codes { tickets: [{ external_ref: "ORD-1029-1" }] }
   R-->>T: code, join_url, qr_url
@@ -64,7 +64,7 @@ Podés reintentar sin miedo a duplicar si hubo un timeout.
 ### Generar un código por entrada
 
 ```bash
-curl -X POST https://app.rouge.com.ar/api/v1/events/bresh-sabado/codes \
+curl -X POST https://app.tudominio.com/api/v1/events/bresh-sabado/codes \
   -H "Authorization: Bearer $ROUGE_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -90,8 +90,8 @@ Respuesta `201 Created` (o `200 OK` si todos ya existían):
       "status": "unused",
       "external_ref": "ORD-1029-1",
       "label": "General",
-      "join_url": "https://app.rouge.com.ar/join/K7P2QXMR4A",
-      "qr_url": "https://app.rouge.com.ar/api/v1/qr/K7P2QXMR4A",
+      "join_url": "https://app.tudominio.com/join/K7P2QXMR4A",
+      "qr_url": "https://app.tudominio.com/api/v1/qr/K7P2QXMR4A",
       "created_at": "2026-11-15T13:02:11.120Z",
       "used_at": null,
       "revoked_at": null,
@@ -130,7 +130,7 @@ Respuesta: `{ "data": [...], "next_cursor": "…" | null }`. Seguí pidiendo con
 ### Anular (reembolso)
 
 ```bash
-curl -X DELETE https://app.rouge.com.ar/api/v1/events/bresh-sabado/codes/K7P2QXMR4A \
+curl -X DELETE https://app.tudominio.com/api/v1/events/bresh-sabado/codes/K7P2QXMR4A \
   -H "Authorization: Bearer $ROUGE_API_KEY"
 ```
 
@@ -145,7 +145,7 @@ Los clientes de mail no muestran SVG: usá el **PNG** de `qr_url`.
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px auto;text-align:center">
   <tr><td style="font:600 18px Arial,sans-serif;color:#111">Tu acceso a la app de la fiesta</td></tr>
   <tr><td style="padding:16px 0">
-    <img src="{{qr_url}}?size=320" width="160" height="160" alt="QR de acceso a ROUGE" style="display:block;margin:0 auto">
+    <img src="{{qr_url}}?size=320" width="160" height="160" alt="QR de acceso a Rouge Pass" style="display:block;margin:0 auto">
   </td></tr>
   <tr><td style="font:14px Arial,sans-serif;color:#444">Código: <b style="letter-spacing:2px">{{code}}</b></td></tr>
   <tr><td style="padding-top:16px">
@@ -154,13 +154,13 @@ Los clientes de mail no muestran SVG: usá el **PNG** de `qr_url`.
 </table>
 ```
 
-Texto sugerido: *"Con este código entrás a ROUGE, la app de la fiesta: conocé gente afín, armá tu Squad y pedí en la
+Texto sugerido: *"Con este código entrás a Rouge Pass, la app de la fiesta: conocé gente afín, armá tu Squad y pedí en la
 barra sin fila. Es personal: queda asociado a tu perfil cuando entrás."*
 
 ## 5. Ejemplo en Node.js
 
 ```js
-const ROUGE = "https://app.rouge.com.ar/api/v1";
+const ROUGE = "https://app.tudominio.com/api/v1";
 
 async function codigoParaEntrada(evento, entrada) {
   const res = await fetch(`${ROUGE}/events/${evento}/codes`, {
@@ -196,7 +196,7 @@ Formato: `{ "error": { "code": "…", "message": "…" } }`.
 - Reintentá ante `5xx` o timeouts con espera exponencial; con `tickets` el reintento es seguro.
 - La API no tiene CORS habilitado a propósito: llamala desde tu servidor.
 
-## 8. Requisitos del lado de ROUGE (operación)
+## 8. Requisitos del lado de Rouge Pass (operación)
 
 La API corre en el mismo despliegue de la app y necesita, en el servidor:
 `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` y `NEXT_PUBLIC_APP_URL` (dominio que va en `join_url` y `qr_url`).

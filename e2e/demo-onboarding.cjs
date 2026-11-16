@@ -38,6 +38,7 @@ const log = (...a) => console.log(...a);
   // Paso 2: foto + video + bio
   await p.waitForSelector("text=Tu mejor versión");
   await p.setInputFiles('[data-testid="photo-input"]', FIXTURE_PHOTO);
+  await p.click('[role="dialog"] button:has-text("Usar foto")');
   await p.waitForSelector('img[alt="Foto 1"]', { timeout: 30000 });
   log("toast compresión →", (await p.textContent("text=/→/").catch(() => "?")).trim());
   // Video de 3s generado en el navegador (con pista de audio para verificar que se elimina)
@@ -83,7 +84,7 @@ const log = (...a) => console.log(...a);
   await p.click("text=Bloquear número");
   await p.waitForSelector("text=+54 9 •• ••••-1002");
   await p.screenshot({ path: `${SP}/ob-4.png` });
-  await p.click("text=Entrar a ROUGE");
+  await p.click("text=Entrar a Rouge Pass");
   await p.waitForURL(`${B}/app`);
   log("✔ onboarding completo → home");
 

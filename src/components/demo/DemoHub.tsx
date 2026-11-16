@@ -8,6 +8,8 @@ import { ShareButton } from "@/components/share/ShareSheet";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { Wordmark } from "@/components/brand/Wordmark";
+import { APP_NAME } from "@/lib/brand";
 
 const DEMO_URL = process.env.NEXT_PUBLIC_DEMO_URL;
 
@@ -55,10 +57,10 @@ export function DemoHub() {
     <div className="min-h-dvh">
       <header className="sticky top-0 z-30 border-b border-white/10 bg-background/85 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 py-3 sm:px-6">
-          <span className="font-display text-xl font-bold tracking-tight text-rouge text-glow-rouge">ROUGE</span>
+          <span className="font-display text-xl font-bold tracking-tight text-rouge text-glow-rouge"><Wordmark /></span>
           <Badge tone="vip" size="md">Demo para anfitriones</Badge>
           <div className="ml-auto flex flex-wrap gap-2">
-            <ShareButton size="sm" label="Compartir" target={{ url: "/demo", title: "Demo en vivo de ROUGE", text: "Mirá ROUGE en vivo: la app de la fiesta y el panel del organizador.", fileName: "rouge-demo", accent: "vip" }} />
+            <ShareButton size="sm" label="Compartir" target={{ url: "/demo", title: `Demo en vivo de ${APP_NAME}`, text: `Mirá ${APP_NAME} en vivo: la app de la fiesta y el panel del organizador.`, fileName: "rouge-demo", accent: "vip" }} />
             <Link href="/login" className={buttonVariants({ size: "sm", variant: "glass" })}>
               <Users /> Elegir persona
             </Link>
@@ -73,7 +75,7 @@ export function DemoHub() {
         <section className="grid gap-8 lg:grid-cols-[1.3fr_1fr] lg:items-end">
           <div>
             <h1 className="font-display text-4xl font-bold leading-[1.02] tracking-tight [text-wrap:balance] sm:text-5xl">
-              Mostrá ROUGE en vivo <span className="text-rouge">en 7 minutos.</span>
+              Mostrá {APP_NAME} en vivo <span className="text-rouge">en 7 minutos.</span>
             </h1>
             <p className="mt-4 max-w-xl text-muted">
               Una fiesta de ejemplo funcionando ahora mismo: asistentes, Squads, pedidos y el equipo completo. Seguí el guion, abrí cada vista con un toque y, si tenés una TV,
