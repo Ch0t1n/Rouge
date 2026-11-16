@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
 import { CalendarX2 } from "lucide-react";
 import { activeEvent } from "@/lib/engine/selectors";
-import { useRouge } from "@/lib/store/RougeContext";
+import { BootScreen, useOptionalRouge } from "@/lib/store/RougeContext";
 import { Toaster } from "@/components/ui/toaster";
 import { BottomNav, NAV_ROUTES } from "./BottomNav";
 import { LiveNotifications } from "./LiveNotifications";
@@ -27,7 +27,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   const demoPage = pathname === "/demo" || pathname.startsWith("/demo/");
   const expanded = landing || demoPage || pathname.startsWith("/admin");
   const withNav = NAV_ROUTES.includes(pathname);
-  const { state, mode, signedIn } = useRouge();
+  // Sin estado todavía (servidor y primer render): la landing se renderiza igual —así su texto llega en el HTML
+  // que leen los buscadores— y el resto de la app espera en el BootScreen.
+  const ctx = useOptionalRouge();
+  const state = ctx?.state ?? null;
+  const mode = ctx?.mode;
+  const signedIn = ctx?.signedIn ?? false;
   const router = useRouter();
   // Supabase: sin sesión solo se ven las rutas públicas; el resto pasa primero por el login.
   const isPublic = landing || demoPage || ["/login", "/join", "/offline"].some((p) => pathname.startsWith(p));
@@ -37,12 +42,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [needsLogin, pathname, router]);
   // Rutas que no dependen de un evento activo (perfil, ingreso, chats 1:1, alta de eventos…)
   const eventFree = landing || demoPage || ["/login", "/onboarding", "/join", "/profile", "/settings", "/u/", "/chat", "/inbox", "/offline", "/admin/events"].some((p) => pathname.startsWith(p));
-  const missingEvent = !eventFree && !activeEvent(state);
+  const missingEvent = !!state && !eventFree && !activeEvent(state);
   // Colores de la marca del evento en la app del asistente y en la Pantalla LED. La landing, la demo, el login,
   // /join (aplica el tema del evento del link) y el panel del staff quedan con los colores de ROUGE.
   const branded = !landing && !demoPage && !["/login", "/join"].some((p) => pathname.startsWith(p)) && (!pathname.startsWith("/admin") || pathname.startsWith("/admin/live-wall"));
-  const theme = eventTheme(state, state.active_event_id);
-  useBrandTheme(branded && theme.custom ? theme : null);
+  const theme = state ? eventTheme(state, state.active_event_id) : null;
+  useBrandTheme(branded && theme?.custom ? theme : null);
+
+  if (!ctx && !landing) return <BootScreen />;
 
   return (
     <>
@@ -62,9 +69,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       >
         {needsLogin ? null : missingEvent ? <NoEvent admin={expanded} /> : children}
       </div>
-      {withNav && !missingEvent && !needsLogin && <BottomNav />}
-      {!expanded && <LiveNotifications />}
-      <Toaster />
+      {ctx && withNav && !missingEvent && !needsLogin && <BottomNav />}
+      {ctx && !expanded && <LiveNotifications />}
+      {ctx && <Toaster />}
     </>
   );
 }

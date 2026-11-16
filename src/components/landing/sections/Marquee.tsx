@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { useAudience } from "../core/audience";
 
 const PHRASES = {
-  public: ["Match por afinidad musical", "Pin-Drop mapa indoor", "1 Rompehielos por noche", "Squads & Rescate", "Barra sin filas", "Cuentas claras"],
+  public: ["Match por afinidad musical", "Tu grupo en el plano", "1 Rompehielos por noche", "Squads y Rescate", "Tragos sin fila", "Cuentas claras"],
   organizers: ["Cobrás antes de servir", "CRM con Smart Tags", "Text Blast por zona", "Pantalla LED", "RRPP con link propio", "Escáner en la puerta"],
 };
 

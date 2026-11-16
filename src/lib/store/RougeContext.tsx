@@ -419,8 +419,14 @@ export function RougeProvider({ children }: { children: ReactNode }) {
     return { ready: true, mode, state, signedIn, role, isStaff: isStaffRole(role), can, exec, refresh, setCurrentUser, setActiveEvent, startNewPersona, resetDemo, signOut, toasts, notify, dismiss };
   }, [state, mode, signedIn, exec, refresh, setCurrentUser, setActiveEvent, startNewPersona, resetDemo, signOut, toasts, notify, dismiss]);
 
-  if (!value) return <BootScreen />;
+  // Mientras no hay estado (servidor y primer render del cliente) el contexto vale null: `AppShell` muestra el
+  // BootScreen en la app y deja renderizar la landing pública, que así llega con su texto en el HTML (SEO).
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
+/** Como `useRouge`, pero devuelve null antes de hidratar el estado (solo para la landing pública y el shell). */
+export function useOptionalRouge() {
+  return useContext(Ctx);
 }
 
 export function useRouge() {
@@ -439,7 +445,7 @@ export function useNow(intervalMs = 15_000) {
   return now;
 }
 
-function BootScreen() {
+export function BootScreen() {
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-background" aria-busy="true" aria-live="polite">
       <span className="font-display text-4xl font-bold tracking-tight text-rouge text-glow-rouge animate-neon-flicker">ROUGE</span>

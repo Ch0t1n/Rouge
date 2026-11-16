@@ -185,8 +185,11 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
    `localStorage` (`rouge:state`). Dos pestañas se sincronizan por el evento `storage`
    (simula Realtime). El `PersonaSwitcher` permite "actuar como" cualquier asistente.
    Si cambiás el formato del estado, subí `STATE_VERSION` en `seed.ts` (fuerza re-siembra).
-4. **Hidratación solo en cliente.** La semilla depende de `Date.now()`; el provider muestra
-   un BootScreen hasta montar. Las páginas de usuario son Client Components.
+4. **Hidratación solo en cliente.** La semilla depende de `Date.now()`; hasta montar el contexto vale null y
+   `AppShell` muestra el BootScreen. Las páginas de usuario son Client Components. **Excepción: la landing** (`/`,
+   `/organizadores`) se renderiza sin estado (SEO: su texto tiene que estar en el HTML del servidor); usa
+   `useOptionalRouge()` / `useEntry()` con destinos públicos por defecto. Textos SEO y FAQ en `landing/content.ts`
+   (módulo plano: lo usa también el JSON-LD de `app/page.tsx`); `robots.ts`, `sitemap.ts` y `opengraph-image.tsx` en `src/app`.
 5. **Una sola interfaz.** `AppShell` renderiza todo dentro de
    `max-w-md mx-auto min-h-screen border-x border-white/10 shadow-2xl relative` salvo
    `/admin/*` (vista expandida). Overlays (`BottomSheet`, `Toaster`) son `fixed` + `max-w-md mx-auto`.

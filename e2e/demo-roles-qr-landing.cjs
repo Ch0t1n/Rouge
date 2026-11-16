@@ -19,7 +19,14 @@ const assert = (c, m) => { if (!c) throw new Error("✘ " + m); log("✔ " + m);
 
   // Landing pública
   await p.goto(`${B}/`, { waitUntil: "networkidle" });
-  assert((await p.getAttribute("h1", "aria-label")) === "No vayas a ciegas. Domina la noche.", "landing: hero");
+  assert((await p.textContent("h1"))?.trim() === "App para fiestas y boliches", "landing: H1 con la palabra clave");
+  assert((await p.getAttribute('[role="heading"][aria-level="2"]', "aria-label")) === "No vayas a ciegas. Dominá la noche.", "landing: eslogan del hero");
+  // SEO: el HTML del servidor (lo que leen buscadores y bots de IA, sin JavaScript) trae el contenido real.
+  const html = await (await p.request.get(`${B}/`)).text();
+  assert(/<h1[^>]*>App para fiestas y boliches<\/h1>/.test(html) && html.includes("¿Qué es ROUGE?") && !html.includes(">Cargando<"), "landing: contenido en el HTML del servidor");
+  assert(html.includes('"@type":"FAQPage"') && html.includes('"@type":"WebApplication"'), "landing: JSON-LD (FAQPage + WebApplication)");
+  assert(/<link rel="canonical"/.test(html) && /<meta name="description" content="Entrá al lobby privado/.test(html), "landing: canonical y meta description");
+  assert(/Disallow: \/admin/.test(await (await p.request.get(`${B}/robots.txt`)).text()), "robots.txt deja el panel fuera del rastreo");
   assert((await p.locator("[data-stage]").count()) >= 6, "landing: secciones coreografiadas de la escena 3D");
   assert(await p.isVisible("#ventajas") && (await p.isVisible("#preguntas")), "landing pública: ventajas y preguntas para el asistente");
   // El público no ve nada de la operación: ni demo, ni CRM, ni ventas, ni planes, ni el sitio de organizadores
@@ -30,12 +37,12 @@ const assert = (c, m) => { if (!c) throw new Error("✘ " + m); log("✔ " + m);
   // Sitio de organizadores: oculto (noindex) pero completo
   const org = await ctx.newPage(); watch(org, "organizadores");
   await org.goto(`${B}/organizadores`, { waitUntil: "networkidle" });
-  assert((await org.getAttribute("h1", "aria-label")) === "Llená la pista. Medí la noche.", "organizadores: hero propio");
+  assert((await org.getAttribute('[role="heading"][aria-level="2"]', "aria-label")) === "Llená la pista. Medí la noche.", "organizadores: hero propio");
   assert(/noindex/.test((await org.getAttribute('meta[name="robots"]', "content")) ?? ""), "organizadores: no se indexa");
   assert((await org.isVisible("#organizadores")) && (await org.isVisible("#planes")), "organizadores: panel/CRM y planes");
   assert(await org.locator('header a:has-text("Ver la demo")').count(), "organizadores: acceso a la demo");
   await org.close();
-  await p.click("header >> text=Entrar a un Evento");
+  await p.click("header >> text=Entrar a la fiesta");
   await p.waitForURL("**/join");
   await p.goto(`${B}/login`);
 

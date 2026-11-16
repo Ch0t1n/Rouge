@@ -62,7 +62,7 @@ export function Footer() {
           <p className="font-mono text-xs uppercase tracking-[0.25em] text-rouge">[ 06 {"//"} ESTA NOCHE ]</p>
           <h2 className="mt-4 font-display text-5xl font-bold uppercase leading-[0.9] tracking-tighter sm:text-7xl">{org ? "¿Arrancamos?" : "¿Salís hoy?"}</h2>
           <p className="mt-4 max-w-md rounded-xl bg-background/60 text-muted backdrop-blur-sm">
-            {org ? "Mirá la demo en vivo o creá tu evento: link maestro, códigos de 1 uso, RRPP y barra listos en minutos." : "Entrá con el link o el QR de tu entrada. Sin descargar nada."}
+            {org ? "Mirá la demo en vivo o creá tu evento: link maestro, códigos de 1 uso, RRPP y barra listos en minutos." : "Entrá a tu fiesta con el link o el QR de tu entrada. Sin descargar nada."}
           </p>
         </div>
         <nav aria-label="Accesos" className="grid gap-1 rounded-2xl bg-background/70 p-3 backdrop-blur-md">

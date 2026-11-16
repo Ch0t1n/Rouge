@@ -3,6 +3,7 @@ import { Plus_Jakarta_Sans, Space_Grotesk } from "next/font/google";
 import { AppShell } from "@/components/layout/AppShell";
 import { ServiceWorkerRegister } from "@/components/layout/ServiceWorkerRegister";
 import { RougeProvider } from "@/lib/store/RougeContext";
+import { SITE_URL } from "@/lib/seo/site";
 import "./globals.css";
 
 const display = Space_Grotesk({
@@ -20,9 +21,12 @@ const body = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: { default: "ROUGE — La noche, conectada", template: "%s · ROUGE" },
-  description: "Lobby privado de tu fiesta: conectá con gente afín, no pierdas a tu Squad y pedí en la barra sin filas.",
+  metadataBase: new URL(SITE_URL),
+  title: { default: "ROUGE — La app de tu fiesta", template: "%s · ROUGE" },
+  description: "La app para fiestas y boliches: conocé gente afín, no pierdas a tu grupo y pedí tragos sin hacer fila. Entrás con tu entrada.",
   applicationName: "ROUGE",
+  openGraph: { type: "website", siteName: "ROUGE", locale: "es_AR" },
+  twitter: { card: "summary_large_image" },
   manifest: "/manifest.json",
   appleWebApp: { capable: true, title: "ROUGE", statusBarStyle: "black-translucent" },
   formatDetection: { telephone: false },
