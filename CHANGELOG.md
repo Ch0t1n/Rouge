@@ -5,6 +5,11 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 ## [Sin publicar]
 
 ### Cambiado
+- **Fotos de perfil verticales y encuadradas por cada persona:** al subir una foto (del teléfono o de Instagram) se
+  abre el **encuadre 3:4**: se arrastra y se acerca (con dos dedos o con la barra) para elegir qué se ve. La app ya no
+  recorta nada por su cuenta: las fotos se ven enteras en la grilla, el perfil, el editor y la puerta, y los avatares
+  pasan de círculo a vertical 3:4 con esquinas suaves. El loop de video también se ve entero.
+- Nueva dependencia: `react-easy-crop` (encuadre con arrastre y pellizco).
 - **Nuevo nombre: Rouge Pass** (antes ROUGE). Cambian los textos visibles: wordmark (ROUGE **PASS**), metadata y
   nombre de la PWA, landing pública y de organizadores, demo, login, onboarding, mensajes al compartir, ticket y QRs
   impresos, nombre de la API (`Rouge Pass API`) y documentación. Constante única `APP_NAME` en `src/lib/brand.ts` y

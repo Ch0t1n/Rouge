@@ -151,6 +151,7 @@ const assert = (c, m) => { if (!c) throw new Error("✘ " + m); log("✔ " + m);
   await ig.click("text=/Importar de Instagram/");
   await ig.click('[aria-label="Foto de Instagram demo-2"]');
   await ig.click("text=Agregar 1 foto");
+  await ig.click('[role="dialog"] button:has-text("Usar foto")');
   await ig.waitForSelector('img[alt="Foto 1"]', { timeout: 20000 });
   assert(true, "demo: foto importada del feed de Instagram");
   await ig.click("text=Continuar");

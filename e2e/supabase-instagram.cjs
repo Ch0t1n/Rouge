@@ -61,6 +61,8 @@ async function magicLink(page, email) {
   await p.click('[aria-label="Foto de Instagram m1"]');
   await p.click('[aria-label="Foto de Instagram m3"]');
   await p.click("text=Agregar 2 fotos");
+  await p.click('[role="dialog"] button:has-text("Usar foto")');
+  await p.click('[role="dialog"] button:has-text("Usar foto")');
   await p.waitForSelector('img[alt="Foto 2"]', { timeout: 30000 });
   assert(true, "2 fotos de Instagram importadas, comprimidas y subidas");
   await p.screenshot({ path: `${SP}/ig-onboarding-photos.png` });

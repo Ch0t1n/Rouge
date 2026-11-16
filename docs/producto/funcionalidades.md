@@ -44,8 +44,10 @@ Un solo perfil que sirve para **todas las fiestas**.
 
 - **Onboarding en 4 pasos** que guarda en cada paso: (1) nombre, @username, fecha de nacimiento (+18), género y
   teléfono; (2) hasta 4 fotos y un loop de 5 s; (3) géneros musicales y Spotify; (4) lista negra por teléfono.
-- **Fotos:** hasta 4, formato 3:4, comprimidas en el teléfono a WebP antes de subir (avisa el ahorro: "2,1 MB → 240 KB").
-  Se elige la principal y se reordenan.
+- **Fotos:** hasta 4, **siempre verticales 3:4**. Al subir cada una (del teléfono o importada de Instagram) se abre el
+  **encuadre**: la persona arrastra y acerca para elegir qué se ve; la app nunca recorta sola. Después se comprime en el
+  teléfono a WebP (avisa el ahorro: "2,1 MB → 240 KB"). Se ven enteras en la grilla, el perfil, los avatares (también
+  verticales 3:4) y la puerta. Se elige la principal y se reordenan.
 - **Importar de Instagram:** con Instagram conectado se eligen fotos del feed; se descargan, se comprimen y se suben
   al almacenamiento de Rouge Pass (los links de Instagram vencen, nunca se guardan).
 - **Loop de 5 s:** video tipo GIF, recodificado en el teléfono **sin audio**.

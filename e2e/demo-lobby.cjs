@@ -99,6 +99,7 @@ const log = (...a) => console.log(...a);
   await p.fill('input[type="tel"]', "11 6666-7777");
   await p.click("text=Continuar");
   await p.setInputFiles('[data-testid="photo-input"]', FIXTURE_PHOTO);
+  await p.click('[role="dialog"] button:has-text("Usar foto")');
   await p.waitForSelector('img[alt="Foto 1"]', { timeout: 30000 });
   await p.click("text=Continuar");
   await p.click('button[aria-pressed]:has-text("Reggaetón")');

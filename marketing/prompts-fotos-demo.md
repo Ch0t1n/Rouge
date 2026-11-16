@@ -24,10 +24,10 @@ así. Antes de cada prompt hay una ficha en español.
    - Sin texto, sin logos de marcas y sin marcas de agua.
    - Nada sexualizado ni gente borracha: son fotos que alguien elegiría para su perfil.
 
-**Encuadre (importante para la app):**
-- **Foto 1:** retrato de pecho para arriba, mirando a cámara o casi, con la **cara en el tercio superior y centrada**.
-  La app la recorta en círculo para el avatar y le pone el nombre abajo en la tarjeta, así que la parte de abajo de la
-  imagen puede quedar tapada.
+**Encuadre:** las fotos de perfil son **siempre verticales 3:4** (en la app, cada persona encuadra la suya al subirla).
+Generá directamente en 3:4 para que no haga falta recortar nada; la foto se ve entera, también en el avatar.
+- **Foto 1:** retrato de pecho para arriba, mirando a cámara o casi, con la **cara en la mitad de arriba**. En la
+  tarjeta de la grilla, el nombre y el mood van sobre la parte de abajo de la foto.
 - **Foto 2:** otro momento de la misma noche (pista, barra, patio, con amigos fuera de foco). Plano medio o americano,
   con la persona igual de reconocible.
 

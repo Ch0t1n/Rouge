@@ -354,8 +354,11 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
 - **Tipografía:** `font-display` = Space Grotesk (títulos, badges, métricas, contadores; 600/700,
   tracking tight) · `font-sans` = Plus Jakarta Sans (cuerpo, bios, chat; 400/500/600).
 - **Plano:** Squad pulsa cian, Match pulsa rouge, Punto Base es bandera dorada.
-- **Tarjetas de grilla:** `aspect-card` (3:4), imagen a sangre, `.card-fade`, badge de % afinidad,
-  `.glass-pill` con el Mood.
+- **Tarjetas de grilla:** `aspect-card` (3:4), `.card-fade`, badge de % afinidad, `.glass-pill` con el Mood.
+- **Fotos de perfil: siempre verticales 3:4 y las encuadra la persona.** Al subir pasan por `PhotoCropper`
+  (`react-easy-crop`, `lib/media/crop.ts`): la app nunca recorta sola. Se muestran enteras (`object-contain`);
+  `MediaImage` rellena con la foto difuminada si queda alguna vieja con otra proporción. `Avatar` también es 3:4
+  (`size` = alto, ancho = 3/4) con esquinas suaves, nunca un círculo. El loop también va entero.
 - **Ergonomía:** botones ≥ 44px (`min-h-touch`), modales `BottomSheet`, una mano.
 - No inventar colores nuevos: si hace falta un estado, usar opacidades de los tokens.
 - Respetar `prefers-reduced-motion` (ya global en `globals.css`).
