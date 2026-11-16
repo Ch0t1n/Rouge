@@ -34,6 +34,7 @@ npm run e2e:demo          # E2E Playwright contra la app en demo levantada (e2e/
 node scripts/generate-icons.cjs        # re-rasteriza íconos PWA desde public/icons/icon.svg
 node scripts/generate-demo-avatars.mjs # regenera avatares SVG del demo
 node scripts/capture-landing-shots.cjs # capturas reales de la app en public/landing (material comercial; la landing 3D no las usa)
+node scripts/generate-promo.cjs [app] [url demo] # piezas 1080×1350 para organizadores → marketing/organizadores
 ```
 
 ## Estructura
@@ -67,6 +68,7 @@ src/
     admin/                # Suite del organizador (vista EXPANDIDA en desktop, pestañas en mobile)
       page.tsx            # Resumen: ROI (ventas por app, ticket promedio, filas evitadas), embudo, top consumo
       brand/              # Marca y cobros: logo + colores con vista previa, personalización del evento, conectar Mercado Pago
+      menu/               # Menú de la barra: alta, edición, precio, "Agotado", baja
       events/             # Crear/editar evento, lobby (horas antes/después), plano subido, line-up, link maestro + QR, códigos 1 uso + CSV
       crm/                # Tabla completa: búsqueda, Smart Tags, orden, WhatsApp, export CSV
       blasts/             # Text Blast / Flash Promo segmentado con alcance en vivo y vista previa
@@ -74,6 +76,7 @@ src/
       bar-pos/            # Kanban de comandas (minimapa de entrega) + entrega por código de retiro
       live-wall/          # Pantalla gigante LED a pantalla completa (sin chrome)
       print-codes/        # Hoja imprimible: un QR por código de 1 uso libre (?event=<id>)
+      print-ticket/       # Ticket térmico 80 mm de una comanda (?order=<id>&copia=cliente|barra), se imprime solo
     offline/              # Fallback del Service Worker
   components/
     ui/                   # Primitivas: Button, Badge, Switch, BottomSheet, Avatar, Toaster, field (TextField, Segmented)
@@ -90,7 +93,7 @@ src/
     brand/BrandTheme.tsx  # useBrandTheme() (variables CSS del tema en <html>) y BrandLogo
     landing/              # Landing 3D: Landing.tsx (composición), core/ (Lenis+ScrollTrigger, scrollStore, entry: destinos de CTAs),
                           # fx/ (Cursor, Magnetic, SplitReveal, TiltCard), three/ (Scene R3F + choreography), sections/ (8 secciones)
-    admin/                # AdminChrome (nav por permisos, NoAccess, badge de rol), BrandStudio, TeamPanel, SecurityPanel, ApiKeysPanel, PrintCodes, AdminHeader, Panel, downloadCSV
+    admin/                # AdminChrome (nav por permisos, NoAccess, badge de rol), BrandStudio, MenuEditor, PrintTicket, EventLifecyclePanel, TeamPanel, SecurityPanel, ApiKeysPanel, PrintCodes, AdminHeader, Panel, downloadCSV
     venue/VenueMap.tsx    # Plano interactivo (zoom/paneo, sectores, pines)
     event/                # LineupBanner, MoodPicker
   lib/
@@ -105,6 +108,7 @@ src/
       branding.ts         # Marca: contraste WCAG (checkBrandColor ⇔ brand_color_error), resolveTheme, themeVars, upsertBrand
       payments.ts         # Cobro de pedidos: awaiting_payment → paid (confirmOrderPayment ⇔ confirm_order_payment), comisión
       settle.ts           # Cuentas de la mesa: ledger, saldos en centavos, transferencias mínimas, alias
+      eventAdmin.ts       # Gestión del evento: menú, duplicar edición, expulsar/bloquear, eliminar (⇔ remove_attendee, events_delete)
       profile.ts          # Validaciones de perfil, parser de Spotify, máscara de teléfono, completitud
       analytics.ts        # Métricas B2B, CRM, Smart Tags, liveWallData()
       engine.test.ts      # Tests de invariantes de negocio
@@ -312,6 +316,10 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
 - **Cuentas de la mesa:** entran pedidos con `split_user_ids` (no los que esperan pago), `squad_expenses` y
   `squad_settlements`; centavos enteros, transferencias mínimas (`settleTransfers`). Solo integrantes; alias visible
   solo si comparten Squad (`shares_squad`). Funcionan con el lobby cerrado.
+- **Gestión del evento:** menú editable por dueño/producción (`is_available` = "Agotado": no se vende, ni en el motor ni
+  en `create_bar_order`). Expulsar (`remove_attendee`) saca del lobby, del Squad del evento y del plano; con bloqueo
+  (`event_bans`) `join_event` responde `banned`. No se expulsa al equipo. Eliminar un evento: solo quien lo creó y si no
+  tiene asistentes ni cobros (trigger `events_keep_payments`). Ticket de comanda = comprobante interno, no factura.
 - **Pin-Drop (SQL):** usar la RPC `drop_pin` (reemplaza el pin anterior y descarta ids que no son
   matches reales). Punto Base y su aviso: `set_squad_base_pin`, `announce_base_meetup`.
 
@@ -347,6 +355,8 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
 - [x] **Fase 7** — Login con Google e Instagram, importar fotos del feed e Instagram (verificado) en el perfil.
 - [x] **Fase 8** — API v1 para ticketeras: claves, un código por entrada, anulación, check-in y QR para el mail.
 - [x] **Fase 9** — Marca (logo + colores) por evento, cobros con Mercado Pago por marca y cuentas de la mesa.
+- [x] **Fase 10** — Gestión completa del evento (menú, nueva edición, expulsar, eliminar) y ticket de comanda.
+- [ ] **Próximo** — ver `docs/producto/competencia.md`: RRPP con comisión, escáner con cámara, lista de espera, entradas propias.
 
 ## Convenciones
 

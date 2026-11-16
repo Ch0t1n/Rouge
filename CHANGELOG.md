@@ -2,6 +2,31 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y [SemVer](https://semver.org/lang/es/).
 
+## [1.5.0] — 2026-11-16
+
+### Agregado
+- **Ticket / recibo imprimible** desde cada comanda (Barra / POS → 🖨️): formato térmico de 80 mm con número de
+  comanda, código y QR de retiro, ítems, total y estado de pago; se imprime solo y tiene copia cliente / barra.
+  Comprobante interno (no es factura).
+- **Gestión completa del evento por el organizador:**
+  - **Menú de la barra** (`/admin/menu`): alta, edición, precios y "Agotado" en un toque (el público lo ve agotado y
+    el servidor no lo vende), baja de ítems.
+  - **Nueva edición**: duplicar el evento para otra fecha con marca, plano, line-up, menú y reglas de perks corridos.
+  - **Expulsar asistentes** desde el CRM, con bloqueo opcional de reingreso a ese evento y lista para volver a permitir.
+  - **Eliminar** un evento creado por error o de prueba (solo quien lo creó y si todavía no entró nadie).
+- Tabla `event_bans`, RPC `remove_attendee`, política `events_delete` y trigger `events_keep_payments`; `join_event`
+  rechaza a expulsados (`banned`).
+- Documentación: [guía de producción paso a paso](docs/operaciones/guia-produccion-paso-a-paso.md) y
+  [competencia y faltantes](docs/producto/competencia.md). Piezas comerciales en `marketing/organizadores/`
+  (`scripts/generate-promo.cjs`).
+
+### Producción
+- Base de datos de producción instalada, URL de login apuntando a `rouge-neon.vercel.app`, limpieza de pines con
+  `pg_cron`, `NEXT_PUBLIC_APP_URL` y `NEXT_PUBLIC_DEMO_URL` en Vercel y sitio de demo `rouge-demo.vercel.app`.
+
+### Cambiado
+- `bar_menu` incluye `is_available`; el Modo Demo se vuelve a sembrar (versión 7 del estado).
+
 ## [1.4.0] — 2026-11-16
 
 ### Agregado

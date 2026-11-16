@@ -76,7 +76,7 @@ export default function AdminEventsPage() {
       {event && can(state, event.id, state.current_user_id, "admin.team") && <TeamPanel event={event} />}
       {event && (
         <EventLifecyclePanel
-          key={event.id}
+          key={`lifecycle-${event.id}`} // distinto del key del EventEditor (mismos hermanos)
           event={event}
           onDuplicated={(id) => {
             setEditing(id);

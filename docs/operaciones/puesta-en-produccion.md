@@ -1,5 +1,8 @@
 # Puesta en producción
 
+> ¿Querés el paso a paso con lo que ya está hecho marcado? Mirá la
+> [guía de producción paso a paso](./guia-produccion-paso-a-paso.md).
+
 Recomendado: **dos despliegues** en Vercel desde el mismo repo.
 
 | Despliegue | Dominio sugerido | Variables | Para qué |

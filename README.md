@@ -1,6 +1,6 @@
 # ROUGE
 
-**La noche, conectada.** PWA social y operativa para eventos, fiestas y boliches (B2B2C) · **v1.4.0**
+**La noche, conectada.** PWA social y operativa para eventos, fiestas y boliches (B2B2C) · **v1.5.0**
 
 El asistente entra al lobby privado del evento con un link o QR, conecta con gente afín, arma su **Squad** (con
 botón de rescate), se ubica en el **plano** con pines de 15 minutos y pide en la **Barra Express** sin fila. El
@@ -61,6 +61,11 @@ Cada marca sube su logo y elige sus colores en *Marca y cobros* (`/admin/brand`,
 de **Mercado Pago**: los pedidos de la barra se pagan desde la app y ROUGE cobra su comisión automática. Al cierre, cada
 Squad ve en *Cuentas de la mesa* quién pagó qué y quién le transfiere a quién. Configuración:
 [docs/tecnica/mercadopago.md](docs/tecnica/mercadopago.md).
+
+## Material comercial y guías
+
+- Piezas para organizadores: [`marketing/organizadores/`](marketing/organizadores) (se regeneran con `scripts/generate-promo.cjs`).
+- [Guía de producción paso a paso](docs/operaciones/guia-produccion-paso-a-paso.md) · [Competencia y faltantes](docs/producto/competencia.md).
 
 ## Scripts
 

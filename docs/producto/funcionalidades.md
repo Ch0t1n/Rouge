@@ -21,7 +21,8 @@ Cada función existe en los dos modos de la app:
 [13. Compartir con QR](#13-compartir-con-qr) · [14. Landing pública](#14-landing-pública) ·
 [15. PWA y mala señal](#15-pwa-y-mala-señal) · [16. Privacidad](#16-privacidad-y-reglas-que-no-se-negocian) · [17. API para ticketeras](#17-api-para-ticketeras-y-productoras) ·
 [18. Demo en vivo](#18-demo-en-vivo-para-anfitriones) · [19. Marca y personalización](#19-marca-y-personalización) ·
-[20. Cobros con Mercado Pago](#20-cobros-con-mercado-pago) · [21. Cuentas de la mesa](#21-cuentas-de-la-mesa)
+[20. Cobros con Mercado Pago](#20-cobros-con-mercado-pago) · [21. Cuentas de la mesa](#21-cuentas-de-la-mesa) ·
+[22. Gestión del evento](#22-gestión-del-evento) · [23. Ticket de comanda](#23-ticket-de-comanda)
 
 ---
 
@@ -109,8 +110,8 @@ Un solo perfil que sirve para **todas las fiestas**.
 
 ## 8. Barra Express
 
-- **Menú del evento** (`/bar`) con precios siempre del servidor. Al crear un evento se copia el menú base; en la v1
-  se ajusta desde Supabase (el editor de menú en el panel está pendiente).
+- **Menú del evento** (`/bar`) con precios siempre del servidor. El organizador lo edita en **Menú de la barra**; lo
+  agotado se ve pero no se puede pedir.
 - **Formas de entrega:** retiro rápido con QR (Fast-Pickup), delivery a tu pin o a la Mesa VIP (con Punto Base).
 - **Compartido con el Squad (Vaquita):** elegís con quiénes lo comparten (todo el Squad o algunos, también una
   botella con delivery a la mesa). Lo paga quien pide y entra solo en las [cuentas de la mesa](#21-cuentas-de-la-mesa).
@@ -282,3 +283,26 @@ Squad, y disponible después de que cierra el lobby):
   copia con un toque.
 - **"Ya le pagué"** (Mercado Pago, transferencia o efectivo) → quien recibe confirma ("Recibido") o lo rechaza
   ("No me llegó"). Aviso en vivo.
+
+## 22. Gestión del evento
+
+Todo lo del evento lo maneja su organizador desde el panel:
+
+- **Datos, lobby, plano, line-up, accesos, equipo y API** (*Eventos y accesos*), **marca y cobros**, **perks y
+  sorteos**, **avisos**, **comandas** y **CRM**.
+- **Menú de la barra** (`/admin/menu`): agregar, editar nombre, emoji, categoría y precio, marcar **Agotado** en un
+  toque y sacar ítems. Los pedidos ya hechos conservan su nombre y precio.
+- **Nueva edición**: duplica el evento para otra fecha (marca, colores, plano, cupo, line-up, menú y reglas de perks,
+  todo corrido a la nueva fecha) con link y código maestro nuevos.
+- **Expulsar** a alguien desde el CRM: sale del lobby, de su Squad de esa noche y del plano. Opcionalmente queda
+  **bloqueado** para volver a entrar a ese evento (con cualquier código); se puede revertir. Su perfil, matches y chats
+  no se tocan. Al equipo no se lo expulsa (primero se lo saca del equipo).
+- **Eliminar** un evento creado por error o de prueba: solo quien lo creó, escribiendo su link para confirmar, y solo
+  si todavía no entró nadie (un evento real conserva su historial y sus cobros).
+
+## 23. Ticket de comanda
+
+Cada comanda de **Barra / POS** tiene un botón 🖨️ que abre su ticket para impresora térmica de 80 mm (también sale
+en A4): marca y evento, número de comanda, fecha, cliente, entrega, código grande y QR de retiro, ítems, total y si
+está **pagado con Mercado Pago** (con número de operación) o **a cobrar**. Se imprime solo y tiene copia para el
+cliente y para la barra. Es un comprobante interno: la factura la emite cada comercio.
