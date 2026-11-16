@@ -86,6 +86,12 @@ Opcionales (tests o casos especiales): `INSTAGRAM_OAUTH_URL`, `INSTAGRAM_TOKEN_U
 Con `SUPABASE_SERVICE_ROLE_KEY` y `NEXT_PUBLIC_APP_URL` cargadas, la API queda en `https://app.tudominio.com/api/v1`.
 Cada organizador crea sus claves desde el panel. Guía para pasarle a la ticketera: [docs/api](../api/README.md).
 
+### 5b. Cobros con Mercado Pago (opcional)
+
+Para que cada marca cobre la Barra Express con su cuenta de Mercado Pago (y ROUGE reciba su comisión automática),
+seguí [Mercado Pago](../tecnica/mercadopago.md): app de Marketplace, `MP_CLIENT_ID`, `MP_CLIENT_SECRET`,
+`MP_TOKEN_KEY`, `MP_WEBHOOK_SECRET`, `MP_MARKETPLACE_FEE_PERCENT` y `NEXT_PUBLIC_PAYMENTS_MP=1`.
+
 ### 6. Dominio y verificación final
 
 1. Asignar `app.tudominio.com` en Vercel.

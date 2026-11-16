@@ -24,7 +24,13 @@ TypeScript (`src/lib/types.ts`) son su espejo 1:1.
 | `user_perks_qrs` · `perk_rules` | QRs de cada asistente y reglas de QR Drop. |
 | `raffles` | Sorteos y ganador. |
 | `song_requests` | Pedidos de temas y votos. |
-| `bar_menu_items` · `bar_orders` | Menú del evento y pedidos (estado, código de retiro, vaquita). |
+| `bar_menu_items` · `bar_orders` | Menú del evento y pedidos (estado, código de retiro, compartido `split_user_ids`, estado de pago `payment_status` / `payment_ref` / `paid_at`). |
+| `brands` | Marca: dueño/a, nombre, logo, colores (validados por `brand_color_error`) y `payments_enabled` (solo servidor). |
+| `brand_payment_accounts` | Cuenta de Mercado Pago de la marca con tokens **cifrados**. **Solo servidor** (RLS sin políticas). |
+| `squad_expenses` · `squad_settlements` | Cuentas de la mesa: gastos cargados a mano y transferencias entre integrantes. |
+| `payout_aliases` | Alias o CBU/CVU para cobrar (visible solo para quienes comparten un Squad). |
+
+`events` suma `brand_id` (de quien creó el evento: trigger `events_brand_owner`), `logo_url`, `theme_primary` y `theme_accent`.
 
 ## Funciones (RPCs)
 
@@ -81,6 +87,20 @@ Toda operación sensible pasa por una función `security definer` que valida la 
 visitado; pedidos → `updated_at`; perfil → Instagram verificado (`profile_instagram`).
 
 **Mantenimiento:** `purge_expired_pins()` (programar con `pg_cron` cada 5 min).
+
+### Marca, cobros y cuentas de la mesa (v1.4)
+
+| Función | Quién | Qué hace |
+|---|---|---|
+| `brand_color_error(hex, kind)` / `color_luminance(hex)` | checks | Mismo control de contraste que `checkBrandColor()` del motor. |
+| `create_bar_order(..., p_split)` | asistente | Pedido compartido con integrantes; nace `awaiting_payment` si la marca cobra online. |
+| `confirm_order_payment(order, ref, amount)` | **solo service role** | Acredita el pago verificado con Mercado Pago (idempotente, monto exacto) y suma el gasto. |
+| `cancel_unpaid_order(order)` | quien pidió | Cancela un pedido que todavía no se pagó. |
+| `my_brand_payments()` | dueño/a de la marca | Estado de la cuenta de cobro, sin tokens. |
+| `add_squad_expense` · `record_settlement` · `respond_settlement` | integrantes | Cuentas de la mesa (validan integrantes y montos). |
+| `shares_squad(user)` | RLS | ¿Comparto un Squad con esa persona? (alias para cobrar). |
+
+`advance_bar_order` y `redeem_pickup_code` rechazan pedidos que esperan pago (`not_paid`).
 
 ## Storage
 

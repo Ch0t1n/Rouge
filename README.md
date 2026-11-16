@@ -1,6 +1,6 @@
 # ROUGE
 
-**La noche, conectada.** PWA social y operativa para eventos, fiestas y boliches (B2B2C) · **v1.3.0**
+**La noche, conectada.** PWA social y operativa para eventos, fiestas y boliches (B2B2C) · **v1.4.0**
 
 El asistente entra al lobby privado del evento con un link o QR, conecta con gente afín, arma su **Squad** (con
 botón de rescate), se ubica en el **plano** con pines de 15 minutos y pide en la **Barra Express** sin fila. El
@@ -54,6 +54,13 @@ Paso a paso (Vercel, variables, Google, Meta, pg_cron, backups): [Puesta en prod
 Las productoras con sistema de entradas propio generan un código de ROUGE por entrada y lo mandan en el mail con su QR:
 `POST /api/v1/events/{evento}/codes`. Claves desde el panel (*Eventos y accesos → API para ticketeras*).
 Guía: [docs/api](docs/api/README.md) · Especificación: `/api/v1/openapi.json`.
+
+## Marca y cobros
+
+Cada marca sube su logo y elige sus colores en *Marca y cobros* (`/admin/brand`, con vista previa) y conecta su cuenta
+de **Mercado Pago**: los pedidos de la barra se pagan desde la app y ROUGE cobra su comisión automática. Al cierre, cada
+Squad ve en *Cuentas de la mesa* quién pagó qué y quién le transfiere a quién. Configuración:
+[docs/tecnica/mercadopago.md](docs/tecnica/mercadopago.md).
 
 ## Scripts
 

@@ -97,7 +97,8 @@ const log = (...a) => console.log(...a);
   await phone.click('[aria-label="Agregar Aperol Spritz"]');
   await phone.click("text=/Ver pedido/");
   await phone.click('role=radio[name*="Fast-Pickup"]');
-  await phone.click("text=/^Pagar/");
+  await phone.click("text=/^Pagar .* con Mercado Pago/");
+  await phone.click("text=Pagar con dinero en cuenta"); // checkout de Mercado Pago simulado
   await phone.waitForSelector("text=/Retiro · código/");
   const pickup = (await phone.textContent("text=/Retiro · código/")).match(/código (\w+)/)[1];
   await phone.keyboard.press("Escape");

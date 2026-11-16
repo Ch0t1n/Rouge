@@ -83,7 +83,10 @@ const log = (...a) => console.log(...a);
   await A.click("text=/Ver pedido/");
   await A.click('role=radio[name*="Fast-Pickup"]');
   await A.screenshot({ path: `${SP}/p4-checkout.png` });
-  await A.click("text=/^Pagar/");
+  await A.click("text=/^Pagar .* con Mercado Pago/");
+  // Checkout de Mercado Pago simulado (Modo Demo): el pedido espera el pago hasta acreditarse
+  await A.waitForSelector("text=Mercado Pago · demo");
+  await A.click("text=Pagar con dinero en cuenta");
   await A.waitForSelector("text=/Retiro · código/");
   await A.keyboard.press("Escape");
   const sim = A.locator('section:has-text("Gin Tonic") >> text=Simular barra').first();
@@ -91,13 +94,15 @@ const log = (...a) => console.log(...a);
   await A.waitForSelector("text=¡Tu pedido está listo!");
   log("✔ pedido listo → toast");
   await A.screenshot({ path: `${SP}/p4-bar.png` });
-  // Vaquita
+  // Compartido con el Squad (Vaquita): lo paga una y entra en las cuentas de la mesa
   await A.click('[aria-label="Agregar Champagne Brut"]');
   await A.click("text=/Ver pedido/");
-  await A.click('role=radio[name*="Vaquita"]');
-  log("vaquita →", (await A.textContent('role=radio[name*="Vaquita"]')).trim().replace(/\s+/g, " "));
-  await A.click("text=/^Pagar mi parte/");
-  await A.waitForSelector("text=Pedido enviado a la barra");
+  await A.click("text=Todo el Squad");
+  log("compartido →", (await A.textContent('section[aria-label="Compartir con el Squad"] [role="status"]')).trim());
+  await A.click("text=/^Pagar .* con Mercado Pago/");
+  await A.click("text=Pagar con dinero en cuenta");
+  await A.waitForSelector("text=/Retiro · código/");
+  await A.keyboard.press("Escape");
 
   // 7) Billetera de QRs
   await A.goto(`${B}/perks`, { waitUntil: "networkidle" });

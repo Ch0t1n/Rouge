@@ -2,6 +2,37 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y [SemVer](https://semver.org/lang/es/).
 
+## [1.4.0] — 2026-11-16
+
+### Agregado
+- **Marca y personalización** (*Marca y cobros*, `/admin/brand`): cada marca carga su logo y dos colores (principal y
+  acento) con vista previa en vivo; la app del asistente, la invitación `/join`, la Pantalla LED y los QRs impresos se
+  ven con esa identidad. Cada evento usa la marca de quien lo creó o personaliza esa edición. Controles de contraste
+  (en el motor y en Postgres) y el Rescate 🚨 siempre rojo / Squad siempre cian.
+- **Cobros con Mercado Pago por marca:** OAuth de Marketplace (`/api/mercadopago/*`), tokens cifrados con AES-256-GCM,
+  Checkout Pro con `marketplace_fee` (comisión de ROUGE automática), webhook con firma `x-signature` y conciliación.
+  Los pedidos nacen "esperando pago" y la barra solo prepara lo pagado; se puede reintentar o cancelar.
+  En el Modo Demo la conexión y el checkout se simulan.
+- **Pedidos compartidos:** se elige con quiénes del Squad se comparte un pedido (también una botella con delivery a la mesa).
+- **Cuentas de la mesa** (`/squad/cuentas`): quién pagó qué (pedidos compartidos + gastos cargados a mano), saldos,
+  transferencias mínimas para quedar a mano, alias/CBU para cobrar (visible solo dentro del Squad), "Ya le pagué" con
+  confirmación de quien recibe. Disponible después del cierre del lobby.
+- Avisos en vivo: pago acreditado y transferencias para confirmar.
+- Tablas `brands`, `brand_payment_accounts`, `squad_expenses`, `squad_settlements`, `payout_aliases`; RPCs
+  `confirm_order_payment` (solo servidor), `cancel_unpaid_order`, `my_brand_payments`, `add_squad_expense`,
+  `record_settlement`, `respond_settlement`. Documentación: [Mercado Pago](docs/tecnica/mercadopago.md).
+
+### Cambiado
+- Los colores `rouge` y `vip` son variables CSS (`--c-rouge`, `--c-vip`); nuevo token fijo `sos` para el rescate.
+- El gasto de un pedido (CRM) se suma cuando se acredita el pago; las ventas del panel no cuentan pedidos sin pagar.
+- La barra (staff) solo puede cambiar el estado de las comandas, no el de pago (privilegios por columna).
+- Modo Demo: nueva versión del estado (se vuelve a sembrar) con la marca "ROUGE Night" y Mercado Pago conectado.
+
+### Pendientes conocidos
+- Reembolsos desde el panel (hoy desde Mercado Pago).
+- El Trago Rompehielos todavía se cobra en la barra.
+- Las transferencias entre amigos se hacen fuera de ROUGE (alias copiado): Mercado Pago no ofrece P2P por API.
+
 ## [1.3.0] — 2026-11-15
 
 ### Agregado

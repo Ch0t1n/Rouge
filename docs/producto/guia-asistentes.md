@@ -35,7 +35,9 @@ como base de un FAQ.
 
 ### Pedir sin fila
 - En **Barra** elegí lo que querés y cómo recibirlo: **retiro rápido con QR**, **delivery a tu pin** o a la **Mesa VIP**.
-- **Vaquita:** dividí el pedido con tu Squad.
+- **¿Lo comparten?** Tocá a tus amigas/os del Squad (o "Todo el Squad"): pagás vos y se suma a las cuentas de la mesa.
+- Si la fiesta cobra con **Mercado Pago**, pagás desde la app con tu billetera, dinero en cuenta o tarjeta; la barra lo
+  prepara apenas se acredita. Si no, pagás al retirar.
 - Te avisamos cuando está listo; mostrá el QR o el código en la ventanilla.
 
 ### Perks y sorpresas
@@ -47,6 +49,8 @@ como base de un FAQ.
 ## Después de la fiesta
 
 - El lobby se cierra a la hora que definió el organizador, pero **tus matches y chats quedan para siempre**.
+- **Cuentas de la mesa** (*Squad → Cuentas de la mesa*): mirá quién pagó qué, cargá lo que pagaste vos (mesa, taxi…)
+  y te decimos cuánto transferirle a quién. Cargá tu alias para que te paguen sin preguntarte.
 - Podés editar tu perfil, tu Instagram y tu privacidad cuando quieras (*Perfil → Editar* y *Privacidad*).
 
 ## Preguntas frecuentes

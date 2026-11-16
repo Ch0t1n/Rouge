@@ -20,7 +20,10 @@ Este documento resume qué se guarda, quién lo ve y cómo se protege.
 | Pin en el plano | ✔ | Solo su Squad y los matches que eligió | Todos los del evento | Todos los del evento |
 | Con quién hizo match | ✔ | Solo la otra persona | ✘ (solo conteos) | ✘ (solo conteos) |
 | Chats | ✔ | Solo los participantes | ✘ | ✘ |
-| Pedidos | Propios y de su Vaquita | ✘ | ✔ del evento | ✔ del evento |
+| Pedidos | Propios y los compartidos con él/ella | ✘ | ✔ del evento | ✔ del evento |
+| Cuentas de la mesa (gastos, transferencias) | ✔ de su Squad | Solo su Squad | ✘ | ✘ |
+| Alias / CBU para cobrar | ✔ | Solo quienes comparten un Squad | ✘ | ✘ |
+| Tokens de Mercado Pago de la marca | ✘ | ✘ | ✘ | ✘ (solo el servidor, cifrados) |
 | Lista negra | ✔ | ✘ | ✘ | ✘ |
 | Token de Instagram | ✘ (ni el propio) | ✘ | ✘ | ✘ (solo el servidor) |
 
@@ -41,6 +44,18 @@ Este documento resume qué se guarda, quién lo ve y cómo se protege.
 - **API para ticketeras:** claves guardadas solo como SHA-256 (se muestran una vez), revocables, con alcance por evento
   y que pierden acceso si quien las creó sale del equipo. Las funciones `api_*` solo las ejecuta el servidor. El QR
   público no consulta la base (no revela si un código existe). Los códigos tienen ≈ 2^50 combinaciones.
+- **Mercado Pago (cobros de la marca):**
+  - OAuth con `state` firmado (HMAC) + cookie httpOnly, solo para quien creó la marca;
+  - tokens del vendedor **cifrados con AES-256-GCM** (`MP_TOKEN_KEY`) en `brand_payment_accounts` (sin acceso de clientes);
+  - el pago lo acredita SOLO el servidor (`confirm_order_payment`, service role) después de consultar el pago a la API
+    de Mercado Pago con el token de esa marca: estado aprobado, `external_reference` = pedido de un evento de esa marca,
+    monto y moneda exactos. El webhook exige la firma `x-signature` (`MP_WEBHOOK_SECRET`) y nunca confía en el cuerpo;
+  - `payments_enabled` y el estado de pago de los pedidos no son escribibles por clientes (privilegios por columna);
+    la barra no puede marcar un pedido como pagado.
+- **Cuentas de la mesa:** gastos y transferencias visibles solo para integrantes del Squad; el alias o CBU/CVU para
+  cobrar lo ven solo quienes comparten un Squad con esa persona.
+- **Marca:** los colores pasan el mismo control de contraste en el motor y en Postgres; el rescate y el Squad no se
+  pueden recolorear. Un evento solo usa marcas de quien lo creó (trigger).
 - **Claves:** la *service role key* solo vive en el servidor (`SUPABASE_SERVICE_ROLE_KEY`, nunca con prefijo `NEXT_PUBLIC_`).
 - **Redirecciones internas:** los parámetros `next` se validan como rutas internas (sin open redirects).
 - **Storage:** cada usuario escribe solo en su carpeta; los planos solo Dueño/a o Producción.

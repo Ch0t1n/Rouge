@@ -60,10 +60,13 @@ src/
     map/                  # Plano: Pin-Drop 15 min con audiencia manual, Punto Base (?mode=base), rescate (?rescue=1), ?focus=<userId>
     squad/                # Crear/unirse, invitar (link, @username), Rescate / Llegué a casa, Punto Base, Mesa VIP, perk grupal
     squad/chat/           # Chat grupal (texto + fotos + alertas del sistema)
+    squad/cuentas/        # Cuentas de la mesa: quién pagó qué, saldos, transferencias mínimas, alias, "Ya le pagué"
     perks/                # Billetera de QRs (perks, pedidos) + avisos del organizador (Text Blasts)
-    bar/                  # Barra Express: delivery a pin/Mesa VIP, Fast-Pickup QR, Vaquita de Squad
+    bar/                  # Barra Express: delivery a pin/Mesa VIP, Fast-Pickup QR, compartido con el Squad, pago con Mercado Pago
+    api/mercadopago/      # Cobros (SOLO servidor): connect (OAuth/desconectar), callback, checkout, orders/[id] (conciliar), webhook
     admin/                # Suite del organizador (vista EXPANDIDA en desktop, pestañas en mobile)
       page.tsx            # Resumen: ROI (ventas por app, ticket promedio, filas evitadas), embudo, top consumo
+      brand/              # Marca y cobros: logo + colores con vista previa, personalización del evento, conectar Mercado Pago
       events/             # Crear/editar evento, lobby (horas antes/después), plano subido, line-up, link maestro + QR, códigos 1 uso + CSV
       crm/                # Tabla completa: búsqueda, Smart Tags, orden, WhatsApp, export CSV
       blasts/             # Text Blast / Flash Promo segmentado con alcance en vivo y vista previa
@@ -84,9 +87,10 @@ src/
     share/ShareSheet.tsx  # QR + compartir nativo + WhatsApp + copiar + PNG para CUALQUIER link (useShare, ShareButton)
     social/               # SocialLoginButtons, InstagramPhotoPicker, InstagramField (+ useInstagramReturn), InstagramCallback
     demo/                 # DemoHub (guion + vistas por rol), DemoOpen, Presenter (teléfono + panel sincronizados)
+    brand/BrandTheme.tsx  # useBrandTheme() (variables CSS del tema en <html>) y BrandLogo
     landing/              # Landing 3D: Landing.tsx (composición), core/ (Lenis+ScrollTrigger, scrollStore, entry: destinos de CTAs),
                           # fx/ (Cursor, Magnetic, SplitReveal, TiltCard), three/ (Scene R3F + choreography), sections/ (8 secciones)
-    admin/                # AdminChrome (nav por permisos, NoAccess, badge de rol), TeamPanel, SecurityPanel, ApiKeysPanel, PrintCodes, AdminHeader, Panel, downloadCSV
+    admin/                # AdminChrome (nav por permisos, NoAccess, badge de rol), BrandStudio, TeamPanel, SecurityPanel, ApiKeysPanel, PrintCodes, AdminHeader, Panel, downloadCSV
     venue/VenueMap.tsx    # Plano interactivo (zoom/paneo, sectores, pines)
     event/                # LineupBanner, MoodPicker
   lib/
@@ -98,6 +102,9 @@ src/
       affinity.ts         # Algoritmo de afinidad
       grid.ts             # lobbyGrid(): visibles + afinidad + estado de conexión + filtros
       bar.ts              # Metadatos de presentación de Barra Express (labels, QR de retiro)
+      branding.ts         # Marca: contraste WCAG (checkBrandColor ⇔ brand_color_error), resolveTheme, themeVars, upsertBrand
+      payments.ts         # Cobro de pedidos: awaiting_payment → paid (confirmOrderPayment ⇔ confirm_order_payment), comisión
+      settle.ts           # Cuentas de la mesa: ledger, saldos en centavos, transferencias mínimas, alias
       profile.ts          # Validaciones de perfil, parser de Spotify, máscara de teléfono, completitud
       analytics.ts        # Métricas B2B, CRM, Smart Tags, liveWallData()
       engine.test.ts      # Tests de invariantes de negocio
@@ -116,6 +123,9 @@ src/
     instagram/server.ts   # Tokens, Graph API, sesión por magic link (service role). Solo servidor
     api/v1.ts             # API v1: auth por clave (SHA-256), validación, serialización, RPCs api_* (service role) — testeado
     api/openapi.ts        # Especificación OpenAPI 3.1 (mantener en sync con v1.ts)
+    payments/mp.ts        # Mercado Pago puro: state firmado, AES-256-GCM, firma x-signature, preferencia, validación — testeado
+    payments/server.ts    # OAuth, tokens del vendedor (refresh), checkout, webhook, conciliación (service role). Solo servidor
+    payments/client.ts    # Navegador: conectar/desconectar, pagar, conciliar (flag NEXT_PUBLIC_PAYMENTS_MP)
     media/compress.ts     # Compresión WebP, color dominante, transcodificación del loop (sin audio)
     media/mediaStore.ts   # Blobs en IndexedDB (`idb:<uuid>`) para el Modo Demo
     media/upload.ts       # uploadMedia(): Supabase Storage si hay sesión, si no IndexedDB
@@ -226,6 +236,14 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
    Importar gsap desde `landing/core/gsap.ts`. Todo efecto se limpia al desmontar (useGSAP revierte, Lenis se destruye,
    el ticker vuelve a su lagSmoothing): /app y /admin no cargan ni heredan nada de esto. Ojo con `cn()` (tailwind-merge)
    y clases `text-glow-*`: las confunde con colores de texto; en SplitReveal se concatenan sin `cn`.
+20. **Marca y tema.** `rouge` y `vip` son variables CSS (`rgb(var(--c-rouge) / <alpha>)`); el tema del evento
+   (`eventTheme`: evento → marca → ROUGE) lo aplica `AppShell` con `useBrandTheme` en la app del asistente y la LED
+   (no en landing, demo, login ni panel); `/join` aplica el del link. **Rescate = token `sos` fijo**, Squad = cian: nunca
+   usar `rouge` para seguridad. En SVG, los colores con variables van en `style`, no en atributos. Opacidades de Tailwind
+   solo de su escala (5, 10, 15…): `/12` o `/8` no se generan.
+21. **Cobros.** Ningún cliente acredita pagos: `confirm_order_payment` es solo `service_role` y el servidor la llama tras
+   verificar el pago con la API de Mercado Pago (token de ESA marca, external_reference, monto, moneda). Tokens siempre
+   cifrados (`MP_TOKEN_KEY`). Un pedido `awaiting_payment` no avanza (`not_paid`) ni suma gasto. En demo: `payOrderDemo`.
 8. **Guardado sincrónico.** `run()` persiste en el acto (y hay flush en `pagehide`): una acción
    nunca se pierde por cerrar la PWA o navegar inmediatamente.
 
@@ -286,6 +304,14 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
   suma/quita equipo y quien creó el evento no se puede quitar. Barra: comandas + ventanilla (canjea pickup y QRs de
   perk) + LED. Mozo/a: comandas. Seguridad: resumen con alertas de rescate (`eventRescueAlerts`) y LED, sin ventas ni
   teléfonos. `event_stats` solo dueño/producción/seguridad; `event_crm` y códigos solo dueño/producción.
+- **Marca:** colores `#RRGGBB` que pasan `checkBrandColor` (primario: contraste ≥ 3 con fondo y con blanco; acento:
+  ≥ 4,5 con fondo; nada parecido al cian del Squad). Un evento solo usa marcas de quien lo creó. `payments_enabled` lo
+  escribe solo el servidor.
+- **Cobro de la barra:** con Mercado Pago conectado el pedido nace `awaiting_payment` y la barra no lo ve hasta `paid`;
+  sin conexión, `pay_at_bar`. El gasto (`total_spent`) se suma al acreditarse. Comisión = `marketplace_fee`.
+- **Cuentas de la mesa:** entran pedidos con `split_user_ids` (no los que esperan pago), `squad_expenses` y
+  `squad_settlements`; centavos enteros, transferencias mínimas (`settleTransfers`). Solo integrantes; alias visible
+  solo si comparten Squad (`shares_squad`). Funcionan con el lobby cerrado.
 - **Pin-Drop (SQL):** usar la RPC `drop_pin` (reemplaza el pin anterior y descarta ids que no son
   matches reales). Punto Base y su aviso: `set_squad_base_pin`, `announce_base_meetup`.
 
@@ -320,6 +346,7 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
 - [x] **Fase 6** — Roles de equipo (login por tipo de usuario, permisos en cliente y SQL), QR para todo link, landing pública.
 - [x] **Fase 7** — Login con Google e Instagram, importar fotos del feed e Instagram (verificado) en el perfil.
 - [x] **Fase 8** — API v1 para ticketeras: claves, un código por entrada, anulación, check-in y QR para el mail.
+- [x] **Fase 9** — Marca (logo + colores) por evento, cobros con Mercado Pago por marca y cuentas de la mesa.
 
 ## Convenciones
 

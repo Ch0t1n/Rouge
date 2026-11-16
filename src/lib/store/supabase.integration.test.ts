@@ -356,6 +356,82 @@ describe.skipIf(!URL || !ANON || !SERVICE)("Supabase real: flujo completo con RL
     expect((await admin.rpc("api_authorize", { p_key: key!.id, p_event: EV, p_scope: "codes:read" })).data).toBe(false);
   });
 
+  it("marca y cobros: colores validados, el cobro lo prende solo el servidor y la barra no prepara lo que no se pagó", async () => {
+    // Mateo arma su marca y un evento con esa marca (lobby abierto ya)
+    const brand = await act(mateo, C.upsertBrand({ name: `Neón ${RUN}`, primary_color: "#8B5CF6", logo_url: "/demo/brands/rouge-night.svg" }));
+    const { error: darkErr } = await mateo.sb.from("brands").update({ primary_color: "#111111" }).eq("id", brand.id);
+    expect(darkErr).not.toBeNull(); // mismo control de contraste en SQL
+    const { error: payErr } = await mateo.sb.from("brands").update({ payments_enabled: true }).eq("id", brand.id);
+    expect(payErr).not.toBeNull(); // payments_enabled: solo el servidor
+    const ev = await act(mateo, C.upsertEvent({ name: `Club ${RUN}`, starts_at: new Date(Date.now() + 3_600_000).toISOString(), ends_at: new Date(Date.now() + 5 * 3_600_000).toISOString(), brand_id: brand.id, theme_accent: "#C6FF3D" }));
+    // Nadie puede ponerle a su evento una marca ajena
+    const sofiEvent = (await snap(sofi)).events.find((e) => e.created_by === sofi.id && e.name === `Neon ${RUN}`)!;
+    const { error: stolen } = await sofi.sb.from("events").update({ brand_id: brand.id }).eq("id", sofiEvent.id);
+    expect(stolen?.message).toBe("brand_not_owned");
+    // /join sin sesión ya trae logo y colores
+    const anon = createClient(URL!, ANON!, opts);
+    const { data: preview } = await anon.rpc("resolve_access_code", { p_code: ev.slug });
+    expect(preview).toMatchObject({ event: { theme_accent: "#C6FF3D" }, brand: { primary_color: "#8B5CF6" } });
+
+    // Cami entra; sin Mercado Pago conectado se paga en la barra
+    await act(cami, C.joinEvent(cami.id, ev.master_invite_code, "just_dance"), ev.id);
+    const atBar = await act(cami, C.createBarOrder(ev.id, cami.id, [{ itemId: "gin", qty: 1 }], "fast_pickup"), ev.id);
+    expect(atBar.payment_status).toBe("pay_at_bar");
+
+    // El servidor conecta Mercado Pago (lo hace /api/mercadopago/callback con service role)
+    await admin.from("brands").update({ payments_enabled: true }).eq("id", brand.id);
+    const order = await act(cami, C.createBarOrder(ev.id, cami.id, [{ itemId: "gin", qty: 2 }], "fast_pickup"), ev.id);
+    expect(order.payment_status).toBe("awaiting_payment");
+    const s = await snap(mateo, ev.id);
+    expect(await rejects(mateo, C.advanceOrder(order), order, s)).toMatchObject({ message: "not_paid" });
+    // Nadie con sesión acredita pagos ni toca el estado de pago
+    const { error: rpcErr } = await cami.sb.rpc("confirm_order_payment", { p_order: order.id, p_payment_ref: "x", p_amount: 16000 });
+    expect(rpcErr).not.toBeNull();
+    const { error: colErr } = await mateo.sb.from("bar_orders").update({ payment_status: "paid" }).eq("id", order.id);
+    expect(colErr).not.toBeNull();
+    // El servidor acredita con el monto exacto (idempotente) y recién ahí suma el gasto
+    const { error: wrong } = await admin.rpc("confirm_order_payment", { p_order: order.id, p_payment_ref: "mp-1", p_amount: 100 });
+    expect(wrong?.message).toBe("amount_mismatch");
+    for (const _ of [0, 1]) expect((await admin.rpc("confirm_order_payment", { p_order: order.id, p_payment_ref: "mp-1", p_amount: 16000 })).error).toBeNull();
+    const after = await snap(cami, ev.id);
+    expect(after.bar_orders.find((o) => o.id === order.id)?.payment_status).toBe("paid");
+    expect(after.event_attendees.find((a) => a.user_id === cami.id)?.total_spent).toBe(8000 + 16000);
+    await act(mateo, C.advanceOrder(after.bar_orders.find((o) => o.id === order.id)!), ev.id);
+    // Un pedido sin pagar se puede cancelar
+    const extra = await act(cami, C.createBarOrder(ev.id, cami.id, [{ itemId: "agua", qty: 1 }], "fast_pickup"), ev.id);
+    await act(cami, C.cancelUnpaidOrder(extra.id, cami.id), ev.id);
+    expect((await snap(cami, ev.id)).bar_orders.some((o) => o.id === extra.id)).toBe(false);
+    // La dueña ve su cuenta de cobro (sin tokens) por RPC
+    await admin.from("brand_payment_accounts").upsert({ brand_id: brand.id, provider_user_id: "123", account_label: "NEON", live_mode: false, access_token_enc: "v1.x.y.z" });
+    const mine = await snap(mateo, ev.id);
+    expect(mine.brand_payment_accounts).toEqual([expect.objectContaining({ brand_id: brand.id, account_label: "NEON" })]);
+    expect(Object.keys(mine.brand_payment_accounts[0])).not.toContain("access_token_enc");
+    const { data: leaked } = await mateo.sb.from("brand_payment_accounts").select("*");
+    expect(leaked ?? []).toHaveLength(0);
+  });
+
+  it("cuentas de la mesa: gastos, transferencias y alias solo dentro del Squad", async () => {
+    const squadId = (await snap(sofi)).squads.find((q) => q.name === "Las Pibas Test")!.id;
+    await act(sofi, C.addSquadExpense(squadId, sofi.id, { description: "Mesa", amount: 30000, participantIds: [sofi.id, cami.id] }));
+    const s = await snap(cami);
+    expect(await rejects(mateo, C.addSquadExpense(squadId, mateo.id, { description: "x", amount: 1, participantIds: [mateo.id] }), s.squad_expenses[0], s)).toMatchObject({ message: "not_member" });
+    expect((await snap(mateo)).squad_expenses.some((e) => e.squad_id === squadId)).toBe(false); // RLS
+    const { squadAccount } = await import("@/lib/engine/settle");
+    expect(squadAccount(s, squadId, cami.id).iOwe).toEqual([{ from: cami.id, to: sofi.id, amount: 15000 }]);
+
+    await act(sofi, C.setPayoutAlias(sofi.id, `sofi.${RUN}`.slice(0, 20)));
+    expect((await snap(cami)).payout_aliases.find((a) => a.user_id === sofi.id)?.alias).toBe(`sofi.${RUN}`.slice(0, 20));
+    expect((await snap(mateo)).payout_aliases.some((a) => a.user_id === sofi.id)).toBe(false);
+
+    const t = await act(cami, C.recordSettlement(squadId, cami.id, sofi.id, 15000, "mercadopago"));
+    const s2 = await snap(cami);
+    expect(await rejects(cami, C.respondSettlement(t.id, cami.id, true), null, s2)).toMatchObject({ message: "forbidden" });
+    await act(sofi, C.respondSettlement(t.id, sofi.id, true));
+    const s3 = await snap(sofi);
+    expect(s3.squad_settlements.find((x) => x.id === t.id)?.confirmed_at).toBeTruthy();
+    expect(squadAccount(s3, squadId, sofi.id).settled).toBe(true);
+  });
+
   it("storage: subo a mi carpeta, no a la de otra persona", async () => {
     const blob = new Blob([new Uint8Array([82, 73, 70, 70])], { type: "image/webp" });
     const ok = await sofi.sb.storage.from("profile-media").upload(`${sofi.id}/test-${RUN}.webp`, blob, { contentType: "image/webp" });

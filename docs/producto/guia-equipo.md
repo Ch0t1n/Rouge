@@ -29,6 +29,8 @@ su cuenta), elegí el rol y tocá **Sumar**. Para cambiar el rol usá el selecto
      anula (también podés anularlo a mano con 🚫 en la tabla de códigos).
 3. **Perks:** configurá reglas de QR Drop (ej. "Squad de 4 antes de la 01:00 → trago de bienvenida").
 4. **Equipo:** sumá a producción, barra, mozos y seguridad.
+4b. **Marca y cobros** (*Marca y cobros*): subí el logo, elegí tus colores (con vista previa) y conectá la cuenta de
+   Mercado Pago de la marca para cobrar los pedidos de la barra desde la app.
 5. **Comunicación:** publicá el link maestro y explicá en una línea qué gana el público (no perder al grupo, pedir sin fila).
 
 ## La noche del evento

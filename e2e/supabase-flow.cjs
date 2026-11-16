@@ -142,7 +142,7 @@ async function onboard(page, name, user, phone, genres) {
   await Cm.click('[aria-label="Agregar Aperol Spritz"]');
   await Cm.click("text=/Ver pedido/");
   await Cm.click('role=radio[name*="Fast-Pickup"]');
-  await Cm.click("text=/^Pagar/");
+  await Cm.click("text=/^(Pagar|Pedir)/"); // evento sin Mercado Pago: se paga en la barra
   await Cm.waitForSelector("text=/Retiro · código/", { timeout: 15000 });
   const pickup = (await Cm.textContent("text=/Retiro · código/")).match(/código (\w+)/)[1];
   await Cm.keyboard.press("Escape");

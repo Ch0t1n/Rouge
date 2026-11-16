@@ -19,7 +19,9 @@ Cada función existe en los dos modos de la app:
 [7. Chats](#7-chats) · [8. Barra Express](#8-barra-express) · [9. Perks, sorteos y avisos](#9-perks-sorteos-y-avisos) ·
 [10. Música](#10-música) · [11. Panel del organizador](#11-panel-del-organizador) · [12. Roles del equipo](#12-roles-del-equipo) ·
 [13. Compartir con QR](#13-compartir-con-qr) · [14. Landing pública](#14-landing-pública) ·
-[15. PWA y mala señal](#15-pwa-y-mala-señal) · [16. Privacidad](#16-privacidad-y-reglas-que-no-se-negocian) · [17. API para ticketeras](#17-api-para-ticketeras-y-productoras)
+[15. PWA y mala señal](#15-pwa-y-mala-señal) · [16. Privacidad](#16-privacidad-y-reglas-que-no-se-negocian) · [17. API para ticketeras](#17-api-para-ticketeras-y-productoras) ·
+[18. Demo en vivo](#18-demo-en-vivo-para-anfitriones) · [19. Marca y personalización](#19-marca-y-personalización) ·
+[20. Cobros con Mercado Pago](#20-cobros-con-mercado-pago) · [21. Cuentas de la mesa](#21-cuentas-de-la-mesa)
 
 ---
 
@@ -90,6 +92,7 @@ Un solo perfil que sirve para **todas las fiestas**.
 - **Punto Base 🚩:** lugar fijo de encuentro (bandera dorada) y aviso "nos vemos en 10 min".
 - **Mesa VIP:** el Squad puede mostrar que tiene mesa y lugar para sumar otro grupo.
 - **Perk grupal (QR Drop):** ej. "Squad de 4 antes de la 01:00 → trago de bienvenida para cada integrante".
+- **Cuentas de la mesa** (`/squad/cuentas`): quién pagó qué y cuánto le transfiere cada uno al final. Ver [§21](#21-cuentas-de-la-mesa).
 
 ## 6. Plano
 
@@ -109,7 +112,9 @@ Un solo perfil que sirve para **todas las fiestas**.
 - **Menú del evento** (`/bar`) con precios siempre del servidor. Al crear un evento se copia el menú base; en la v1
   se ajusta desde Supabase (el editor de menú en el panel está pendiente).
 - **Formas de entrega:** retiro rápido con QR (Fast-Pickup), delivery a tu pin o a la Mesa VIP (con Punto Base).
-- **Vaquita del Squad:** divide el pedido entre integrantes.
+- **Compartido con el Squad (Vaquita):** elegís con quiénes lo comparten (todo el Squad o algunos, también una
+  botella con delivery a la mesa). Lo paga quien pide y entra solo en las [cuentas de la mesa](#21-cuentas-de-la-mesa).
+- **Cobro:** si la marca conectó Mercado Pago se paga desde la app antes de prepararse; si no, al retirar. Ver [§20](#20-cobros-con-mercado-pago).
 - **Estado en vivo:** pendiente → en preparación → listo para retirar (o en camino) → entregado, con aviso al teléfono.
 - **Código de retiro** generado por el servidor (corto o QR completo).
 
@@ -233,3 +238,47 @@ con link a `NEXT_PUBLIC_DEMO_URL`.
   sola pantalla**, sincronizados en vivo (ej. el rescate tocado en el teléfono aparece al instante en Seguridad).
   Pasos con ←/→, cambio de rol del panel, Pantalla LED y **Reiniciar** la fiesta al estado inicial.
 - Pensado para notebook (y TV por HDMI). La sincronización es entre pestañas del mismo navegador.
+
+## 19. Marca y personalización
+
+Cada productora, boliche o fiesta carga su identidad en **Marca y cobros** (`/admin/brand`) y la app de sus eventos se
+ve con ella. Pensado para hacerse en dos minutos:
+
+- **Logo** (PNG transparente o SVG; se comprime antes de subir) y **dos colores**: el principal (botones, matches,
+  chat) y el de acento (barra, perks, Mesa VIP). Paletas sugeridas o cualquier color.
+- **Vista previa en vivo** del teléfono del asistente mientras se eligen los colores.
+- **Controles automáticos de legibilidad:** si un color no se lee sobre el fondo oscuro o con su texto encima, se explica
+  el motivo antes de guardar (mismo control en el servidor). Tampoco se acepta un tono parecido al cian del Squad.
+- **Seguridad sin marca:** el botón de **Rescate 🚨 siempre es rojo** y los pines del Squad siempre cian.
+- **Por edición:** cada evento usa la marca de quien lo creó o personaliza su logo y colores solo para esa noche.
+- **Dónde se ve:** inicio y toda la app del asistente, la invitación `/join` (también sin cuenta), la Pantalla LED y la
+  hoja de QRs impresos. El panel del equipo mantiene los colores de ROUGE.
+- Una persona puede tener varias marcas (por ejemplo, dos fiestas distintas).
+
+## 20. Cobros con Mercado Pago
+
+- La marca conecta **su** cuenta de Mercado Pago (autorización en Mercado Pago; ROUGE nunca ve la clave y los tokens
+  se guardan cifrados). Se desconecta cuando quiera.
+- Con la cuenta conectada, cada pedido de la Barra Express se **paga desde la app** (billetera de Mercado Pago, dinero
+  en cuenta o tarjeta) y la plata entra directo a la cuenta de la marca.
+- **Comisión de ROUGE automática:** Mercado Pago la separa en cada cobro (`marketplace_fee`), sin facturarla aparte.
+- **La barra solo prepara lo que está pago:** los pedidos que esperan pago no aparecen en comandas; el panel muestra
+  cuántos hay y cuánto se cobró por Mercado Pago. Cada comanda dice "Pagado con Mercado Pago" o "Cobrar al entregar".
+- El pago lo confirma el servidor consultando a Mercado Pago (aviso firmado + verificación de monto y pedido), nunca
+  el teléfono. Quien pidió puede reintentar el pago o cancelar el pedido mientras no esté pago.
+- Sin cuenta conectada, todo sigue como antes: se paga al retirar.
+- En el Modo Demo la conexión y el checkout se simulan. Configuración técnica: [Mercado Pago](../tecnica/mercadopago.md).
+
+## 21. Cuentas de la mesa
+
+Al cierre de la noche, cada Squad sabe quién le transfiere a quién (`/squad/cuentas`, también desde el inicio y el
+Squad, y disponible después de que cierra el lobby):
+
+- **Quién pagó qué:** los pedidos compartidos de la barra se suman solos; la mesa, las entradas o el taxi se cargan a
+  mano (descripción, monto y entre quiénes, partes iguales al centavo).
+- **Saldos** de cada integrante y las **transferencias mínimas** para quedar a mano (a lo sumo una menos que la
+  cantidad de integrantes).
+- **Alias para cobrar:** cada uno carga su alias o CBU/CVU; lo ven solo quienes comparten un Squad con esa persona y se
+  copia con un toque.
+- **"Ya le pagué"** (Mercado Pago, transferencia o efectivo) → quien recibe confirma ("Recibido") o lo rechaza
+  ("No me llegó"). Aviso en vivo.
