@@ -54,7 +54,7 @@ export default function HomePage() {
 }
 
 function Home() {
-  const { state, mode, notify, isStaff, role } = useRouge();
+  const { state, mode, demoVisible, notify, isStaff, role } = useRouge();
   const shareSheet = useShare();
   const router = useRouter();
   const now = useNow(15_000);
@@ -95,7 +95,7 @@ function Home() {
           ) : (
             <span className="font-display text-[26px] font-bold leading-none tracking-tight text-rouge text-glow-rouge">ROUGE</span>
           )}
-          <Badge tone={mode === "demo" ? "vip" : "squad"}>{mode === "demo" ? "Modo Demo" : "Supabase"}</Badge>
+          {mode === "supabase" ? <Badge tone="squad">Supabase</Badge> : demoVisible && <Badge tone="vip">Modo Demo</Badge>}
         </div>
         <div className="flex items-center gap-2">
           <Link href="/profile" aria-label="Mi perfil" className="glass grid size-11 place-items-center rounded-full">

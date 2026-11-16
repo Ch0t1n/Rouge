@@ -37,9 +37,16 @@ const assert = (c, m) => { if (!c) throw new Error("✘ " + m); log("✔ " + m);
   await org.close();
   await p.click("header >> text=Entrar a un Evento");
   await p.waitForURL("**/join");
-  await p.goto(`${B}/login`);
+  // Sitio principal: el login no muestra la demo (personas ni roles) hasta entrar por /demo
+  await p.goto(`${B}/login`, { waitUntil: "networkidle" });
+  assert(await p.isVisible("text=Continuar con Instagram") && await p.isVisible('input[type="email"]'), "login del sitio principal: Instagram, Google y email");
+  assert(!(await p.isVisible("text=Sofía")) && !/modo demo|persona del demo/i.test(await p.evaluate(() => document.body.innerText)), "login del sitio principal sin personas ni menciones a la demo");
+  await p.goto(`${B}/login?as=staff`, { waitUntil: "networkidle" });
+  assert(!(await p.isVisible("text=Daniela Ortiz")), "login de equipo del sitio principal sin roles del demo");
+  await p.goto(`${B}/demo`, { waitUntil: "networkidle" });
+  await p.goto(`${B}/login`, { waitUntil: "networkidle" });
 
-  // Login como asistente → /app
+  // Login como asistente → /app (tras pasar por /demo)
   await p.click("text=Sofía");
   await p.waitForURL("**/app");
   await p.waitForSelector("text=Hola, Sofía");

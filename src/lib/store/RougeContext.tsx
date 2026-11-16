@@ -15,6 +15,7 @@
  *     y, si el servidor rechaza, vuelve al estado real y muestra el error traducido.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import type { RougeState, UUID } from "@/lib/types";
 import type { Result } from "@/lib/engine/actions";
@@ -26,6 +27,7 @@ import { friendlyError } from "@/lib/supabase/errors";
 import { can as canDo, isStaffRole, roleOf, type Permission, type Role } from "@/lib/engine/roles";
 import { fetchRemoteState, subscribeRealtime } from "@/lib/supabase/sync";
 import { uid } from "@/lib/utils";
+import { grantDemoAccess, hasDemoAccess, isDemoPath } from "@/lib/demo/access";
 import type { Command } from "./commands";
 
 const STORAGE_KEY = "rouge:state";
@@ -71,6 +73,11 @@ interface RougeContextValue {
   ready: boolean;
   mode: DataMode;
   state: RougeState;
+  /**
+   * Modo Demo visible: personas, cambio de persona, links de prueba y badges. Solo después de entrar
+   * por /demo (el sitio principal no muestra la demo). Siempre false con Supabase.
+   */
+  demoVisible: boolean;
   /** Modo Supabase: hay sesión iniciada (en demo siempre true). */
   signedIn: boolean;
   /** Tipo de usuario en el evento activo (asistente, dueño/a, producción, barra, mozo/a, seguridad). */
@@ -176,6 +183,9 @@ export function RougeProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<RougeState | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [signedIn, setSignedIn] = useState(mode === "demo");
+  const pathname = usePathname() ?? "/";
+  // Lazy: el BootScreen se muestra hasta montar, así que leer localStorage acá no rompe la hidratación.
+  const [demoVisible, setDemoVisible] = useState(() => mode === "demo" && typeof window !== "undefined" && hasDemoAccess());
   const stateRef = useRef<RougeState | null>(null);
   const skipNextSave = useRef(false);
   const userRef = useRef<UUID | null>(null);
@@ -264,6 +274,13 @@ export function RougeProvider({ children }: { children: ReactNode }) {
       sub.subscription.unsubscribe();
     };
   }, [mode, commit, loadRemote]);
+
+  // ── Demo visible solo tras entrar por /demo ───────────────────────
+  useEffect(() => {
+    if (mode !== "demo") return;
+    if (isDemoPath(pathname)) grantDemoAccess();
+    setDemoVisible(isDemoPath(pathname) || hasDemoAccess());
+  }, [mode, pathname]);
 
   // ── Realtime + sondeo de respaldo (Supabase) ──────────────────────
   const activeEventId = state?.active_event_id ?? "";
@@ -416,8 +433,8 @@ export function RougeProvider({ children }: { children: ReactNode }) {
     if (!state) return null;
     const role = signedIn ? roleOf(state, state.active_event_id, state.current_user_id) : "guest";
     const can = (perm: Permission) => signedIn && canDo(state, state.active_event_id, state.current_user_id, perm);
-    return { ready: true, mode, state, signedIn, role, isStaff: isStaffRole(role), can, exec, refresh, setCurrentUser, setActiveEvent, startNewPersona, resetDemo, signOut, toasts, notify, dismiss };
-  }, [state, mode, signedIn, exec, refresh, setCurrentUser, setActiveEvent, startNewPersona, resetDemo, signOut, toasts, notify, dismiss]);
+    return { ready: true, mode, demoVisible, state, signedIn, role, isStaff: isStaffRole(role), can, exec, refresh, setCurrentUser, setActiveEvent, startNewPersona, resetDemo, signOut, toasts, notify, dismiss };
+  }, [state, mode, demoVisible, signedIn, exec, refresh, setCurrentUser, setActiveEvent, startNewPersona, resetDemo, signOut, toasts, notify, dismiss]);
 
   if (!value) return <BootScreen />;
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

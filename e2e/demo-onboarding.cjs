@@ -1,13 +1,14 @@
 // Demo · onboarding completo (perfil, fotos comprimidas, mood, privacidad)
 const { chromium, devices } = require("playwright");
 // Ver e2e/README.md. Configuración por variables de entorno (ver e2e/env.cjs).
-const { BASE: B, OUT: SP, FIXTURE_PHOTO } = require("./env.cjs");
+const { BASE: B, OUT: SP, FIXTURE_PHOTO, unlockDemo } = require("./env.cjs");
 
 const log = (...a) => console.log(...a);
 (async () => {
   const browser = await chromium.launch();
 
   const ctx = await browser.newContext({ ...devices["iPhone 14 Pro"] });
+  await unlockDemo(ctx); // personas y "Simular…" solo tras entrar por /demo
   const p = await ctx.newPage();
   const errors = [];
   p.on("pageerror", (e) => errors.push("pageerror " + e.message));

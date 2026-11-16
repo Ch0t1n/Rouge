@@ -1,13 +1,14 @@
 // Demo · panel del organizador: eventos, códigos, CRM, blasts, sorteo, comandas, Pantalla LED
 const { chromium, devices } = require("playwright");
 // Ver e2e/README.md. Configuración por variables de entorno (ver e2e/env.cjs).
-const { BASE: B, OUT: SP, FIXTURE_PHOTO } = require("./env.cjs");
+const { BASE: B, OUT: SP, FIXTURE_PHOTO, unlockDemo } = require("./env.cjs");
 
 const fs = require("fs");
 const log = (...a) => console.log(...a);
 (async () => {
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
+  await unlockDemo(ctx); // personas y "Simular…" solo tras entrar por /demo
   const errors = [];
   const watch = (p, tag) => {
     p.on("pageerror", (e) => errors.push(`[${tag}] ${e.message}`));

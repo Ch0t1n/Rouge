@@ -25,6 +25,11 @@ module.exports = {
   SERVICE: process.env.SUPABASE_TEST_SERVICE_KEY,
   MAILPIT_URL: (process.env.E2E_MAILPIT_URL || "http://localhost:8025").replace(/\/$/, ""),
   IG_MOCK_URL: (process.env.E2E_IG_MOCK_URL || "http://localhost:3999").replace(/\/$/, ""),
+  /**
+   * Habilita la demo visible (personas, cambio de persona, "Simular…") en un contexto, como si se hubiera
+   * entrado por /demo. El sitio principal no la muestra (ver src/lib/demo/access.ts).
+   */
+  unlockDemo: (ctx) => ctx.addInitScript(() => { try { localStorage.setItem("rouge:demo-access", "1"); } catch {} }),
   /** Link del magic link dentro del mail. */
   VERIFY_RE: new RegExp(`${escape(SUPABASE_URL)}/auth/v1/verify[^\\s"<>]+`),
 };

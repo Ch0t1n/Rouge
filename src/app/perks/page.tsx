@@ -30,7 +30,7 @@ export default function PerksPage() {
 }
 
 function Wallet() {
-  const { state, exec, mode, notify } = useRouge();
+  const { state, exec, mode, demoVisible, notify } = useRouge();
   const now = useNow(15_000);
   const event = activeEvent(state)!;
   const meId = state.current_user_id;
@@ -151,7 +151,7 @@ function Wallet() {
           <div className="space-y-4 pb-2">
             <QrBlock value={live.qr_code_string} dimmed={live.status === "redeemed"} label={live.title} />
             <p className="text-center font-display text-xs tracking-widest text-muted">{live.qr_code_string}</p>
-            {mode === "demo" && live.status === "available" && (
+            {mode === "demo" && demoVisible && live.status === "available" && (
               <Button
                 block
                 variant="glass"

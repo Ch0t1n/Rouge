@@ -36,7 +36,7 @@ Cada función existe en los dos modos de la app:
 | **Continuar con Google** | Proveedor nativo de Supabase. El onboarding toma el nombre de la cuenta de Google. |
 | **Continuar con Instagram** | Crea la cuenta o entra a la existente. Sugiere el @username desde Instagram. Requiere cuenta profesional (Creador o Empresa). |
 | **Destino según el rol** | Asistente → `/app` · Dueño/a, Producción y Seguridad → `/admin` · Barra y Mozo/a → `/admin/bar-pos`. Respeta el link al que la persona quería ir si su rol puede verlo. |
-| **Cambiar de cuenta / rol** | Desde el panel ("Cambiar de cuenta") o el login. En demo se elige persona o rol sin email. |
+| **Cambiar de cuenta / rol** | Desde el panel ("Cambiar de cuenta") o el login. En demo, después de entrar por `/demo`, se elige persona o rol sin email. |
 
 ## 2. Perfil
 
@@ -240,6 +240,11 @@ con link a `NEXT_PUBLIC_DEMO_URL`.
   sola pantalla**, sincronizados en vivo (ej. el rescate tocado en el teléfono aparece al instante en Seguridad).
   Pasos con ←/→, cambio de rol del panel, Pantalla LED y **Reiniciar** la fiesta al estado inicial.
 - Pensado para notebook (y TV por HDMI). La sincronización es entre pestañas del mismo navegador.
+- **La demo solo se ve entrando por `/demo`.** En el resto del sitio (login, inicio, lobby, barra, perks, panel) no
+  aparecen las personas del demo, el cambio de persona, los links de prueba, los botones "Simular…" ni el badge "Modo
+  Demo": el login muestra Instagram, Google y email, y entrar abre una cuenta nueva (onboarding). Al pasar por `/demo`
+  (o `/demo/abrir`, `/demo/presentador`) ese navegador queda habilitado y el login vuelve a mostrar personas y roles
+  (botón **Elegir persona** en el encabezado de `/demo`).
 
 ## 19. Marca y personalización
 

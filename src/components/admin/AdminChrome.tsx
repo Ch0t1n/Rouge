@@ -27,7 +27,7 @@ export const ADMIN_NAV = [
 /** Estructura del panel: sidebar en desktop, pestañas horizontales en pantallas chicas. */
 export function AdminChrome({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? "/admin";
-  const { state, mode, setActiveEvent, signedIn, role, can } = useRouge();
+  const { state, demoVisible, setActiveEvent, signedIn, role, can } = useRouge();
   const perm = permissionForPath(pathname);
   // Crear un evento nuevo está abierto a cualquiera con sesión (queda como dueño/a); el resto exige su permiso.
   const allowed = signedIn && (!perm || can(perm) || pathname === "/admin/events");
@@ -85,10 +85,10 @@ export function AdminChrome({ children }: { children: ReactNode }) {
               <span aria-hidden>{meta.emoji}</span> {meta.label}
             </p>
             <Link href="/login?as=staff" className="mt-2 flex items-center gap-1.5 text-xs text-muted hover:text-primary">
-              <LogOut className="size-3.5" /> {mode === "demo" ? "Cambiar de rol" : "Cambiar de cuenta"}
+              <LogOut className="size-3.5" /> {demoVisible ? "Cambiar de rol" : "Cambiar de cuenta"}
             </Link>
           </div>
-          {mode === "demo" && (
+          {demoVisible && (
             <p className="flex items-start gap-2 rounded-xl bg-white/[0.04] p-3 text-[11px] text-muted">
               <ShieldCheck className="size-4 shrink-0 text-squad" /> Modo Demo: cada rol ve solo sus secciones (igual que con Supabase, donde lo exige el servidor).
             </p>
@@ -135,7 +135,7 @@ export function AdminChrome({ children }: { children: ReactNode }) {
 /** Pantalla para quien no tiene sesión o cuyo rol no incluye esta sección. */
 function NoAccess() {
   const pathname = usePathname() ?? "/admin";
-  const { signedIn, role, mode } = useRouge();
+  const { signedIn, role, demoVisible } = useRouge();
   const meta = ROLE_META[role];
   const home = roleHome(role);
   const next = encodeURIComponent(pathname);
@@ -164,7 +164,7 @@ function NoAccess() {
                 Ir a mi pantalla
               </Link>
               <Link href={`/login?as=staff&next=${next}`} className={buttonVariants({ variant: "glass", block: true })}>
-                {mode === "demo" ? "Entrar con otro rol" : "Ingresar con otra cuenta"}
+                {demoVisible ? "Entrar con otro rol" : "Ingresar con otra cuenta"}
               </Link>
             </div>
           </>

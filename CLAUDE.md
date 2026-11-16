@@ -205,6 +205,9 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
     simula un teléfono distinto aunque compartan el estado. `window.name` = `rouge-persona:<id>` la fija por marco
     (lo usan los iframes de `/demo/presentador`). `saveDemoState` nunca pisa una fiesta con otro `seeded_at`
     (salvo `force` al reiniciar o re-sembrar). La landing no lleva atajos de demo: van en `/demo` (`lib/demo/script.ts`).
+    **Demo visible solo tras `/demo`:** personas/roles en el login, `PersonaSwitcher`, links de prueba, "Simular…" y badges
+    "Modo Demo" se muestran con `useRouge().demoVisible` (flag `rouge:demo-access` que fija pasar por `/demo/*`,
+    `lib/demo/access.ts`); sin él, el login es el normal. Los E2E demo llaman `unlockDemo(ctx)` (`e2e/env.cjs`).
 11. **Admin.** Las páginas `page.tsx` solo exportan el componente por defecto (Next lo exige): helpers
     a `components/admin` o `lib`. Los avisos en `/admin` van arriba a la derecha. La Pantalla LED se
     dimensiona con `min(vw, vh)` para entrar en cualquier proyector (probado 1920×1080, 1280×720, 1024×768).

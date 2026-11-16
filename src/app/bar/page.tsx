@@ -42,7 +42,7 @@ export default function BarPage() {
 }
 
 function Bar() {
-  const { state, exec, notify, mode, refresh } = useRouge();
+  const { state, exec, notify, mode, demoVisible, refresh } = useRouge();
   const now = useNow(15_000);
   const event = activeEvent(state)!;
   const meId = state.current_user_id;
@@ -148,7 +148,7 @@ function Bar() {
             onPay={() => pay(o)}
             onCancel={() => exec(C.cancelUnpaidOrder(o.id, meId))}
             payBusy={busy}
-            onSimulate={mode === "demo" ? () => {
+            onSimulate={mode === "demo" && demoVisible ? () => {
               const next = nextOrderStatus(o);
               if (next) void exec(C.advanceOrder(o, { simulate: true }));
             } : undefined}

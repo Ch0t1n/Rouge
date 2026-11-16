@@ -2,6 +2,14 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y [SemVer](https://semver.org/lang/es/).
 
+## [Sin publicar]
+
+### Cambiado
+- **La demo ya no se ve en el sitio principal.** El login muestra solo Instagram, Google y email (en Modo Demo abren
+  una cuenta nueva y siguen al onboarding); las personas y roles del demo, el cambio de persona, los links de prueba,
+  los botones "Simular…" y el badge "Modo Demo" aparecen recién después de entrar por **`/demo`** (queda recordado en
+  ese navegador, `rouge:demo-access`). `/demo` suma el botón "Elegir persona". Ver `src/lib/demo/access.ts`.
+
 ## [1.6.0] — 2026-11-16
 
 ### Agregado

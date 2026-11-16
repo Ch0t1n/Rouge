@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowUpRight, Clock3, Laptop, MonitorPlay, RotateCcw, Smartphone, Tv } from "lucide-react";
+import { ArrowUpRight, Clock3, Laptop, MonitorPlay, RotateCcw, Smartphone, Tv, Users } from "lucide-react";
 import { useRouge } from "@/lib/store/RougeContext";
 import { DEMO_ROLES, DEMO_SCRIPT, openAs, type DemoRole } from "@/lib/demo/script";
 import { ShareButton } from "@/components/share/ShareSheet";
@@ -59,6 +59,9 @@ export function DemoHub() {
           <Badge tone="vip" size="md">Demo para anfitriones</Badge>
           <div className="ml-auto flex flex-wrap gap-2">
             <ShareButton size="sm" label="Compartir" target={{ url: "/demo", title: "Demo en vivo de ROUGE", text: "Mirá ROUGE en vivo: la app de la fiesta y el panel del organizador.", fileName: "rouge-demo", accent: "vip" }} />
+            <Link href="/login" className={buttonVariants({ size: "sm", variant: "glass" })}>
+              <Users /> Elegir persona
+            </Link>
             <Link href="/demo/presentador" className={buttonVariants({ size: "sm", variant: "vip" })}>
               <MonitorPlay /> Modo presentador
             </Link>

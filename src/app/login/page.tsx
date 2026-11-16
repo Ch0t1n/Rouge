@@ -23,7 +23,8 @@ import { useInstagramReturn } from "@/components/social/InstagramField";
  *  - Asistente: entra a la app (lobby, squad, plano, barra).
  *  - Equipo del evento: dueño/a, producción, barra, mozo/a o seguridad → cada uno a su pantalla.
  * Supabase: magic link y el rol lo define `event_staff` (lo asigna el dueño/a en Eventos → Equipo).
- * Modo Demo: elegís la persona y entrás con su rol.
+ * Modo Demo: el selector de personas/roles solo aparece después de entrar por /demo (`demoVisible`).
+ * En el sitio principal se ve el login normal y el ingreso abre una cuenta nueva (onboarding).
  */
 export default function LoginPage() {
   return (
@@ -36,7 +37,7 @@ export default function LoginPage() {
 type Tab = "attendee" | "staff";
 
 function Login() {
-  const { mode, signedIn, state, role, signOut } = useRouge();
+  const { mode, demoVisible, signedIn, state, role, signOut } = useRouge();
   const router = useRouter();
   const params = useSearchParams();
   const next = safeNext(params.get("next"));
@@ -89,10 +90,10 @@ function Login() {
       <div className="relative mt-6 flex-1">
         {mode === "supabase" && signedIn && switching ? (
           <SessionCard me={me} roleLabel={`${ROLE_META[role].emoji} ${ROLE_META[role].label}`} onContinue={() => router.replace(destinationFor(state, state.active_event_id, state.current_user_id, next))} onSignOut={signOut} />
-        ) : mode === "supabase" ? (
-          <EmailLogin tab={tab} next={next} />
-        ) : (
+        ) : mode === "demo" && demoVisible ? (
           <DemoPicker tab={tab} next={next} />
+        ) : (
+          <EmailLogin tab={tab} next={next} />
         )}
       </div>
     </main>
@@ -122,6 +123,8 @@ function SessionCard({ me, roleLabel, onContinue, onSignOut }: { me?: Profile; r
 }
 
 function EmailLogin({ tab, next }: { tab: Tab; next: string | null }) {
+  const { mode, startNewPersona } = useRouge();
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -129,6 +132,12 @@ function EmailLogin({ tab, next }: { tab: Tab; next: string | null }) {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (mode === "demo") {
+      // Sin backend no hay mail que mandar: abre una cuenta nueva y sigue al onboarding.
+      startNewPersona();
+      router.push(`/onboarding${next ? `?next=${encodeURIComponent(next)}` : ""}`);
+      return;
+    }
     const sb = getSupabase();
     if (!sb) return;
     setBusy(true);
