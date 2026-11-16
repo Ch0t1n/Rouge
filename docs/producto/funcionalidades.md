@@ -22,7 +22,8 @@ Cada función existe en los dos modos de la app:
 [15. PWA y mala señal](#15-pwa-y-mala-señal) · [16. Privacidad](#16-privacidad-y-reglas-que-no-se-negocian) · [17. API para ticketeras](#17-api-para-ticketeras-y-productoras) ·
 [18. Demo en vivo](#18-demo-en-vivo-para-anfitriones) · [19. Marca y personalización](#19-marca-y-personalización) ·
 [20. Cobros con Mercado Pago](#20-cobros-con-mercado-pago) · [21. Cuentas de la mesa](#21-cuentas-de-la-mesa) ·
-[22. Gestión del evento](#22-gestión-del-evento) · [23. Ticket de comanda](#23-ticket-de-comanda)
+[22. Gestión del evento](#22-gestión-del-evento) · [23. Ticket de comanda](#23-ticket-de-comanda) ·
+[24. RRPP](#24-rrpp) · [25. Puerta](#25-puerta) · [26. Sitio público y de organizadores](#26-sitio-público-y-de-organizadores)
 
 ---
 
@@ -306,3 +307,35 @@ Cada comanda de **Barra / POS** tiene un botón 🖨️ que abre su ticket para 
 en A4): marca y evento, número de comanda, fecha, cliente, entrega, código grande y QR de retiro, ítems, total y si
 está **pagado con Mercado Pago** (con número de operación) o **a cobrar**. Se imprime solo y tiene copia para el
 cliente y para la barra. Es un comprobante interno: la factura la emite cada comercio.
+
+## 24. RRPP
+
+- **Tipo de usuario 📣 RRPP**: el dueño/a lo suma al equipo por @usuario con ese rol. Entra al panel y solo ve su
+  sección (`/admin/rrpp`).
+- **Link y QR propios** por evento (`/join/RP…`), para historias, WhatsApp o impresos. Quien entra por ese link queda
+  a nombre del RRPP (si ya estaba en el evento, no cambia).
+- **Sus números, sin datos personales:** cuántos entraron por su link, cuántos pasaron por la puerta y cuánto tiene
+  para cobrar. No ve nombres, teléfonos, consumos, pines, squads ni el CRM.
+- **Dueño/a y producción:** ranking de RRPP, generan links, fijan la **comisión por ingreso** y exportan la
+  **liquidación** en CSV. Si el evento usa el escáner de la puerta, se paga por ingreso confirmado (no por
+  registrarse en la app).
+
+## 25. Puerta
+
+- **Escáner** (`/admin/door`) para dueño/a, producción y seguridad, pensado para el celular: usa la cámara (o el código
+  tipeado o un lector).
+- Valida la **entrada** (QR del código de 1 uso, del mail o impreso) y el **pase de la app** (*Inicio → Mi entrada*).
+- Responde al instante: **Adelante** (verde), **Ya entró** a tal hora (amarillo) o el motivo del rechazo (rojo):
+  anulada, expulsado/a, de otro evento, link general o inexistente.
+- Muestra **foto, nombre y edad** para comparar con quien entra (marca "MENOR" si corresponde).
+- Contador de gente adentro y cupo. El ingreso confirmado se usa para liquidar a los RRPP.
+- La **ventanilla de la barra** también escanea con la cámara (QR de retiro y de perks).
+
+## 26. Sitio público y de organizadores
+
+- **`/`** — para el público: qué ganás (entrada en el celular, conectar, Squad, rescate, barra sin fila, tragos y
+  premios, cuentas claras, privacidad) y preguntas frecuentes. Sin nada de CRM, ventas ni planes; solo un acceso
+  discreto para el equipo.
+- **`/organizadores`** — para dueños de boliches y productoras: barra y cobros, panel, CRM, Text Blasts, LED, RRPP,
+  puerta, planes y preguntas de negocio. **Oculto:** no aparece en buscadores ni se enlaza desde `/`; se comparte por
+  link junto con la [demo](#18-demo-en-vivo-para-anfitriones).

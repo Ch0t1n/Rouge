@@ -29,6 +29,8 @@ su cuenta), elegí el rol y tocá **Sumar**. Para cambiar el rol usá el selecto
      anula (también podés anularlo a mano con 🚫 en la tabla de códigos).
 3. **Perks:** configurá reglas de QR Drop (ej. "Squad de 4 antes de la 01:00 → trago de bienvenida").
 4. **Equipo:** sumá a producción, barra, mozos y seguridad.
+4d. **RRPP**: sumalos al equipo con el rol 📣 RRPP; cada uno genera su link y su QR en *RRPP*. Vos fijás la comisión por ingreso y exportás la liquidación.
+4e. **Puerta**: el personal de seguridad abre *Puerta* en su celular y escanea entradas y pases (con foto y edad).
 4c. **Menú de la barra** (*Menú de la barra*): cargá los precios de la noche y marcá "Agotado" lo que se termine.
 4b. **Marca y cobros** (*Marca y cobros*): subí el logo, elegí tus colores (con vista previa) y conectá la cuenta de
    Mercado Pago de la marca para cobrar los pedidos de la barra desde la app.

@@ -5,22 +5,47 @@ import { useRef } from "react";
 import { ArrowDownRight, ArrowRight, Ticket } from "lucide-react";
 import { gsap, prefersReducedMotion, useGSAP } from "../core/gsap";
 import { scrollState } from "../core/scrollStore";
+
 import { useEntry } from "../core/entry";
+import { DEMO_HREF, useAudience } from "../core/audience";
+import { scrollToId } from "../core/scrollStore";
 import { Magnetic } from "../fx/Magnetic";
 import { SplitReveal } from "../fx/SplitReveal";
 
-const TITLE = [
-  { text: "NO VAYAS", className: "" },
-  { text: "A CIEGAS.", className: "text-outline pl-[4vw] sm:pl-[8vw]" },
-  { text: "DOMINA", className: "" },
-  { text: "LA NOCHE.", className: "pl-[2vw] sm:pl-[14vw] text-rouge text-glow-rouge" },
-];
+const COPY = {
+  public: {
+    aria: "No vayas a ciegas. Domina la noche.",
+    title: [
+      { text: "NO VAYAS", className: "" },
+      { text: "A CIEGAS.", className: "text-outline pl-[4vw] sm:pl-[8vw]" },
+      { text: "DOMINA", className: "" },
+      { text: "LA NOCHE.", className: "pl-[2vw] sm:pl-[14vw] text-rouge text-glow-rouge" },
+    ],
+    eyebrow: "LA NOCHE, CONECTADA",
+    tag: "+18",
+  },
+  organizers: {
+    aria: "Llená la pista. Medí la noche.",
+    title: [
+      { text: "LLENÁ", className: "" },
+      { text: "LA PISTA.", className: "text-outline pl-[4vw] sm:pl-[8vw]" },
+      { text: "MEDÍ", className: "" },
+      { text: "LA NOCHE.", className: "pl-[2vw] sm:pl-[14vw] text-rouge text-glow-rouge" },
+    ],
+    eyebrow: "PARA ORGANIZADORES",
+    tag: "B2B2C",
+  },
+};
 
 export function Hero() {
   const root = useRef<HTMLElement>(null);
   const pct = useRef<HTMLSpanElement>(null);
   const bar = useRef<HTMLSpanElement>(null);
   const { appHref, staffHref, eventName } = useEntry();
+  const audience = useAudience();
+  const org = audience === "organizers";
+  const copy = COPY[audience];
+  const TITLE = copy.title;
 
   useGSAP(
     () => {
@@ -53,16 +78,16 @@ export function Hero() {
       {/* En celular, dos renglones alineados (sin sangría ni "B2B2C ]" huérfano); desde sm, en una línea. */}
       <p data-hero-fade className="flex flex-col items-start gap-1.5 font-mono text-[11px] uppercase tracking-[0.18em] text-muted sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:text-xs sm:tracking-[0.25em]">
         <span className="[text-wrap:balance]">
-          [ NEXT-GEN NIGHTLIFE ECOSYSTEM <span className="text-rouge">{"//"}</span> B2B2C ]
+          [ {copy.eyebrow} <span className="text-rouge">{"//"}</span> {copy.tag} ]
         </span>
-        {eventName && (
+        {eventName && !org && (
           <span className="inline-flex items-center gap-1.5 text-squad">
             <span className="size-1.5 animate-pulse rounded-full bg-squad" /> EN VIVO: {eventName.toUpperCase()}
           </span>
         )}
       </p>
 
-      <h1 aria-label="No vayas a ciegas. Domina la noche." className="mt-6">
+      <h1 aria-label={copy.aria} className="mt-6">
         {TITLE.map((line, i) => (
           <span key={line.text} aria-hidden className="block" data-speed={[0.15, 0.32, 0.22, 0.45][i]}>
             <SplitReveal
@@ -78,25 +103,54 @@ export function Hero() {
       </h1>
 
       <div className="mt-10 grid gap-8 lg:grid-cols-[1.1fr_1fr] lg:items-end">
-        <p data-hero-fade className="max-w-xl text-base text-muted sm:text-lg">
-          El link de tu entrada desbloquea el <span className="text-primary">lobby privado de la fiesta</span>: conectás con gente que escucha lo mismo, ves a{" "}
-          <span className="text-squad">tu grupo en el plano</span> y pedís en la <span className="text-vip">barra sin filas</span>. Sin descargar nada.
-        </p>
+        {org ? (
+          <p data-hero-fade className="max-w-xl text-base text-muted sm:text-lg">
+            La app que tus invitados abren con el link de su entrada: <span className="text-primary">se conectan, no pierden a su grupo</span> y{" "}
+            <span className="text-vip">piden y pagan con Mercado Pago sin fila</span>. Vos te quedás con el <span className="text-squad">CRM, las ventas y la operación</span> de la noche.
+          </p>
+        ) : (
+          <p data-hero-fade className="max-w-xl text-base text-muted sm:text-lg">
+            El link de tu entrada desbloquea el <span className="text-primary">lobby privado de la fiesta</span>: conectás con gente que escucha lo mismo, ves a{" "}
+            <span className="text-squad">tu grupo en el plano</span> y pedís en la <span className="text-vip">barra sin filas</span>. Sin descargar nada.
+          </p>
+        )}
         <div data-hero-fade className="flex flex-wrap gap-3 lg:justify-end">
-          <Magnetic>
-            <Link href={appHref} data-cursor="Entrar" className="group inline-flex min-h-[56px] items-center gap-3 rounded-full bg-rouge px-6 font-display text-base font-semibold text-white shadow-[0_0_40px_rgba(255,30,86,0.55)] transition hover:bg-rouge-hover">
-              <Ticket className="size-4" /> Tengo una entrada
-            </Link>
-          </Magnetic>
-          <Magnetic>
-            <Link
-              href={staffHref("/admin")}
-              data-cursor="Admin"
-              className="inline-flex min-h-[56px] items-center gap-2 rounded-full border border-white/20 bg-white/5 px-6 font-display text-base font-semibold backdrop-blur-md transition hover:border-vip/60 hover:text-vip"
-            >
-              Soy Organizador / Dueño de Club <ArrowRight className="size-4" />
-            </Link>
-          </Magnetic>
+          {org ? (
+            <>
+              <Magnetic>
+                <a href={DEMO_HREF} data-cursor="Demo" className="group inline-flex min-h-[56px] items-center gap-3 rounded-full bg-rouge px-6 font-display text-base font-semibold text-white shadow-[0_0_40px_rgba(255,30,86,0.55)] transition hover:bg-rouge-hover">
+                  <Ticket className="size-4" /> Ver la demo en vivo
+                </a>
+              </Magnetic>
+              <Magnetic>
+                <Link
+                  href={staffHref("/admin")}
+                  data-cursor="Admin"
+                  className="inline-flex min-h-[56px] items-center gap-2 rounded-full border border-white/20 bg-white/5 px-6 font-display text-base font-semibold backdrop-blur-md transition hover:border-vip/60 hover:text-vip"
+                >
+                  Entrar al panel <ArrowRight className="size-4" />
+                </Link>
+              </Magnetic>
+            </>
+          ) : (
+            <>
+              <Magnetic>
+                <Link href={appHref} data-cursor="Entrar" className="group inline-flex min-h-[56px] items-center gap-3 rounded-full bg-rouge px-6 font-display text-base font-semibold text-white shadow-[0_0_40px_rgba(255,30,86,0.55)] transition hover:bg-rouge-hover">
+                  <Ticket className="size-4" /> Tengo una entrada
+                </Link>
+              </Magnetic>
+              <Magnetic>
+                <button
+                  type="button"
+                  onClick={() => scrollToId("experiencia")}
+                  data-cursor="Ver"
+                  className="inline-flex min-h-[56px] items-center gap-2 rounded-full border border-white/20 bg-white/5 px-6 font-display text-base font-semibold backdrop-blur-md transition hover:border-squad/60 hover:text-squad"
+                >
+                  ¿Cómo funciona? <ArrowDownRight className="size-4" />
+                </button>
+              </Magnetic>
+            </>
+          )}
         </div>
       </div>
 

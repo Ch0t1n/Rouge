@@ -21,7 +21,8 @@ import { cn } from "@/lib/utils";
  */
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? "/";
-  const landing = pathname === "/";
+  // "/" (público) y "/organizadores" (oculto, para dueños y productoras): misma landing a ancho completo.
+  const landing = pathname === "/" || pathname === "/organizadores";
   // /demo: página para anfitriones (guion + modo presentador), a ancho completo y pública.
   const demoPage = pathname === "/demo" || pathname.startsWith("/demo/");
   const expanded = landing || demoPage || pathname.startsWith("/admin");

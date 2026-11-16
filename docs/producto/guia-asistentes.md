@@ -17,6 +17,8 @@ como base de un FAQ.
 
 ## En la fiesta
 
+- **En la puerta:** mostrá *Inicio → Mi entrada* (o el QR de tu entrada). El personal ve tu foto y tu nombre.
+
 ### Conocer gente
 - En **Lobby** ves a las personas ordenadas por afinidad musical. Filtrá por género, mood o "coincidieron en tu zona".
 - **Conectar 💘:** si la otra persona también te conecta, es **match** y se abre el chat.

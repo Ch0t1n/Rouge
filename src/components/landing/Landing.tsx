@@ -12,6 +12,9 @@ import { SmartBar } from "./sections/SmartBar";
 import { B2B } from "./sections/B2B";
 import { Pricing } from "./sections/Pricing";
 import { Footer } from "./sections/Footer";
+import { Benefits } from "./sections/Benefits";
+import { PublicFaq } from "./sections/Pricing";
+import { AudienceProvider, type LandingAudience } from "./core/audience";
 
 /**
  * Landing comercial 3D (ruta "/").
@@ -23,10 +26,14 @@ import { Footer } from "./sections/Footer";
  *  3. Grano cinematográfico (SVG noise al 3%) y cursor magnético (solo desktop).
  *
  * Al salir de la landing (a /app o /admin) todo se desmonta: Lenis, ticker, triggers y WebGL.
+ *
+ * Dos sitios: "/" para el público (solo sus beneficios) y "/organizadores" (oculto: noindex y sin links desde "/")
+ * con el CRM, las ventas, la operación y los planes.
  */
-export function Landing() {
+export function Landing({ audience = "public" }: { audience?: LandingAudience }) {
   useSmoothScroll();
   return (
+    <AudienceProvider value={audience}>
     <div className="landing-root relative overflow-x-clip">
       <RougeThreeCanvas />
       <div aria-hidden className="noise-overlay pointer-events-none fixed inset-0 z-[60]" />
@@ -35,15 +42,26 @@ export function Landing() {
       <main className="relative z-10">
         <Hero />
         <Marquee />
-        <Pillars />
-        <ClubMap />
-        <SmartBar />
-        <B2B />
-        <Pricing />
+        {audience === "public" ? (
+          <>
+            <Pillars />
+            <ClubMap />
+            <SmartBar />
+            <Benefits />
+            <PublicFaq />
+          </>
+        ) : (
+          <>
+            <SmartBar />
+            <B2B />
+            <Pricing />
+          </>
+        )}
       </main>
       <div className="relative z-10">
         <Footer />
       </div>
     </div>
+    </AudienceProvider>
   );
 }

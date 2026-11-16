@@ -2,6 +2,31 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y [SemVer](https://semver.org/lang/es/).
 
+## [1.6.0] — 2026-11-16
+
+### Agregado
+- **RRPP:** nuevo tipo de usuario del equipo (📣 RRPP) con **link y QR propios** por evento (`/join/RP…`). Quien
+  entra por ese link queda a su nombre (primer contacto). El RRPP ve solo sus números (ingresos por su link, ingresos
+  en la puerta y lo que tiene para cobrar), nunca datos de las personas, y no ve pines, squads, pedidos ni CRM. Dueño/a
+  y producción ven el ranking, fijan la **comisión por ingreso** y exportan la **liquidación en CSV** (`/admin/rrpp`).
+  Si el evento usa el escáner, se liquida por ingreso confirmado en la puerta.
+- **Escáner en la puerta** (`/admin/door`, dueño/a, producción y seguridad): cámara del celular (lector nativo o
+  jsQR) o código tipeado. Valida la **entrada** (QR del código de 1 uso) y el **pase de la app** (Inicio → *Mi
+  entrada*), y muestra foto, nombre y edad para comparar con quien entra. Rechaza anuladas, expulsados, pases de otro
+  evento y el link general; avisa "Ya entró" con la hora. Contador de gente adentro.
+- **Mi entrada:** el asistente muestra su pase con QR desde el inicio.
+- **Cámara en la ventanilla de la barra** para escanear los QR de retiro y de perks.
+- **Sitio dividido:** `/` es solo para el público (ventajas, preguntas, sin CRM, ventas ni planes; queda un acceso
+  discreto "Acceso equipo"). **`/organizadores`** es el sitio para dueños y productoras (CRM, ventas, barra, RRPP,
+  puerta, planes), **oculto**: no se indexa y no se enlaza desde `/`.
+- SQL: rol `promoter`, tabla `promoter_links`, columnas `referred_by` / `checked_in_at` (asistentes) y
+  `checked_in_at` / `checked_in_by` (códigos), RPCs `ensure_promoter_link`, `set_promoter_commission`,
+  `promoter_stats`, `door_check_in`; `join_event` y `resolve_access_code` aceptan el link del RRPP.
+
+### Cambiado
+- `is_event_staff` no incluye al RRPP (no ve datos del evento como el resto del equipo).
+- Modo Demo: nueva versión del estado con la RRPP Victoria, su link y los ingresos de la puerta.
+
 ## [1.5.0] — 2026-11-16
 
 ### Agregado

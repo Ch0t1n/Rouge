@@ -52,6 +52,10 @@ Este documento resume qué se guarda, quién lo ve y cómo se protege.
     monto y moneda exactos. El webhook exige la firma `x-signature` (`MP_WEBHOOK_SECRET`) y nunca confía en el cuerpo;
   - `payments_enabled` y el estado de pago de los pedidos no son escribibles por clientes (privilegios por columna);
     la barra no puede marcar un pedido como pagado.
+- **RRPP:** no es "staff" para ver datos (`is_event_staff` lo excluye): sus números salen de `promoter_stats`
+  (conteos, sin personas). Su link se resuelve en el servidor como el link maestro.
+- **Puerta:** `door_check_in` solo para dueño/a, producción y seguridad; devuelve nombre, foto y edad de quien entra
+  para verificar identidad y +18.
 - **Cuentas de la mesa:** gastos y transferencias visibles solo para integrantes del Squad; el alias o CBU/CVU para
   cobrar lo ven solo quienes comparten un Squad con esa persona.
 - **Marca:** los colores pasan el mismo control de contraste en el motor y en Postgres; el rescate y el Squad no se

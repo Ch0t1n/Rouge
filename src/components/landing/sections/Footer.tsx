@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowUpRight } from "lucide-react";
 import { gsap, prefersReducedMotion, useGSAP } from "../core/gsap";
 import { useEntry } from "../core/entry";
+import { DEMO_HREF, useAudience } from "../core/audience";
 import { Magnetic } from "../fx/Magnetic";
 
 function Clock() {
@@ -30,6 +31,7 @@ function Clock() {
 export function Footer() {
   const root = useRef<HTMLElement>(null);
   const { appHref, staffHref } = useEntry();
+  const org = useAudience() === "organizers";
 
   useGSAP(
     () => {
@@ -39,42 +41,58 @@ export function Footer() {
     { scope: root },
   );
 
-  const links: { label: string; href: string; staff?: boolean }[] = [
-    { label: "Tengo una entrada", href: appHref },
-    { label: "Entrar con mi cuenta", href: "/login" },
-    { label: "Soy del equipo del evento", href: "/admin", staff: true },
-    { label: "Organizar mi evento", href: "/admin/events", staff: true },
-  ];
+  // El público no ve nada de la operación (solo un acceso discreto para el equipo, abajo); los organizadores, todo.
+  const links: { label: string; href: string; staff?: boolean; external?: boolean }[] = org
+    ? [
+        { label: "Ver la demo en vivo", href: DEMO_HREF, external: true },
+        { label: "Entrar al panel", href: "/admin", staff: true },
+        { label: "Crear mi evento", href: "/admin/events", staff: true },
+        { label: "API para ticketeras", href: "/api/v1/openapi.json", external: true },
+      ]
+    : [
+        { label: "Tengo una entrada", href: appHref },
+        { label: "Entrar con mi cuenta", href: "/login" },
+        { label: "Ingresar un código", href: "/join" },
+      ];
 
   return (
     <footer ref={root} data-stage="3" className="relative overflow-hidden border-t border-white/10 px-4 pb-6 pt-24 sm:px-8">
       <div className="grid gap-12 lg:grid-cols-[1.2fr_1fr_auto] lg:items-end">
         <div>
           <p className="font-mono text-xs uppercase tracking-[0.25em] text-rouge">[ 06 {"//"} ESTA NOCHE ]</p>
-          <h2 className="mt-4 font-display text-5xl font-bold uppercase leading-[0.9] tracking-tighter sm:text-7xl">¿Salís hoy?</h2>
-          <p className="mt-4 max-w-md rounded-xl bg-background/60 text-muted backdrop-blur-sm">Entrá con el link de tu entrada o armá tu evento en minutos. Todo link tiene su QR.</p>
+          <h2 className="mt-4 font-display text-5xl font-bold uppercase leading-[0.9] tracking-tighter sm:text-7xl">{org ? "¿Arrancamos?" : "¿Salís hoy?"}</h2>
+          <p className="mt-4 max-w-md rounded-xl bg-background/60 text-muted backdrop-blur-sm">
+            {org ? "Mirá la demo en vivo o creá tu evento: link maestro, códigos de 1 uso, RRPP y barra listos en minutos." : "Entrá con el link o el QR de tu entrada. Sin descargar nada."}
+          </p>
         </div>
         <nav aria-label="Accesos" className="grid gap-1 rounded-2xl bg-background/70 p-3 backdrop-blur-md">
-          {links.map((l) => (
-            <Link
-              key={l.label}
-              href={l.staff ? staffHref(l.href) : l.href}
-              className="group flex min-h-touch items-center justify-between border-b border-white/10 font-display text-lg font-semibold transition hover:text-rouge"
-            >
-              {l.label}
-              <ArrowUpRight className="size-4 transition group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
-            </Link>
-          ))}
+          {links.map((l) =>
+            l.external ? (
+              <a key={l.label} href={l.href} className="group flex min-h-touch items-center justify-between border-b border-white/10 font-display text-lg font-semibold transition hover:text-rouge">
+                {l.label}
+                <ArrowUpRight className="size-4 transition group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+              </a>
+            ) : (
+              <Link
+                key={l.label}
+                href={l.staff ? staffHref(l.href) : l.href}
+                className="group flex min-h-touch items-center justify-between border-b border-white/10 font-display text-lg font-semibold transition hover:text-rouge"
+              >
+                {l.label}
+                <ArrowUpRight className="size-4 transition group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+              </Link>
+            ),
+          )}
         </nav>
         <div className="flex items-end justify-between gap-8 lg:flex-col lg:items-end">
           <Clock />
           <Magnetic strength={0.4}>
             <Link
-              href={appHref}
+              href={org ? staffHref("/admin/events") : appHref}
               data-cursor="Go"
               className="grid size-40 place-items-center rounded-full bg-rouge p-6 text-center font-display text-lg font-bold uppercase leading-tight text-white shadow-[0_0_80px_rgba(255,30,86,0.6)] transition hover:scale-105 hover:bg-rouge-hover sm:size-48"
             >
-              Entrar a la app ahora
+              {org ? "Crear mi evento" : "Entrar a la app ahora"}
             </Link>
           </Magnetic>
         </div>
@@ -94,6 +112,11 @@ export function Footer() {
       <div className="mt-10 flex flex-wrap items-center gap-4 border-t border-white/10 pt-5 font-mono text-[11px] uppercase tracking-[0.2em] text-muted">
         <span>© {new Date().getFullYear()} ROUGE</span>
         <span>+18 · Tomá con moderación</span>
+        {!org && (
+          <Link href="/login?as=staff" className="min-h-[32px] content-center hover:text-primary">
+            Acceso equipo
+          </Link>
+        )}
         <span className="ml-auto">La noche, conectada.</span>
       </div>
     </footer>

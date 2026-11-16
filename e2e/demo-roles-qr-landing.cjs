@@ -20,11 +20,21 @@ const assert = (c, m) => { if (!c) throw new Error("✘ " + m); log("✔ " + m);
   // Landing pública
   await p.goto(`${B}/`, { waitUntil: "networkidle" });
   assert((await p.getAttribute("h1", "aria-label")) === "No vayas a ciegas. Domina la noche.", "landing: hero");
-  assert(await p.isVisible("#organizadores"), "landing: sección para organizadores");
   assert((await p.locator("[data-stage]").count()) >= 6, "landing: secciones coreografiadas de la escena 3D");
-  // Pantalla principal sin nada de demo: "Entrar a un Evento" lleva a ingresar el código de la entrada
+  assert(await p.isVisible("#ventajas") && (await p.isVisible("#preguntas")), "landing pública: ventajas y preguntas para el asistente");
+  // El público no ve nada de la operación: ni demo, ni CRM, ni ventas, ni planes, ni el sitio de organizadores
   const visible = await p.evaluate(() => document.body.innerText);
   assert(!/demo/i.test(visible), "landing sin menciones a la demo");
+  assert(!(await p.locator("#organizadores, #planes").count()) && !/\bCRM\b|recaud|Smart Tags|Club Pro|Para Organizadores|Soy organizador/i.test(visible), "landing pública sin CRM, ventas ni planes");
+  assert(!(await p.locator('a[href*="/organizadores"]').count()), "la landing pública no enlaza el sitio de organizadores");
+  // Sitio de organizadores: oculto (noindex) pero completo
+  const org = await ctx.newPage(); watch(org, "organizadores");
+  await org.goto(`${B}/organizadores`, { waitUntil: "networkidle" });
+  assert((await org.getAttribute("h1", "aria-label")) === "Llená la pista. Medí la noche.", "organizadores: hero propio");
+  assert(/noindex/.test((await org.getAttribute('meta[name="robots"]', "content")) ?? ""), "organizadores: no se indexa");
+  assert((await org.isVisible("#organizadores")) && (await org.isVisible("#planes")), "organizadores: panel/CRM y planes");
+  assert(await org.locator('header a:has-text("Ver la demo")').count(), "organizadores: acceso a la demo");
+  await org.close();
   await p.click("header >> text=Entrar a un Evento");
   await p.waitForURL("**/join");
   await p.goto(`${B}/login`);

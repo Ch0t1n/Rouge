@@ -29,6 +29,7 @@ TypeScript (`src/lib/types.ts`) son su espejo 1:1.
 | `brand_payment_accounts` | Cuenta de Mercado Pago de la marca con tokens **cifrados**. **Solo servidor** (RLS sin políticas). |
 | `squad_expenses` · `squad_settlements` | Cuentas de la mesa: gastos cargados a mano y transferencias entre integrantes. |
 | `payout_aliases` | Alias o CBU/CVU para cobrar (visible solo para quienes comparten un Squad). |
+| `promoter_links` | Link propio de cada RRPP por evento (`code` RP…, comisión por ingreso). `event_attendees.referred_by` guarda la atribución. |
 | `event_bans` | Expulsados de un evento (no pueden volver a entrar a ese evento). Altas por `remove_attendee`. |
 
 `events` suma `brand_id` (de quien creó el evento: trigger `events_brand_owner`), `logo_url`, `theme_primary` y `theme_accent`.

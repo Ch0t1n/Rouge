@@ -1,6 +1,6 @@
 # ROUGE
 
-**La noche, conectada.** PWA social y operativa para eventos, fiestas y boliches (B2B2C) · **v1.5.0**
+**La noche, conectada.** PWA social y operativa para eventos, fiestas y boliches (B2B2C) · **v1.6.0**
 
 El asistente entra al lobby privado del evento con un link o QR, conecta con gente afín, arma su **Squad** (con
 botón de rescate), se ubica en el **plano** con pines de 15 minutos y pide en la **Barra Express** sin fila. El

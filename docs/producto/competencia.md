@@ -56,7 +56,7 @@ Esfuerzo: **S** días · **M** 1–2 semanas · **L** 3+ semanas.
 
 ## Recomendación
 
-Para la próxima versión: **RRPP con link y comisión (2)**, **escáner con cámara (5)** y **lista de espera (6)**. Son
+✅ Ya hecho en la v1.6: **RRPP con link y comisión (2)** y **escáner con cámara (5)**. Sigue: **lista de espera (6)**. Son
 rápidos, los pide todo organizador y suben las ventas desde la primera fiesta. Después, **entradas propias (1)** con
 lotes y códigos, que convierte a ROUGE en la plataforma completa del evento, y la **reserva de Mesa VIP con seña (3)**.
 La **facturación ARCA (4)** tiene que estar antes de cobrar volúmenes grandes con Mercado Pago.

@@ -43,7 +43,8 @@ node scripts/generate-promo.cjs [app] [url demo] # piezas 1080×1350 para organi
 src/
   app/                    # Rutas (App Router)
     layout.tsx            # Fuentes, metadata PWA, RougeProvider, AppShell
-    page.tsx              # Landing comercial 3D a ancho completo (components/landing). SIN nada de la demo: eso vive en /demo
+    page.tsx              # Landing PÚBLICA 3D (asistentes): solo sus beneficios. SIN demo, CRM, ventas ni planes
+    organizadores/        # Landing para organizadores (CRM, ventas, barra, RRPP, puerta, planes). OCULTA: noindex y sin links desde "/"
     demo/                 # Demo para anfitriones (solo Modo Demo, noindex): hub, abrir?rol=&a=, presentador (iframes lado a lado)
     app/                  # Home del asistente (hub del evento) — start_url de la PWA
     login/                # Login por tipo de usuario: Asistente / Equipo. Supabase: magic link, Google, Instagram; demo: persona/rol
@@ -77,6 +78,8 @@ src/
       live-wall/          # Pantalla gigante LED a pantalla completa (sin chrome)
       print-codes/        # Hoja imprimible: un QR por código de 1 uso libre (?event=<id>)
       print-ticket/       # Ticket térmico 80 mm de una comanda (?order=<id>&copia=cliente|barra), se imprime solo
+      rrpp/               # RRPP: link + QR propios y números (RRPP) · ranking, comisión y liquidación CSV (dueño/producción)
+      door/               # Puerta: escáner con cámara (entradas y pase de la app) con foto, nombre y edad
     offline/              # Fallback del Service Worker
   components/
     ui/                   # Primitivas: Button, Badge, Switch, BottomSheet, Avatar, Toaster, field (TextField, Segmented)
@@ -91,9 +94,10 @@ src/
     social/               # SocialLoginButtons, InstagramPhotoPicker, InstagramField (+ useInstagramReturn), InstagramCallback
     demo/                 # DemoHub (guion + vistas por rol), DemoOpen, Presenter (teléfono + panel sincronizados)
     brand/BrandTheme.tsx  # useBrandTheme() (variables CSS del tema en <html>) y BrandLogo
-    landing/              # Landing 3D: Landing.tsx (composición), core/ (Lenis+ScrollTrigger, scrollStore, entry: destinos de CTAs),
+    landing/              # Landing 3D: Landing.tsx (composición por audiencia "public" | "organizers"), core/ (Lenis+ScrollTrigger, scrollStore, entry, audience),
                           # fx/ (Cursor, Magnetic, SplitReveal, TiltCard), three/ (Scene R3F + choreography), sections/ (8 secciones)
-    admin/                # AdminChrome (nav por permisos, NoAccess, badge de rol), BrandStudio, MenuEditor, PrintTicket, EventLifecyclePanel, TeamPanel, SecurityPanel, ApiKeysPanel, PrintCodes, AdminHeader, Panel, downloadCSV
+    scan/QrScanner.tsx    # Cámara → QR (BarcodeDetector nativo o jsQR); lo usan Puerta y la ventanilla de la barra
+    admin/                # AdminChrome (nav por permisos, NoAccess, badge de rol), BrandStudio, MenuEditor, PrintTicket, EventLifecyclePanel, RrppPanel, DoorScanner, TeamPanel, SecurityPanel, ApiKeysPanel, PrintCodes, AdminHeader, Panel, downloadCSV
     venue/VenueMap.tsx    # Plano interactivo (zoom/paneo, sectores, pines)
     event/                # LineupBanner, MoodPicker
   lib/
@@ -109,6 +113,8 @@ src/
       payments.ts         # Cobro de pedidos: awaiting_payment → paid (confirmOrderPayment ⇔ confirm_order_payment), comisión
       settle.ts           # Cuentas de la mesa: ledger, saldos en centavos, transferencias mínimas, alias
       eventAdmin.ts       # Gestión del evento: menú, duplicar edición, expulsar/bloquear, eliminar (⇔ remove_attendee, events_delete)
+      promoters.ts        # RRPP: link propio, comisión, promoterStats (⇔ ensure_promoter_link, promoter_stats)
+      door.ts             # Puerta: parseDoorValue, doorCheckIn, pase ROUGE:PASS (⇔ door_check_in)
       profile.ts          # Validaciones de perfil, parser de Spotify, máscara de teléfono, completitud
       analytics.ts        # Métricas B2B, CRM, Smart Tags, liveWallData()
       engine.test.ts      # Tests de invariantes de negocio
@@ -212,7 +218,8 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
 12. **RPCs que devuelven filas:** llamar `select * from fn(...)`, nunca `select (fn(...)).*` (Postgres
     re-ejecuta la función una vez por columna). `supabase.rpc()` ya lo hace bien.
 15. **Roles.** Tipos de usuario: asistente, `owner` (quien crea el evento, aunque no tenga fila), `manager`,
-    `bartender`, `waiter`, `security` (`event_staff`). Permisos en `ROLE_PERMISSIONS` (`roles.ts`) ⇔
+    `bartender`, `waiter`, `security`, `promoter` (RRPP) (`event_staff`). El RRPP NO es staff para ver datos
+    (`is_event_staff` lo excluye; en SQL se compara `role::text = 'promoter'` porque el valor se agregó con ALTER TYPE). Permisos en `ROLE_PERMISSIONS` (`roles.ts`) ⇔
     `has_staff_role` / `is_event_manager` / `can_operate_bar` en SQL. Los comandos de staff usan `guarded(perm, …)`
     (mismo mensaje `NO_PERMISSION`); la UI usa `useRouge().can(perm)` / `role`. `AdminChrome` filtra el menú y muestra
     `NoAccess` si el rol no tiene la sección (`ADMIN_ROUTE_PERMISSION`). Tras el login cada uno va a `destinationFor()`
@@ -320,6 +327,11 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
   en `create_bar_order`). Expulsar (`remove_attendee`) saca del lobby, del Squad del evento y del plano; con bloqueo
   (`event_bans`) `join_event` responde `banned`. No se expulsa al equipo. Eliminar un evento: solo quien lo creó y si no
   tiene asistentes ni cobros (trigger `events_keep_payments`). Ticket de comanda = comprobante interno, no factura.
+- **RRPP:** 1 link por RRPP y evento (`/join/RP…`, código del servidor); atribución por primer contacto
+  (`referred_by`). Ve solo conteos (`promoter_stats`). Comisión por ingreso; con escáner se liquida por ingreso en puerta.
+- **Puerta:** `door_check_in` (dueño/a, producción, seguridad) valida códigos de 1 uso (`checked_in_at`, distinto de
+  `is_used`) y pases `ROUGE:PASS:<evento>:<usuario>`; rechaza anulados, expulsados, otro evento y el link general.
+- **Sitio:** la landing pública (`/`) nunca muestra CRM, ventas, planes ni links a `/organizadores` (noindex).
 - **Pin-Drop (SQL):** usar la RPC `drop_pin` (reemplaza el pin anterior y descarta ids que no son
   matches reales). Punto Base y su aviso: `set_squad_base_pin`, `announce_base_meetup`.
 
@@ -356,7 +368,8 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
 - [x] **Fase 8** — API v1 para ticketeras: claves, un código por entrada, anulación, check-in y QR para el mail.
 - [x] **Fase 9** — Marca (logo + colores) por evento, cobros con Mercado Pago por marca y cuentas de la mesa.
 - [x] **Fase 10** — Gestión completa del evento (menú, nueva edición, expulsar, eliminar) y ticket de comanda.
-- [ ] **Próximo** — ver `docs/producto/competencia.md`: RRPP con comisión, escáner con cámara, lista de espera, entradas propias.
+- [x] **Fase 11** — RRPP con link y comisión, escáner de puerta y sitio público / organizadores separados.
+- [ ] **Próximo** — ver `docs/producto/competencia.md`: lista de espera, entradas propias, Mesa VIP con seña, facturación ARCA.
 
 ## Convenciones
 

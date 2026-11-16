@@ -8,6 +8,7 @@ operación de la primera fiesta. Marcado con ✅ lo que ya quedó hecho en el pr
 |---|---|---|
 | Producción | https://rouge-neon.vercel.app | Fiestas reales (Supabase) |
 | Demo para anfitriones | https://rouge-demo.vercel.app/demo | Mostrar y vender (sin datos reales) |
+| Sitio para organizadores (oculto) | https://rouge-neon.vercel.app/organizadores | Mandárselo a dueños y productoras (no aparece en buscadores) |
 
 ---
 
