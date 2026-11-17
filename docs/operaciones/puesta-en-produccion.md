@@ -95,6 +95,13 @@ Para que cada marca cobre la Barra Express con su cuenta de Mercado Pago (y ROUG
 seguí [Mercado Pago](../tecnica/mercadopago.md): app de Marketplace, `MP_CLIENT_ID`, `MP_CLIENT_SECRET`,
 `MP_TOKEN_KEY`, `MP_WEBHOOK_SECRET`, `MP_MARKETPLACE_FEE_PERCENT` y `NEXT_PUBLIC_PAYMENTS_MP=1`.
 
+### 5c. Analíticas de Vercel
+
+La app ya trae `@vercel/analytics` (componente `VercelAnalytics` en el layout). Para que empiece a medir:
+**Vercel → proyecto → Analytics → Enable** y volver a desplegar. Sin cookies, no hace falta banner. Las URLs se
+envían sin query ni fragmento y con `/join/[code]`, `/u/[username]` y `/chat/[connectionId]` en lugar del valor real
+(`src/lib/telemetry/redactUrl.ts`): nunca salen códigos de acceso, usernames, ids ni tokens. En local no envía nada.
+
 ### 6. Dominio y verificación final
 
 1. Asignar `app.tudominio.com` en Vercel.

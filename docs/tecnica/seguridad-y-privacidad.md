@@ -63,6 +63,8 @@ Este documento resume qué se guarda, quién lo ve y cómo se protege.
 - **Claves:** la *service role key* solo vive en el servidor (`SUPABASE_SERVICE_ROLE_KEY`, nunca con prefijo `NEXT_PUBLIC_`).
 - **Redirecciones internas:** los parámetros `next` se validan como rutas internas (sin open redirects).
 - **Storage:** cada usuario escribe solo en su carpeta; los planos solo Dueño/a o Producción.
+- **Analíticas (Vercel Web Analytics):** sin cookies. `redactAnalyticsUrl()` reemplaza códigos de ingreso, usernames
+  e ids de chat por el nombre del parámetro y descarta query y fragmento antes de enviar cada vista.
 
 ## Limitaciones conocidas (v1)
 
