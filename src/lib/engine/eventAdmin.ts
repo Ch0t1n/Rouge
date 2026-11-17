@@ -10,6 +10,7 @@ import type { BarMenuItem, EventBan, PerkRule, RougeEvent, RougeState, UUID } fr
 import { addMs, uid } from "@/lib/utils";
 import { upsertEvent } from "./actions";
 import { staffRoleOf } from "./roles";
+import { BAR_MENU, CORPORATE_MENU } from "@/lib/mock/seed";
 
 type R<T> = { ok: true; state: RougeState; data: T } | { ok: false; error: string };
 const fail = (error: string): { ok: false; error: string } => ({ ok: false, error });
@@ -72,6 +73,22 @@ export function deleteMenuItem(state: RougeState, itemId: string): R<undefined> 
   return { ok: true, state: { ...state, bar_menu: state.bar_menu.filter((i) => i.id !== itemId) }, data: undefined };
 }
 
+/**
+ * Modo Demo: `bar_menu` es siempre el menú del evento ACTIVO (igual que en Supabase, donde se carga el del activo).
+ * Al cambiar de evento guarda el menú del anterior en `demo_menus` y trae el del nuevo (o el base de su vertical).
+ * En Supabase (`bar_menu_event_id` sin definir) no hace nada.
+ */
+export function syncDemoMenu(state: RougeState): RougeState {
+  const from = state.bar_menu_event_id;
+  const to = state.active_event_id;
+  if (from === undefined || !to || from === to) return state;
+  const kind = state.events.find((e) => e.id === to)?.kind ?? "nightlife";
+  const menus = { ...(state.demo_menus ?? {}), ...(from ? { [from]: state.bar_menu } : {}) };
+  const next = menus[to] ?? (kind === "corporate" ? CORPORATE_MENU : BAR_MENU);
+  delete menus[to];
+  return { ...state, bar_menu: next, bar_menu_event_id: to, demo_menus: menus };
+}
+
 // ── Duplicar evento ───────────────────────────────────────────────────
 
 /**
@@ -92,6 +109,7 @@ export function duplicateEvent(state: RougeState, eventId: UUID, newStartsAt: st
   const created = upsertEvent(
     { ...state, current_user_id: userId },
     {
+      kind: src.kind,
       name: src.name,
       slug,
       description: src.description,

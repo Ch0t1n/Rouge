@@ -112,9 +112,13 @@ function checkContract(calls: Call[]) {
 
 describe("contrato comandos ↔ schema.sql", () => {
   it("el parser encontró las funciones y tablas del esquema", () => {
-    expect(FUNCS.get("join_event")).toEqual(["p_code", "p_mood"]);
+    expect(FUNCS.get("join_event")).toEqual(["p_code", "p_mood", "p_persona"]);
     expect(TABLES.get("profiles")?.has("phone_normalized")).toBe(true);
     expect(TABLES.get("event_attendees")?.has("visited_sectors")).toBe(true);
+    expect(TABLES.get("event_attendees")?.has("persona_id")).toBe(true);
+    expect(TABLES.get("events")?.has("kind")).toBe(true);
+    expect(TABLES.get("profile_personas")?.has("looking_for")).toBe(true);
+    expect(FUNCS.get("delete_persona")).toEqual(["p_persona"]);
   });
 
   const s0 = () => createSeedState(NOW);
@@ -208,6 +212,13 @@ describe("contrato comandos ↔ schema.sql", () => {
     ["duplicateEvent", () => runRemote(C.duplicateEvent(EV, new Date(NOW + 7 * 86_400_000).toISOString()), st())],
     ["removeAttendee", () => runRemote(C.removeAttendee(EV, id(2), true, "motivo"), st())],
     ["unbanAttendee", () => { const r = C.removeAttendee(EV, id(2), true).local(st()); const s = (r as { state: RougeState }).state; return runRemote(C.unbanAttendee(EV, id(2)), s); }],
+    // [v1.7] Verticales y perfiles adicionales
+    ["joinEvent (corporativo con perfil profesional)", () => runRemote(C.joinEvent(ME, "PYME26", "pro_selling", undefined, DEMO_IDS.mePro), s0(), { join_event: DEMO_IDS.proEvent })],
+    ["upsertPersona (nuevo)", () => runRemote(C.upsertPersona(ME, { kind: "corporate", label: "Consultora", job_title: "Socia", company: "Benítez & Co", looking_for: ["clients"], offering: ["marketing"], linkedin_url: "linkedin.com/in/sofi" }), s0())],
+    ["upsertPersona (edición)", () => runRemote(C.upsertPersona(ME, { id: DEMO_IDS.mePro, kind: "corporate", job_title: "Directora de diseño" }), s0())],
+    ["upsertPersona (noche)", () => runRemote(C.upsertPersona(ME, { kind: "nightlife", label: "Techno", music_genres: ["Techno"] }), s0())],
+    ["deletePersona", () => { const r = C.upsertPersona(ME, { kind: "nightlife", label: "Otro", music_genres: ["House"] }).local(s0()); const s = (r as { state: RougeState; data: { id: string } }); return runRemote(C.deletePersona(ME, s.data.id), s.state); }],
+    ["upsertEvent (corporativo nuevo)", () => runRemote(C.upsertEvent({ kind: "corporate", name: "Encuentro Exportadores", starts_at: new Date(NOW + 72e5).toISOString(), ends_at: new Date(NOW + 9e6).toISOString() }), s0())],
     ["deleteEvent", () => { const r = C.duplicateEvent(EV, new Date(NOW + 7 * 86_400_000).toISOString()).local(st()); const s = (r as { state: RougeState; data: { event: { id: string } } }); return runRemote(C.deleteEvent(s.data.event.id), s.state); }],
   ];
 
@@ -362,11 +373,11 @@ describe("permisos por rol (misma regla que has_staff_role en SQL)", () => {
   });
   it("solo dueño/a arma el equipo; producción no puede darse más permisos", () => {
     const r = C.setStaffRole(EV, "dani.barra", "manager").local(as(DEMO_IDS.organizer));
-    expect(r.ok && r.state.event_staff.find((x) => x.user_id === DEMO_IDS.bartender)?.role).toBe("manager");
+    expect(r.ok && r.state.event_staff.find((x) => x.event_id === EV && x.user_id === DEMO_IDS.bartender)?.role).toBe("manager");
     expect(C.setStaffRole(EV, "lucho.produccion", "owner").local(as(DEMO_IDS.manager)).ok).toBe(false);
     expect(C.setStaffRole(EV, "paula.owner", null).local(as(DEMO_IDS.organizer))).toMatchObject({ ok: false, error: "Quien creó el evento siempre es dueño/a." });
     const removed = C.setStaffRole(EV, "marta.seguridad", null).local(as(DEMO_IDS.organizer));
-    expect(removed.ok && removed.state.event_staff.some((x) => x.user_id === DEMO_IDS.security)).toBe(false);
+    expect(removed.ok && removed.state.event_staff.some((x) => x.event_id === EV && x.user_id === DEMO_IDS.security)).toBe(false);
     expect(C.setStaffRole(EV, "no.existe", "waiter").local(as(DEMO_IDS.organizer)).ok).toBe(false);
     expect(C.setStaffRole(EV, "no.existe", "waiter", { serverLookup: true }).local(as(DEMO_IDS.organizer)).ok).toBe(true);
   });

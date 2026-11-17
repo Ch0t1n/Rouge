@@ -1,6 +1,7 @@
 # ROUGE — Guía de arquitectura para Claude Code
 
-ROUGE es una **PWA social y operativa para eventos, fiestas y discotecas (B2B2C)**.
+ROUGE es una **PWA social y operativa para eventos, fiestas y discotecas (B2B2C)**. Con **ROUGE Pro** (misma marca y
+mismo motor) también sirve para eventos corporativos, pymes y networking: cada evento es `nightlife` o `corporate`.
 Los asistentes entran a un lobby privado del evento (link maestro o código de 1 uso),
 conectan con gente afín, arman su **Squad** (seguridad grupal + perks), se ubican en el
 **plano** con pines de 15 min y piden en la **Barra Express**. El organizador paga
@@ -52,7 +53,7 @@ src/
     api/instagram/        # OAuth de Instagram (SOLO servidor): start, callback, media (listar/importar), DELETE, data-deletion
     api/v1/               # API para ticketeras (SOLO servidor): events, events/[eventId]/codes(/[code]), qr/[code], openapi.json
     onboarding/           # Alta del perfil persistente en 4 pasos (guarda progresivamente)
-    profile/              # "Así te ven" + completitud · profile/edit (editor completo)
+    profile/              # "Así te ven" + completitud · profile/edit (editor completo) · profile/personas (Mis perfiles + editor ?id=|?kind=&next=)
     settings/privacy/     # Lista negra por teléfono + perfiles bloqueados
     u/[username]/         # Perfil de otro asistente (afinidad, Conectar, Rompehielos, bloquear)
     join/                 # Ingreso manual por código · join/[code]: link maestro, código único o link de Squad + Mood
@@ -84,7 +85,7 @@ src/
   components/
     ui/                   # Primitivas: Button, Badge, Switch, BottomSheet, Avatar, Toaster, field (TextField, Segmented)
     media/                # MediaImage (placeholder color), LoopVideo (GIF-like), SpotifyEmbed (lazy)
-    profile/              # ProfileView, PhotoSlots, LoopVideoField, GenrePicker, SpotifyField, PhoneField, BlacklistManager
+    profile/              # ProfileView, PhotoSlots, LoopVideoField, GenrePicker, SpotifyField, PhoneField, BlacklistManager, ProFacts (busca/ofrece)
     layout/               # AppShell, BottomNav (5 tabs), PageHeader, PersonaSwitcher, LiveNotifications, SW register
     lobby/                # GridCard, ConnectActions, IcebreakerComposer, MatchCelebration, useConnect
     chat/                 # MessageList (texto, fotos, system_alert), Composer (foto comprimida)
@@ -104,6 +105,7 @@ src/
     types.ts              # Tipos de dominio — ESPEJO 1:1 de supabase/schema.sql
     engine/
       roles.ts            # Tipos de usuario, permisos por rol, roleHome(), destinationFor() (espejo de has_staff_role)
+      verticals.ts        # Noche ⇄ corporativo (ROUGE Pro): moods, features, vocabulario, faceOf(), afinidad de negocio, perfiles
       selectors.ts        # Reglas de VISIBILIDAD (bloqueos, ghost, pines, lobby)
       actions.ts          # Reglas de NEGOCIO puras (state, input, now) → Result
       affinity.ts         # Algoritmo de afinidad
@@ -332,6 +334,16 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
 - **Puerta:** `door_check_in` (dueño/a, producción, seguridad) valida códigos de 1 uso (`checked_in_at`, distinto de
   `is_used`) y pases `ROUGE:PASS:<evento>:<usuario>`; rechaza anulados, expulsados, otro evento y el link general.
 - **Sitio:** la landing pública (`/`) nunca muestra CRM, ventas, planes ni links a `/organizadores` (noindex).
+- **Verticales (ROUGE / ROUGE Pro):** `events.kind` = `nightlife` | `corporate`; todo lo que cambia vive en
+  `engine/verticals.ts` (`vertical(kind)`, `verticalOf`, `hasFeature`, `copy`). Nada de `if (kind === …)` sueltos con textos:
+  usar `v.copy.*` y `v.features.*`. Moods `pro_*` solo en corporativo (`checkMoodForEvent` ⇔ `mood_kind` + trigger
+  `attendee_vertical`). Funciones apagadas en corporativo ⇒ `NOT_IN_VERTICAL` ⇔ `not_in_vertical`. El tipo no cambia con
+  asistentes (`events_kind_locked`). Estrategia: `docs/producto/estrategia-corporativa.md`.
+- **Perfiles múltiples (no negociable):** una cuenta = Perfil principal (`profiles`, noche) + hasta 5 `profile_personas`.
+  Se elige al entrar (`event_attendees.persona_id`; obligatorio y profesional en corporativo). **Todo lo que se muestra de
+  otra persona en el contexto de un evento pasa por `faceOf(state, userId, eventId)`** (grilla, perfil, bandeja, chat,
+  plano, Squad/Equipo, CRM, LED): en corporativo nunca aparece la cara de la noche (sin perfil ⇒ cara neutra). Los
+  contactos se muestran con la cara del evento de su conexión. `getProfile` queda para la cuenta propia y la lógica.
 - **Pin-Drop (SQL):** usar la RPC `drop_pin` (reemplaza el pin anterior y descarta ids que no son
   matches reales). Punto Base y su aviso: `set_squad_base_pin`, `announce_base_meetup`.
 
@@ -369,7 +381,9 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
 - [x] **Fase 9** — Marca (logo + colores) por evento, cobros con Mercado Pago por marca y cuentas de la mesa.
 - [x] **Fase 10** — Gestión completa del evento (menú, nueva edición, expulsar, eliminar) y ticket de comanda.
 - [x] **Fase 11** — RRPP con link y comisión, escáner de puerta y sitio público / organizadores separados.
-- [ ] **Próximo** — ver `docs/producto/competencia.md`: lista de espera, entradas propias, Mesa VIP con seña, facturación ARCA.
+- [x] **Fase 12** — ROUGE Pro: eventos corporativos (`events.kind`) y perfiles múltiples por cuenta (`profile_personas`).
+- [ ] **Próximo** — ver `docs/producto/competencia.md` y `docs/producto/estrategia-corporativa.md`: RLS de `profiles` por
+  contexto, pedir reunión con horario, lista de espera, entradas propias, Mesa VIP con seña, facturación ARCA.
 
 ## Convenciones
 

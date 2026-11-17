@@ -48,6 +48,10 @@ const SECTOR_STYLE: Record<VenueSector["kind"], { fill: string; stroke: string; 
   booth: { fill: "rgb(var(--c-rouge) / 0.14)", stroke: "rgb(var(--c-rouge) / 0.8)", label: "#FFFFFF" },
   restroom: { fill: "rgba(148,163,184,0.05)", stroke: "rgba(148,163,184,0.25)", label: "#94A3B8" },
   lounge: { fill: "rgba(148,163,184,0.04)", stroke: "rgba(148,163,184,0.28)", label: "#94A3B8" },
+  // Corporativo: escenario (como la cabina), stands de expositores (acento) y salas de reunión.
+  stage: { fill: "rgb(var(--c-rouge) / 0.12)", stroke: "rgb(var(--c-rouge) / 0.7)", label: "#FFFFFF" },
+  stand: { fill: "rgb(var(--c-vip) / 0.06)", stroke: "rgb(var(--c-vip) / 0.5)", label: "color-mix(in srgb, rgb(var(--c-vip)) 70%, white)" },
+  meeting: { fill: "rgba(248,250,252,0.04)", stroke: "rgba(248,250,252,0.35)", label: "#CBD5E1" },
 };
 
 export function VenueMap({

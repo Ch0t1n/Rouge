@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { UserX } from "lucide-react";
 import { sendMessage } from "@/lib/engine/actions";
-import { directMessages, getEvent, getProfile, isBlockedBetween } from "@/lib/engine/selectors";
+import { directMessages, getEvent, isBlockedBetween } from "@/lib/engine/selectors";
+import { faceOf, verticalOf } from "@/lib/engine/verticals";
 import { useRouge } from "@/lib/store/RougeContext";
 import { useRequireProfile } from "@/lib/store/hooks";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -26,7 +27,9 @@ function Chat() {
   const meId = state.current_user_id;
   const conn = state.connections.find((c) => c.id === connectionId);
   const otherId = conn ? (conn.sender_id === meId ? conn.receiver_id : conn.sender_id) : null;
-  const other = getProfile(state, otherId);
+  // La cara de la otra persona en el evento donde se conocieron (perfil profesional en corporativo).
+  const other = conn ? faceOf(state, otherId, conn.event_id) : undefined;
+  const v = verticalOf(state, conn?.event_id);
   const msgs = conn ? directMessages(state, conn.id) : [];
 
   const allowed = !!conn && conn.status === "accepted" && (conn.sender_id === meId || conn.receiver_id === meId) && !!other && !isBlockedBetween(state, meId, other.id);
@@ -47,15 +50,15 @@ function Chat() {
       <PageHeader
         backHref="/inbox"
         title={
-          <Link href={`/u/${other.username}`} className="flex items-center gap-2">
+          <Link href={`/u/${other.username}?e=${conn.event_id}`} className="flex items-center gap-2">
             <Avatar profile={other} size={32} ring="rouge" /> {other.full_name.split(" ")[0]}
           </Link>
         }
-        subtitle={`Match en ${getEvent(state, conn.event_id)?.name ?? "un evento"}`}
+        subtitle={`${v.copy.match} en ${getEvent(state, conn.event_id)?.name ?? "un evento"}`}
       />
       <div className="flex-1 px-4 pb-4 pt-2">
         <p className="mx-auto mb-4 w-fit rounded-full bg-white/[0.05] px-3 py-1 text-center text-[11px] text-muted">
-          {conn.type === "icebreaker" ? "⚡ Empezó con un Rompehielos" : "💘 Hicieron Match"} · este chat no se borra al cerrar el lobby
+          {conn.type === "icebreaker" ? `⚡ Empezó con un${v.kind === "corporate" ? "a" : ""} ${v.copy.icebreaker}` : v.kind === "corporate" ? "🤝 Son contactos" : "💘 Hicieron Match"} · este chat no se borra al cerrar el lobby
         </p>
         <MessageList messages={msgs} meId={meId} profiles={new Map([[other.id, other]])} />
       </div>

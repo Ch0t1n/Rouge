@@ -2,6 +2,36 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y [SemVer](https://semver.org/lang/es/).
 
+## [Sin publicar]
+
+### Agregado
+- **ROUGE Pro: eventos corporativos dentro de la misma marca.** Cada evento es 🌙 Noche o 💼 Corporativo
+  (`events.kind`, se elige al crearlo y no cambia una vez que entró gente). En corporativo: moods de negocio, grilla por
+  **afinidad de negocio** (lo que cada uno busca cruzado con lo que el otro ofrece, más el rubro), filtro por lo que
+  ofrecen, vocabulario propio (Networking, Contacto, Presentación, Equipo, Agenda, Barra y catering), menú y plano base
+  de coffee y salas, CRM con empresa, cargo, rubro y busca/ofrece, y Pantalla LED con la agenda. Se apagan el trago de
+  regalo, los pedidos al DJ, el sorteo por género y los RRPP.
+- **Una cuenta, varios perfiles** (*Mis perfiles*): Perfil principal + hasta 5 perfiles profesionales o de noche. Al
+  entrar a un evento se elige con cuál mostrarse; en corporativo es obligatorio un perfil profesional. En cada evento
+  se ve solo esa cara (`faceOf`), y nunca la de la noche en un evento corporativo.
+- Demo: el *Encuentro Pyme Conecta* en vivo junto a la fiesta, con perfiles profesionales y un CRM de empresas.
+- SQL: enum `event_kind_t`, `events.kind`, moods `pro_*`, tabla `profile_personas` (RLS: solo visible para quien
+  comparte un evento donde se usó), `event_attendees.persona_id`, `join_event(p_code, p_mood, p_persona)`,
+  `delete_persona`, `mood_kind`, `business_affinity`, triggers `events_kind_locked`, `attendee_vertical` y
+  `personas_limit`; `event_grid` devuelve la cara del evento; `not_in_vertical` en `send_icebreaker`, `vote_song`,
+  `draw_raffle` y `ensure_promoter_link`.
+- Documentación: [estrategia corporativa](docs/producto/estrategia-corporativa.md).
+
+### Cambiado
+- La afinidad (`AffinityResult`) devuelve `percent` y `highlights` (antes `musicPercent`): es musical en la noche y de
+  negocio en corporativo.
+- Modo Demo: nueva versión del estado (9). El menú de la barra sigue al evento activo, igual que en Supabase.
+
+### Pendiente conocido
+- `profiles` sigue siendo legible por cualquier usuario con sesión (política anterior): la app nunca muestra el Perfil
+  principal en un evento corporativo, pero hay que restringirlo por RLS antes de escalar ROUGE Pro (ver la
+  estrategia corporativa, pendiente 1).
+
 ## [1.6.0] — 2026-11-16
 
 ### Agregado

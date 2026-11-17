@@ -14,12 +14,13 @@ import type { Toast } from "@/lib/store/RougeContext";
 import { blastsFor } from "@/lib/engine/actions";
 import { getProfile, ordersOf, pendingSquadInvites, perksOf, squadMessages, squadOf } from "@/lib/engine/selectors";
 import { useRouge } from "@/lib/store/RougeContext";
+import { faceOf, verticalOf } from "@/lib/engine/verticals";
 
 type Notice = { key: string; toast: Omit<Toast, "id"> };
 
 function noticesFor(s: RougeState, meId: UUID, now: number): Notice[] {
   const eventId = s.active_event_id;
-  const first = (id: UUID | null) => getProfile(s, id)?.full_name.split(" ")[0] ?? "Alguien";
+  const first = (id: UUID | null) => faceOf(s, id)?.full_name.split(" ")[0] ?? "Alguien";
   const out: Notice[] = [];
 
   for (const b of blastsFor(s, eventId, meId, now)) {
@@ -55,18 +56,19 @@ function noticesFor(s: RougeState, meId: UUID, now: number): Notice[] {
     out.push({ key: `invite:${member.id}`, toast: { tone: "squad", title: `👯 ${first(member.invited_by)} te invitó a ${squad.name}`, cta: { label: "Ver invitación", href: "/squad" } } });
   }
 
+  const pro = verticalOf(s, eventId).kind === "corporate";
   for (const c of s.connections) {
     if (c.event_id !== eventId) continue;
     if (c.receiver_id === meId && c.status === "pending") {
       out.push({
         key: `req:${c.id}`,
         toast: c.type === "icebreaker"
-          ? { tone: "rouge", title: `⚡ ${first(c.sender_id)} te mandó su Rompehielos`, description: c.icebreaker_message ?? undefined, cta: { label: "Ver bandeja", href: "/inbox" } }
+          ? { tone: "rouge", title: pro ? `⚡ ${first(c.sender_id)} te mandó su presentación` : `⚡ ${first(c.sender_id)} te mandó su Rompehielos`, description: c.icebreaker_message ?? undefined, cta: { label: "Ver bandeja", href: "/inbox" } }
           : { tone: "rouge", title: `💘 ${first(c.sender_id)} te dio Conectar`, cta: { label: "Ver bandeja", href: "/inbox" } },
       });
     }
     if (c.sender_id === meId && c.status === "accepted" && c.responded_at) {
-      out.push({ key: `match:${c.id}`, toast: { tone: "rouge", title: `🔥 ¡Match con ${first(c.receiver_id)}!`, description: "Aceptó tu conexión.", cta: { label: "Escribile", href: `/chat/${c.id}` } } });
+      out.push({ key: `match:${c.id}`, toast: { tone: "rouge", title: pro ? `🤝 ${first(c.receiver_id)} es tu contacto` : `🔥 ¡Match con ${first(c.receiver_id)}!`, description: "Aceptó tu conexión.", cta: { label: "Escribile", href: `/chat/${c.id}` } } });
     }
   }
   return out;

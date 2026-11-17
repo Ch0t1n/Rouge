@@ -23,7 +23,8 @@ Cada función existe en los dos modos de la app:
 [18. Demo en vivo](#18-demo-en-vivo-para-anfitriones) · [19. Marca y personalización](#19-marca-y-personalización) ·
 [20. Cobros con Mercado Pago](#20-cobros-con-mercado-pago) · [21. Cuentas de la mesa](#21-cuentas-de-la-mesa) ·
 [22. Gestión del evento](#22-gestión-del-evento) · [23. Ticket de comanda](#23-ticket-de-comanda) ·
-[24. RRPP](#24-rrpp) · [25. Puerta](#25-puerta) · [26. Sitio público y de organizadores](#26-sitio-público-y-de-organizadores)
+[24. RRPP](#24-rrpp) · [25. Puerta](#25-puerta) · [26. Sitio público y de organizadores](#26-sitio-público-y-de-organizadores) ·
+[27. Noche y corporativo (ROUGE Pro) · perfiles múltiples](#27-noche-y-corporativo-rouge-pro--perfiles-múltiples)
 
 ---
 
@@ -339,3 +340,29 @@ cliente y para la barra. Es un comprobante interno: la factura la emite cada com
 - **`/organizadores`** — para dueños de boliches y productoras: barra y cobros, panel, CRM, Text Blasts, LED, RRPP,
   puerta, planes y preguntas de negocio. **Oculto:** no aparece en buscadores ni se enlaza desde `/`; se comparte por
   link junto con la [demo](#18-demo-en-vivo-para-anfitriones).
+
+## 27. Noche y corporativo (ROUGE Pro) · perfiles múltiples
+
+Un mismo ROUGE para fiestas y boliches y para eventos de empresas, pymes y networking. Estrategia y plan de validación:
+[estrategia corporativa](estrategia-corporativa.md).
+
+- **Tipo de evento** (*Eventos y accesos → Tipo de evento*): 🌙 Noche · ROUGE o 💼 Corporativo · ROUGE Pro. No cambia
+  una vez que entró alguien. En el selector del panel cada evento muestra su tipo.
+- **Una cuenta, varios perfiles** (*Mi perfil → Mis perfiles*, `/profile/personas`): el Perfil principal (noche) y hasta
+  5 perfiles más. Un perfil **profesional** tiene foto propia, cargo, empresa, rubro, hasta 3 cosas que busca y 3 que
+  ofrece, LinkedIn y una frase. Uno **de noche** tiene fotos, géneros y Spotify propios.
+- **Al entrar** a un evento se elige con qué perfil mostrarse (en corporativo, solo los profesionales: si no hay
+  ninguno, se crea en el momento) y después el mood de esa vertical. En el lobby, "Te ven con…" permite cambiarlo.
+- **Cada evento muestra solo la cara elegida:** grilla, perfil, bandeja, chats, plano, Equipo, CRM y LED. En
+  corporativo nunca aparece el perfil de la noche, ni siquiera si el profesional se borró (queda una cara neutra).
+  Los contactos se ven con la cara del evento donde se conocieron.
+- **Networking corporativo:** la grilla ordena por **afinidad de negocio** (lo que buscás cruzado con lo que ofrecen,
+  más el rubro: "% 🤝") y filtra por lo que ofrecen. Moods: networking, busco clientes / proveedores / socios /
+  inversión, contratando, aprender, coffee break.
+- **Vocabulario corporativo:** Networking, Contacto, Presentación (1 por evento), Equipo, Agenda, Barra y catering,
+  Modo Solo Contactos.
+- **Se apaga en corporativo:** trago de regalo, pedir temas, sorteo por género, RRPP, y edad, Instagram y loop en la
+  cara pública. Lo demás (plano, Equipo con Rescate, barra, perks, sorteos, avisos, LED, puerta, API) funciona igual.
+- **CRM corporativo:** empresa, cargo, rubro, busca / ofrece y LinkedIn, también en el CSV.
+- **Demo:** el *Encuentro Pyme Conecta* (`/join/PYME26`) está en vivo junto a la fiesta, con 10 perfiles profesionales.
+

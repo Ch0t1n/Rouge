@@ -40,9 +40,23 @@ do $$ begin
   create type staff_role_t        as enum ('owner','manager','bartender','waiter','security');
   create type raffle_filter_t     as enum ('all','active_pin','in_squad','female');
 exception when duplicate_object then null; end $$;
+-- [v1.7] Verticales: noche (ROUGE) y corporativo (ROUGE Pro). Espejo: EVENT_KINDS en types.ts.
+do $$ begin
+  create type event_kind_t as enum ('nightlife','corporate');
+exception when duplicate_object then null; end $$;
 -- [v1.6] RRPP. En el resto del script NO se usa 'promoter'::staff_role_t (Postgres no deja usar un valor nuevo de un
 -- enum en la misma transacción en que se agrega): se compara como texto (role::text = 'promoter').
 alter type staff_role_t add value if not exists 'promoter';
+-- [v1.7] Moods de eventos corporativos (prefijo pro_). Igual que 'promoter': en el script se comparan como texto
+-- (mood_kind() usa mood::text), nunca como literal del enum.
+alter type mood_tag_t add value if not exists 'pro_networking';
+alter type mood_tag_t add value if not exists 'pro_selling';
+alter type mood_tag_t add value if not exists 'pro_buying';
+alter type mood_tag_t add value if not exists 'pro_partners';
+alter type mood_tag_t add value if not exists 'pro_funding';
+alter type mood_tag_t add value if not exists 'pro_hiring';
+alter type mood_tag_t add value if not exists 'pro_learning';
+alter type mood_tag_t add value if not exists 'pro_coffee';
 
 -- ════════════════════════════════════════════════════════════════════════
 -- TABLAS
@@ -190,6 +204,8 @@ alter table public.events add column if not exists brand_id uuid references publ
 alter table public.events add column if not exists logo_url text;
 alter table public.events add column if not exists theme_primary text check (public.brand_color_error(theme_primary, 'primary') is null);
 alter table public.events add column if not exists theme_accent text check (public.brand_color_error(theme_accent, 'accent') is null);
+-- [v1.7] Vertical del evento: define moods, perfil requerido, vocabulario y funciones (ver engine/verticals.ts).
+alter table public.events add column if not exists kind event_kind_t not null default 'nightlife';
 
 -- [ext] Staff del organizador (dueño, encargados, barra, camareros, seguridad).
 create table if not exists public.event_staff (
@@ -264,6 +280,31 @@ alter table public.event_attendees add column if not exists visited_sectors text
 -- [v1.6] RRPP por cuyo link entró (primer contacto) e ingreso físico escaneado en la puerta.
 alter table public.event_attendees add column if not exists referred_by uuid references public.profiles(id) on delete set null;
 alter table public.event_attendees add column if not exists checked_in_at timestamptz;
+
+-- [v1.7] Perfiles adicionales: una cuenta, varias caras. Al entrar a un evento se elige con cuál mostrarse
+-- (event_attendees.persona_id). El perfil de `profiles` es el Perfil principal (noche); en corporativo hace falta
+-- un perfil 'corporate'. Espejo: ProfilePersona en types.ts y upsertPersona en el motor.
+create table if not exists public.profile_personas (
+  id                 uuid primary key default gen_random_uuid(),
+  user_id            uuid not null references public.profiles(id) on delete cascade,
+  kind               event_kind_t not null,
+  label              text not null default '' check (char_length(label) <= 30),
+  display_name       text not null check (char_length(display_name) between 1 and 60),
+  bio                text not null default '' check (char_length(bio) <= 160),
+  photos             jsonb not null default '[]'::jsonb check (jsonb_typeof(photos) = 'array' and jsonb_array_length(photos) <= 4),
+  music_genres       text[] not null default '{}' check (cardinality(music_genres) <= 5 and music_genres <@ array['Techno','House','Reggaetón','Cachengue','Pop','RKT','Indie','Urbano','Electrónica']),
+  spotify_embed_url  text check (spotify_embed_url is null or spotify_embed_url ~ '^https://open\.spotify\.com/'),
+  job_title          text not null default '' check (char_length(job_title) <= 60),
+  company            text not null default '' check (char_length(company) <= 60),
+  industry           text check (industry is null or industry in ('retail','manufacturing','services','tech','food','agro','construction','health','education','tourism','fashion','logistics','finance','other')),
+  looking_for        text[] not null default '{}' check (cardinality(looking_for) <= 3 and looking_for <@ array['clients','suppliers','partners','investment','financing','talent','mentoring','software','marketing','logistics','export','advisory']),
+  offering           text[] not null default '{}' check (cardinality(offering) <= 3 and offering <@ array['suppliers','partners','investment','financing','talent','mentoring','software','marketing','logistics','export','advisory']),
+  linkedin_url       text check (linkedin_url is null or linkedin_url ~ '^https://www\.linkedin\.com/(in|company)/[A-Za-z0-9_%.-]{2,100}$'),
+  created_at         timestamptz not null default now(),
+  -- Profesional: cargo o empresa y al menos algo que busca u ofrece (así se calcula la afinidad de negocio).
+  constraint personas_pro_chk check (kind::text <> 'corporate' or ((job_title <> '' or company <> '') and cardinality(looking_for) + cardinality(offering) > 0))
+);
+alter table public.event_attendees add column if not exists persona_id uuid references public.profile_personas(id) on delete set null;
 
 create table if not exists public.connections (
   id                    uuid primary key default gen_random_uuid(),
@@ -550,6 +591,8 @@ create unique index if not exists uq_perk_rule_user  on public.user_perks_qrs (u
 create index if not exists idx_orders_board          on public.bar_orders (event_id, status, created_at);
 create index if not exists idx_orders_user           on public.bar_orders (user_id, event_id);
 create index if not exists idx_songs_event           on public.song_requests (event_id);
+create index if not exists idx_personas_user          on public.profile_personas (user_id);
+create index if not exists idx_attendees_persona      on public.event_attendees (persona_id) where persona_id is not null;
 
 -- ════════════════════════════════════════════════════════════════════════
 -- HELPERS (security definer: evitan recursión de RLS)
@@ -686,6 +729,7 @@ alter table public.squad_settlements   enable row level security;
 alter table public.payout_aliases      enable row level security;
 alter table public.event_bans          enable row level security;
 alter table public.promoter_links      enable row level security;
+alter table public.profile_personas    enable row level security;
 
 -- PROFILES ── el teléfono NUNCA es legible por otros usuarios (column privileges).
 drop policy if exists profiles_select on public.profiles;
@@ -736,6 +780,27 @@ returns setof public.profiles language sql stable security definer set search_pa
   select * from public.profiles where id = auth.uid();
 $$;
 
+-- [v1.7] PROFILE_PERSONAS ── veo los míos y los que alguien USA en un evento donde estoy (asistente o equipo),
+-- sin bloqueo. Un perfil que no se usó en un evento compartido nunca es legible por otros. Altas y edición directas
+-- (privilegios por columna: kind y user_id no se editan); la baja va por delete_persona (no se borra en uso).
+drop policy if exists personas_select on public.profile_personas;
+create policy personas_select on public.profile_personas for select to authenticated using (
+  user_id = auth.uid()
+  or (not public.is_blocked(auth.uid(), user_id) and exists (
+        select 1 from public.event_attendees a
+        where a.persona_id = profile_personas.id and (public.is_event_attendee(a.event_id) or public.is_event_staff(a.event_id))))
+);
+drop policy if exists personas_insert on public.profile_personas;
+create policy personas_insert on public.profile_personas for insert to authenticated with check (user_id = auth.uid());
+drop policy if exists personas_update on public.profile_personas;
+create policy personas_update on public.profile_personas for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+revoke all on public.profile_personas from anon, authenticated;
+grant select on public.profile_personas to authenticated;
+grant insert (id, user_id, kind, label, display_name, bio, photos, music_genres, spotify_embed_url, job_title, company, industry, looking_for, offering, linkedin_url)
+  on public.profile_personas to authenticated;
+grant update (label, display_name, bio, photos, music_genres, spotify_embed_url, job_title, company, industry, looking_for, offering, linkedin_url)
+  on public.profile_personas to authenticated;
+
 -- USER_BLOCKS ── solo veo y gestiono mi lista negra.
 drop policy if exists blocks_own on public.user_blocks;
 create policy blocks_own on public.user_blocks for all to authenticated
@@ -750,7 +815,7 @@ drop policy if exists events_update on public.events;
 create policy events_update on public.events for update to authenticated using (public.is_event_manager(id)) with check (public.is_event_manager(id));
 -- El código maestro no se expone a anónimos (la landing /join solo necesita datos públicos)
 revoke all on public.events from anon;
-grant select (id, slug, name, description, venue_name, cover_url, starts_at, ends_at, lobby_opens_at, lobby_expires_at, max_capacity,
+grant select (id, kind, slug, name, description, venue_name, cover_url, starts_at, ends_at, lobby_opens_at, lobby_expires_at, max_capacity,
               brand_id, logo_url, theme_primary, theme_accent)
   on public.events to anon;
 
@@ -955,43 +1020,99 @@ create policy payout_squad on public.payout_aliases for select to authenticated 
 -- RPCs DE NEGOCIO (atómicas; replican src/lib/engine/actions.ts)
 -- ════════════════════════════════════════════════════════════════════════
 
--- Grilla: asistentes visibles + afinidad musical (Dice) + rank + zonas en común.
+-- [v1.7] Afinidad de negocio (⇔ businessAffinity en verticals.ts). Lo que cada lado gana del otro: lo que busca y el
+-- otro ofrece, + 'clients' si el otro busca algo que ofrece, + 'partners' si ambos buscan socios. 1 cosa = 0,7; 2+ = 1;
+-- promedio entre los lados que buscan algo (75 %) + rubro en común (25 %).
+create or replace function public.business_affinity(a_look text[], a_off text[], a_ind text, b_look text[], b_off text[], b_ind text)
+returns numeric language plpgsql immutable set search_path = public, extensions as $$
+declare ga int; gb int; n int := 0; total numeric := 0;
+begin
+  ga := cardinality(array(
+          select x from unnest(a_look) x where x = any(b_off)
+          union select 'clients' where 'clients' = any(a_look) and b_look && a_off
+          union select 'partners' where 'partners' = any(a_look) and 'partners' = any(b_look)));
+  gb := cardinality(array(
+          select x from unnest(b_look) x where x = any(a_off)
+          union select 'clients' where 'clients' = any(b_look) and a_look && b_off
+          union select 'partners' where 'partners' = any(b_look) and 'partners' = any(a_look)));
+  if cardinality(a_look) > 0 then n := n + 1; total := total + case when ga = 0 then 0 when ga = 1 then 0.7 else 1 end; end if;
+  if cardinality(b_look) > 0 then n := n + 1; total := total + case when gb = 0 then 0 when gb = 1 then 0.7 else 1 end; end if;
+  return 0.75 * case when n = 0 then 0 else total / n end + 0.25 * case when a_ind is not null and a_ind = b_ind then 1 else 0 end;
+end $$;
+
+-- Grilla: asistentes visibles + afinidad + rank + zonas en común. [v1.7] Devuelve la CARA del evento (perfil elegido
+-- al entrar): en corporativo nunca los datos del Perfil principal (sin perfil profesional → cara neutra, sin fotos).
+-- Afinidad: noche = Dice sobre géneros; corporativo = "busco ↔ ofrezco" (75 %) + rubro en común (25 %). Espejo: affinity.ts.
 drop function if exists public.event_grid(uuid);
 create or replace function public.event_grid(p_event uuid)
 returns table (
   user_id uuid, username citext, full_name text, birth_date date, gender gender_t, bio text, photos jsonb,
   loop_video_url text, music_genres text[], spotify_embed_url text, is_verified boolean,
+  persona_id uuid, job_title text, company text, industry text, looking_for text[], offering text[],
   mood_tag mood_tag_t, last_active_at timestamptz, music_affinity int, rank numeric, shared_zones text[]
 ) language sql stable security definer set search_path = public, extensions as $$
-  with me as (
-    select p.music_genres, a.mood_tag, a.visited_sectors from public.profiles p
-    join public.event_attendees a on a.user_id = p.id and a.event_id = p_event
-    where p.id = auth.uid()
+  with ev as (select kind::text as kind from public.events where id = p_event),
+  faces as (
+    select a.user_id, a.mood_tag, a.last_active_at, a.visited_sectors, a.ghost_mode, p.username, p.birth_date, p.is_verified,
+           pp.id as persona_id,
+           coalesce(nullif(pp.display_name, ''), p.full_name) as full_name,
+           case when pp.id is not null then pp.bio when ev.kind = 'corporate' then '' else p.bio end as bio,
+           case when pp.id is not null then pp.photos when ev.kind = 'corporate' then '[]'::jsonb else p.photos end as photos,
+           case when pp.id is null and ev.kind = 'nightlife' then p.loop_video_url end as loop_video_url,
+           case when ev.kind = 'corporate' then '{}'::text[] when pp.id is not null then pp.music_genres else p.music_genres end as music_genres,
+           case when ev.kind = 'corporate' then null when pp.id is not null then pp.spotify_embed_url else p.spotify_embed_url end as spotify_embed_url,
+           case when ev.kind = 'corporate' then 'undisclosed'::gender_t else p.gender end as gender,
+           coalesce(pp.job_title, '') as job_title, coalesce(pp.company, '') as company, pp.industry,
+           coalesce(pp.looking_for, '{}') as looking_for, coalesce(pp.offering, '{}') as offering
+    from public.event_attendees a
+    join public.profiles p on p.id = a.user_id
+    cross join ev
+    left join public.profile_personas pp on pp.id = a.persona_id
+    where a.event_id = p_event
+  ),
+  me as (select * from faces where faces.user_id = auth.uid()),
+  scored as (
+    select f.*, me.mood_tag as my_mood, me.visited_sectors as my_zones,
+      case when ev.kind = 'corporate' then
+        public.business_affinity(me.looking_for, me.offering, me.industry, f.looking_for, f.offering, f.industry)
+      else
+        coalesce(2.0 * cardinality(array(select unnest(f.music_genres) intersect select unnest(me.music_genres)))
+          / nullif(cardinality(f.music_genres) + cardinality(me.music_genres), 0), 0)
+      end as main
+    from faces f cross join me cross join ev
   )
-  select p.id, p.username, p.full_name, p.birth_date, p.gender, p.bio, p.photos, p.loop_video_url, p.music_genres,
-         p.spotify_embed_url, p.is_verified, a.mood_tag, a.last_active_at,
-         round(100 * coalesce(2.0 * cardinality(array(select unnest(p.music_genres) intersect select unnest(me.music_genres)))
-           / nullif(cardinality(p.music_genres) + cardinality(me.music_genres), 0), 0))::int as music_affinity,
+  select s.user_id, s.username, s.full_name, s.birth_date, s.gender, s.bio, s.photos, s.loop_video_url, s.music_genres,
+         s.spotify_embed_url, s.is_verified, s.persona_id, s.job_title, s.company, s.industry, s.looking_for, s.offering,
+         s.mood_tag, s.last_active_at,
+         round(100 * s.main)::int as music_affinity,
          round((
-           0.60 * coalesce(2.0 * cardinality(array(select unnest(p.music_genres) intersect select unnest(me.music_genres)))
-             / nullif(cardinality(p.music_genres) + cardinality(me.music_genres), 0), 0)
-         + 0.25 * case when a.mood_tag = me.mood_tag then 0.8 when a.mood_tag in ('open_to_meet','at_bar','after_hunt') and me.mood_tag in ('open_to_meet','at_bar','after_hunt') then 0.7 else 0.4 end
-         + 0.15 * greatest(0, 1 - extract(epoch from now() - a.last_active_at) / 5400)
+           0.60 * s.main
+         + 0.25 * case when s.mood_tag = s.my_mood then 0.8
+                       when s.mood_tag::text in ('open_to_meet','at_bar','after_hunt') and s.my_mood::text in ('open_to_meet','at_bar','after_hunt') then 0.7
+                       when s.mood_tag::text in ('pro_selling','pro_buying') and s.my_mood::text in ('pro_selling','pro_buying') and s.mood_tag <> s.my_mood then 1
+                       else 0.4 end
+         + 0.15 * greatest(0, 1 - extract(epoch from now() - s.last_active_at) / 5400)
          )::numeric, 4) as rank,
-         array(select unnest(a.visited_sectors) intersect select unnest(me.visited_sectors)) as shared_zones
-  from public.event_attendees a
-  join public.profiles p on p.id = a.user_id
-  cross join me
-  where a.event_id = p_event and a.user_id <> auth.uid() and not a.ghost_mode
-    and not public.is_blocked(auth.uid(), a.user_id)
+         array(select unnest(s.visited_sectors) intersect select unnest(s.my_zones)) as shared_zones
+  from scored s
+  where s.user_id <> auth.uid() and not s.ghost_mode
+    and not public.is_blocked(auth.uid(), s.user_id)
     and public.lobby_is_open(p_event)
     and not exists (select 1 from public.connections c where c.event_id = p_event and c.status = 'rejected'
-                    and ((c.sender_id = auth.uid() and c.receiver_id = a.user_id) or (c.sender_id = a.user_id and c.receiver_id = auth.uid())))
+                    and ((c.sender_id = auth.uid() and c.receiver_id = s.user_id) or (c.sender_id = s.user_id and c.receiver_id = auth.uid())))
   order by rank desc;
 $$;
 
+-- [v1.7] Vertical de un mood (⇔ moodKind en verticals.ts): los corporativos empiezan con 'pro_'.
+create or replace function public.mood_kind(p_mood mood_tag_t)
+returns event_kind_t language sql immutable set search_path = public, extensions as $$
+  select (case when p_mood::text like 'pro\_%' then 'corporate' else 'nightlife' end)::event_kind_t;
+$$;
+
 -- Ingreso por Link Maestro, Código Único de 1 uso o link de Squad.
-create or replace function public.join_event(p_code text, p_mood mood_tag_t)
+-- [v1.7] p_persona: perfil con el que se muestra (null = Perfil principal, solo en eventos de noche).
+drop function if exists public.join_event(text, mood_tag_t);
+create or replace function public.join_event(p_code text, p_mood mood_tag_t, p_persona uuid default null)
 returns uuid language plpgsql security definer set search_path = public, extensions as $$
 declare
   v_uid uuid := auth.uid();
@@ -1027,9 +1148,15 @@ begin
   if now() >= v_event.lobby_expires_at then raise exception 'lobby_expired'; end if;
   -- [v1.5] Expulsado por el organizador (mensaje genérico, igual que joinEvent del motor).
   if exists (select 1 from public.event_bans where event_id = v_event.id and user_id = v_uid) then raise exception 'banned'; end if;
+  -- [v1.7] Vertical: mood y perfil del tipo de evento (⇔ checkMoodForEvent / checkPersonaForEvent).
+  if public.mood_kind(p_mood) <> v_event.kind then raise exception 'invalid_mood'; end if;
+  if p_persona is null and v_event.kind::text = 'corporate' then raise exception 'persona_required'; end if;
+  if p_persona is not null and not exists (select 1 from public.profile_personas where id = p_persona and user_id = v_uid and kind = v_event.kind) then
+    raise exception 'invalid_persona';
+  end if;
 
   if exists (select 1 from public.event_attendees where event_id = v_event.id and user_id = v_uid) then
-    update public.event_attendees set mood_tag = p_mood, last_active_at = now() where event_id = v_event.id and user_id = v_uid;
+    update public.event_attendees set mood_tag = p_mood, persona_id = p_persona, last_active_at = now() where event_id = v_event.id and user_id = v_uid;
   else
     if v_via = 'single_use_code' then
       if v_code.is_used and v_code.used_by_user_id is distinct from v_uid then raise exception 'code_already_used'; end if;
@@ -1037,8 +1164,9 @@ begin
     elsif (select count(*) from public.event_attendees where event_id = v_event.id) >= v_event.max_capacity then
       raise exception 'event_full';
     end if;
-    insert into public.event_attendees (event_id, user_id, mood_tag, joined_via, referred_by)
-    values (v_event.id, v_uid, p_mood, v_via, case when v_link.user_id is distinct from v_uid then v_link.user_id end);
+    insert into public.event_attendees (event_id, user_id, mood_tag, persona_id, joined_via, referred_by)
+    values (v_event.id, v_uid, p_mood, p_persona, v_via,
+            case when v_link.user_id is distinct from v_uid and v_event.kind::text = 'nightlife' then v_link.user_id end);
   end if;
 
   if v_via = 'squad_link' and public.user_squad(v_event.id, v_uid) is null
@@ -1077,7 +1205,7 @@ begin
   return jsonb_build_object(
     'via', v_via,
     'event', jsonb_build_object(
-      'id', v_event.id, 'slug', v_event.slug, 'name', v_event.name, 'description', v_event.description,
+      'id', v_event.id, 'kind', v_event.kind, 'slug', v_event.slug, 'name', v_event.name, 'description', v_event.description,
       'venue_name', v_event.venue_name, 'cover_url', v_event.cover_url, 'lineup_json', v_event.lineup_json,
       'venue_layout_json', v_event.venue_layout_json, 'starts_at', v_event.starts_at, 'ends_at', v_event.ends_at,
       'lobby_opens_at', v_event.lobby_opens_at, 'lobby_expires_at', v_event.lobby_expires_at, 'max_capacity', v_event.max_capacity,
@@ -1144,6 +1272,8 @@ begin
   ) then raise exception 'receiver_only_accepts_liked'; end if;
 
   if p_gift_item is not null then
+    -- [v1.7] Sin trago de regalo en eventos corporativos.
+    if (select kind::text from public.events where id = p_event) <> 'nightlife' then raise exception 'not_in_vertical'; end if;
     select * into v_item from public.bar_menu_items where event_id = p_event and id = p_gift_item and is_available
       and category in ('trago','cerveza','sin_alcohol');
     if not found then raise exception 'invalid_item'; end if;
@@ -1384,6 +1514,8 @@ begin
   select * into v_r from public.raffles where id = p_raffle for update;
   if not public.is_event_manager(v_r.event_id) then raise exception 'forbidden'; end if;
   if v_r.winner_user_id is not null then raise exception 'already_drawn'; end if;
+  -- [v1.7] El filtro por género no existe en eventos corporativos.
+  if v_r.filter = 'female' and (select kind::text from public.events where id = v_r.event_id) <> 'nightlife' then raise exception 'not_in_vertical'; end if;
 
   select a.user_id into v_winner from public.event_attendees a
   join public.profiles p on p.id = a.user_id
@@ -1631,6 +1763,8 @@ returns public.song_requests language plpgsql security definer set search_path =
 declare v_row public.song_requests;
 begin
   if not public.is_event_attendee(p_event) then raise exception 'not_attendee'; end if;
+  -- [v1.7] Pedir temas al DJ es solo de la noche.
+  if (select kind::text from public.events where id = p_event) <> 'nightlife' then raise exception 'not_in_vertical'; end if;
   select * into v_row from public.song_requests where event_id = p_event and lower(title) = lower(trim(p_title)) for update;
   if found then
     update public.song_requests
@@ -1887,11 +2021,71 @@ end $$;
 drop trigger if exists events_keep_payments on public.events;
 create trigger events_keep_payments before delete on public.events for each row execute function public.tg_events_keep_payments();
 
+-- ════════════════════════════════════════════════════════════════════════
+-- [v1.7] VERTICALES Y PERFILES ADICIONALES (espejo: engine/verticals.ts y upsertPersona / deletePersona)
+-- ════════════════════════════════════════════════════════════════════════
+
+-- El tipo de evento no cambia una vez que entró alguien (moods y perfiles ya elegidos para esa vertical).
+create or replace function public.tg_events_kind_locked()
+returns trigger language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if new.kind is distinct from old.kind and exists (select 1 from public.event_attendees where event_id = old.id) then
+    raise exception 'kind_locked';
+  end if;
+  return new;
+end $$;
+drop trigger if exists events_kind_locked on public.events;
+create trigger events_kind_locked before update of kind on public.events for each row execute function public.tg_events_kind_locked();
+
+-- Mood y perfil del asistente siempre de la vertical del evento (también si el cliente actualiza el mood directo).
+-- Un perfil borrado deja persona_id en null (FK on delete set null): los demás ven una cara neutra, nunca otra.
+create or replace function public.tg_attendee_vertical()
+returns trigger language plpgsql security definer set search_path = public, extensions as $$
+declare v_kind event_kind_t; v_pkind event_kind_t; v_puser uuid;
+begin
+  select kind into v_kind from public.events where id = new.event_id;
+  if new.mood_tag is not null and public.mood_kind(new.mood_tag) <> v_kind then raise exception 'invalid_mood'; end if;
+  if new.persona_id is not null then
+    select kind, user_id into v_pkind, v_puser from public.profile_personas where id = new.persona_id;
+    if v_puser is distinct from new.user_id or v_pkind is distinct from v_kind then raise exception 'invalid_persona'; end if;
+  elsif tg_op = 'INSERT' and v_kind::text = 'corporate' then
+    raise exception 'persona_required';
+  end if;
+  return new;
+end $$;
+drop trigger if exists attendee_vertical on public.event_attendees;
+create trigger attendee_vertical before insert or update of mood_tag, persona_id on public.event_attendees
+  for each row execute function public.tg_attendee_vertical();
+
+-- Hasta 5 perfiles además del principal (⇔ MAX_PERSONAS).
+create or replace function public.tg_personas_limit()
+returns trigger language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if (select count(*) from public.profile_personas where user_id = new.user_id) >= 5 then raise exception 'too_many_personas'; end if;
+  return new;
+end $$;
+drop trigger if exists personas_limit on public.profile_personas;
+create trigger personas_limit before insert on public.profile_personas for each row execute function public.tg_personas_limit();
+
+-- Borrar un perfil: no mientras se usa en un evento con el lobby abierto (⇔ deletePersona).
+create or replace function public.delete_persona(p_persona uuid)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if not exists (select 1 from public.profile_personas where id = p_persona and user_id = auth.uid()) then raise exception 'not_found'; end if;
+  if exists (select 1 from public.event_attendees a join public.events e on e.id = a.event_id
+             where a.persona_id = p_persona and now() < e.lobby_expires_at) then
+    raise exception 'persona_in_use';
+  end if;
+  delete from public.profile_personas where id = p_persona;
+end $$;
+
 -- [v1.6] RRPP: link propio (lo pide el RRPP o dueño/a/producción para un RRPP del equipo). Código generado acá.
 create or replace function public.ensure_promoter_link(p_event uuid, p_user uuid default auth.uid())
 returns public.promoter_links language plpgsql security definer set search_path = public, extensions as $$
 declare v_row public.promoter_links; v_code text;
 begin
+  -- [v1.7] RRPP es solo de la noche.
+  if (select kind::text from public.events where id = p_event) <> 'nightlife' then raise exception 'not_in_vertical'; end if;
   if not exists (select 1 from public.event_staff where event_id = p_event and user_id = p_user and role::text = 'promoter') then raise exception 'not_promoter'; end if;
   if p_user <> auth.uid() and not public.is_event_manager(p_event) then raise exception 'forbidden'; end if;
   select * into v_row from public.promoter_links where event_id = p_event and user_id = p_user;
@@ -2016,7 +2210,7 @@ declare t text;
 begin
   foreach t in array array['messages','map_pins','connections','squad_members','squads','blast_deliveries',
                            'user_perks_qrs','bar_orders','song_requests','raffles','event_attendees',
-                           'brands','squad_expenses','squad_settlements'] loop
+                           'brands','squad_expenses','squad_settlements','profile_personas'] loop
     begin
       execute format('alter publication supabase_realtime add table public.%I', t);
     exception when duplicate_object then null; when undefined_object then null;

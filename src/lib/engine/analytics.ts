@@ -4,6 +4,7 @@
 import type { Gender, RougeState, UUID } from "@/lib/types";
 import { ageFrom } from "@/lib/utils";
 import { activePinOf, getEvent, getProfile, lineupNow, squadMembers, squadOf, topSongs } from "./selectors";
+import { faceOf, industryLabel, needLabel } from "./verticals";
 
 export type SmartTag = "top_spender" | "squad_leader" | "power_matcher";
 
@@ -24,6 +25,13 @@ export interface CrmRow {
   age: number;
   gender: Gender;
   music_genres: string[];
+  /** Corporativo (perfil profesional con el que entró): datos para el seguimiento comercial del organizador. */
+  company: string;
+  job_title: string;
+  industry: string | null;
+  looking_for: string[];
+  offering: string[];
+  linkedin_url: string | null;
   mood: string | null;
   squad_size: number;
   matches: number;
@@ -40,8 +48,10 @@ export function crmRows(s: RougeState, eventId: UUID): CrmRow[] {
 
   return attendees
     .map((a): CrmRow | null => {
-      const p = getProfile(s, a.user_id);
+      // La cara del evento: en corporativo, nombre y datos del perfil profesional (nunca los de la noche).
+      const p = faceOf(s, a.user_id, eventId);
       if (!p) return null;
+      const pro = p.persona?.kind === "corporate" ? p.persona : null;
       const sq = squadOf(s, eventId, a.user_id);
       const size = sq ? squadMembers(s, sq.squad.id).length : 0;
       const matches = statsFor(s, eventId)?.matches_by_user[a.user_id] ??
@@ -59,6 +69,12 @@ export function crmRows(s: RougeState, eventId: UUID): CrmRow[] {
         age: ageFrom(p.birth_date),
         gender: p.gender,
         music_genres: p.music_genres,
+        company: pro?.company ?? "",
+        job_title: pro?.job_title ?? "",
+        industry: industryLabel(pro?.industry),
+        looking_for: (pro?.looking_for ?? []).map(needLabel),
+        offering: (pro?.offering ?? []).map(needLabel),
+        linkedin_url: pro?.linkedin_url ?? null,
         mood: a.mood_tag,
         squad_size: size,
         matches,

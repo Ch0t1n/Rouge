@@ -27,6 +27,7 @@ import type {
   MusicGenre,
   PerkRule,
   Profile,
+  ProfilePersona,
   Raffle,
   RougeEvent,
   RougeState,
@@ -38,7 +39,7 @@ import type {
   VenueLayout,
 } from "@/lib/types";
 
-export const STATE_VERSION = 8;
+export const STATE_VERSION = 9;
 
 // IDs estables → los links de demo (/join/..., /u/...) no cambian entre re-siembras.
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -55,6 +56,12 @@ export const DEMO_IDS = {
   squadVip: id(2002),
   brand: id(3001),
   promoter: id(994),
+  /** [v1.7] Evento corporativo del demo (ROUGE Pro): encuentro de pymes, en vivo al mismo tiempo que la fiesta. */
+  proEvent: id(1100),
+  proBrand: id(3002),
+  proTeam: id(2101),
+  /** Perfil profesional de Sofi (la persona del demo). */
+  mePro: id(1901),
 } as const;
 
 export const VENUE_LAYOUT: VenueLayout = {
@@ -72,6 +79,33 @@ export const VENUE_LAYOUT: VenueLayout = {
     { id: "entry", name: "Entrada", kind: "entrance", x: 36, y: 87, w: 28, h: 9 },
   ],
 };
+
+/** Plano del encuentro corporativo: escenario, stands, salas de reunión y coffee. */
+export const PRO_VENUE_LAYOUT: VenueLayout = {
+  aspect: 3 / 4,
+  sectors: [
+    { id: "stage", name: "Auditorio", kind: "stage", x: 8, y: 4, w: 84, h: 20 },
+    { id: "stands-a", name: "Stands A · Industria", kind: "stand", x: 6, y: 28, w: 40, h: 22 },
+    { id: "stands-b", name: "Stands B · Servicios", kind: "stand", x: 54, y: 28, w: 40, h: 22 },
+    { id: "coffee", name: "Coffee & Networking", kind: "lounge", x: 6, y: 54, w: 54, h: 20 },
+    { id: "bar-pro", name: "Barra", kind: "bar", x: 14, y: 57, w: 26, h: 7 },
+    { id: "rooms", name: "Salas de reunión", kind: "meeting", x: 64, y: 54, w: 30, h: 20 },
+    { id: "wc-pro", name: "Baños", kind: "restroom", x: 64, y: 78, w: 30, h: 8 },
+    { id: "entry-pro", name: "Acreditación", kind: "entrance", x: 6, y: 78, w: 54, h: 16 },
+  ],
+};
+
+/** Menú base de eventos corporativos (coffee y catering). */
+export const CORPORATE_MENU: BarMenuItem[] = [
+  { id: "cafe", name: "Café", category: "sin_alcohol", price: 2500, emoji: "☕", is_available: true },
+  { id: "cafe-leche", name: "Café con leche", category: "sin_alcohol", price: 3000, emoji: "🥛", is_available: true },
+  { id: "agua-pro", name: "Agua mineral", category: "sin_alcohol", price: 2000, emoji: "💧", is_available: true },
+  { id: "jugo", name: "Jugo de naranja", category: "sin_alcohol", price: 3200, emoji: "🍊", is_available: true },
+  { id: "medialunas", name: "Medialunas x3", category: "combo", price: 4500, emoji: "🥐", is_available: true },
+  { id: "box-catering", name: "Box de catering", category: "combo", price: 9500, emoji: "🥪", is_available: true },
+  { id: "vino-copa", name: "Copa de vino", category: "trago", price: 6000, emoji: "🍷", is_available: true },
+  { id: "cerveza-pro", name: "Cerveza", category: "cerveza", price: 5000, emoji: "🍺", is_available: true },
+];
 
 export const BAR_MENU: BarMenuItem[] = [
   { id: "fernet", name: "Fernet con Coca", category: "trago", price: 6500, emoji: "🥃", is_available: true },
@@ -148,6 +182,43 @@ const VISITED: Record<number, string[]> = {
   11: ["Sector VIP", "Barra Central"],
   12: ["Pista Principal"],
 };
+
+/**
+ * Encuentro pyme (ROUGE Pro): perfiles PROFESIONALES de las mismas cuentas del demo + emprendedores que solo usan
+ * ROUGE para eventos de trabajo. La misma persona se muestra distinta en la fiesta y en el encuentro.
+ */
+interface ProSeed {
+  n: number; // persona del demo (cuenta) o nueva (≥ 20)
+  label: string;
+  job: string;
+  company: string;
+  industry: ProfilePersona["industry"];
+  looking: ProfilePersona["looking_for"];
+  offering: ProfilePersona["offering"];
+  mood: MoodTag;
+  bio: string;
+  linkedin?: string;
+}
+const PRO_SEEDS: ProSeed[] = [
+  { n: 1, label: "Trabajo", job: "Diseñadora UX freelance", company: "Estudio Benítez", industry: "services", looking: ["clients", "partners"], offering: ["software", "marketing"], mood: "pro_selling", bio: "Diseño apps y webs para pymes. Si tu negocio necesita vender online, charlemos.", linkedin: "https://www.linkedin.com/in/sofia-benitez-ux" },
+  { n: 4, label: "Mi estudio", job: "Arquitecta · Socia", company: "Duarte & Asoc.", industry: "construction", looking: ["clients", "suppliers"], offering: ["advisory"], mood: "pro_buying", bio: "Locales comerciales y oficinas. Busco proveedores de iluminación y mobiliario." },
+  { n: 5, label: "Laburo", job: "CTO", company: "Logix Software", industry: "tech", looking: ["clients", "talent"], offering: ["software", "logistics"], mood: "pro_selling", bio: "Software de stock y logística para distribuidoras. 40 clientes en el país.", linkedin: "https://www.linkedin.com/in/mateo-sosa-logix" },
+  { n: 10, label: "Inversiones", job: "Director", company: "Aguirre Capital", industry: "finance", looking: ["partners"], offering: ["investment", "mentoring"], mood: "pro_networking", bio: "Invierto en pymes industriales y de alimentos con tracción. Ticket USD 50–250 mil." },
+  { n: 8, label: "Pyme", job: "Fundador", company: "Vera Alimentos", industry: "food", looking: ["investment", "export", "software"], offering: ["suppliers"], mood: "pro_funding", bio: "Snacks saludables. Estamos en 300 dietéticas y queremos exportar a Chile y Uruguay." },
+  { n: 21, label: "Trabajo", job: "Dueña", company: "Textil Norte", industry: "fashion", looking: ["marketing", "software", "financing"], offering: ["suppliers"], mood: "pro_buying", bio: "Fabricamos uniformes para empresas. Queremos vender online." },
+  { n: 22, label: "Trabajo", job: "Contador público", company: "Estudio Ledesma", industry: "services", looking: ["clients"], offering: ["advisory", "financing"], mood: "pro_selling", bio: "Impuestos, ARCA y crédito para pymes. Primera consulta sin cargo en el evento." },
+  { n: 23, label: "Trabajo", job: "Gerenta comercial", company: "Fletes Sur", industry: "logistics", looking: ["clients", "partners"], offering: ["logistics", "export"], mood: "pro_partners", bio: "Distribución y última milla en AMBA y Cuyo. Buscamos alianzas con e-commerce." },
+  { n: 24, label: "Trabajo", job: "Coordinadora de RR.HH.", company: "Metalúrgica Rossi", industry: "manufacturing", looking: ["talent", "advisory"], offering: ["suppliers"], mood: "pro_hiring", bio: "Buscamos técnicos y un responsable comercial. Pasá por el stand A3." },
+  { n: 25, label: "Trabajo", job: "Mentor", company: "Red de Mentores Pyme", industry: "education", looking: ["partners"], offering: ["mentoring", "advisory"], mood: "pro_learning", bio: "30 años en comercio exterior. Mentoreo gratis a emprendedores que quieran exportar." },
+];
+/** Cuentas nuevas del encuentro (solo vienen a eventos de trabajo). */
+const PRO_ONLY: { n: number; username: string; full_name: string; age: number; phone: string }[] = [
+  { n: 21, username: "carla.textil", full_name: "Carla Medina", age: 41, phone: "+5491150002021" },
+  { n: 22, username: "ezequiel.contador", full_name: "Ezequiel Ledesma", age: 38, phone: "+5491150002022" },
+  { n: 23, username: "romina.fletes", full_name: "Romina Acosta", age: 35, phone: "+5491150002023" },
+  { n: 24, username: "laura.rrhh", full_name: "Laura Rossi", age: 33, phone: "+5491150002024" },
+  { n: 25, username: "hector.mentor", full_name: "Héctor Giménez", age: 62, phone: "+5491150002025" },
+];
 
 const LINEUP = [
   { id: "set-1", artist: "Sol Ortega", genre: "House" as MusicGenre, from: 0, to: 90 },
@@ -231,6 +302,7 @@ export function createSeedState(now = Date.now()): RougeState {
   // ── Evento ───────────────────────────────────────────────────────
   const event: RougeEvent = {
     id: DEMO_IDS.event,
+    kind: "nightlife",
     slug: "bresh-sabado",
     name: "ROUGE Night × Bresh Sábado",
     description: "La noche más grande del mes. Line-up de house y techno, Mesa VIP, Barra Express y sorteos en vivo.",
@@ -302,6 +374,7 @@ export function createSeedState(now = Date.now()): RougeState {
     event_id: event.id,
     user_id: id(p.n),
     mood_tag: p.mood,
+    persona_id: null,
     ghost_mode: !!p.ghost,
     only_liked_can_icebreak: !!p.onlyLiked,
     icebreaker_used: p.n === 7, // Bruno ya usó su bala con Sofi
@@ -570,34 +643,179 @@ export function createSeedState(now = Date.now()): RougeState {
   connections[2].attached_drink_qr_id = user_perks_qrs[5].id;
   user_perks_qrs[5] = { ...user_perks_qrs[5], user_id: DEMO_IDS.me, source_ref_id: bar_orders[5].id };
 
+  // ═══ [v1.7] ROUGE Pro: encuentro de pymes en vivo (misma cuenta, otra cara) ═══
+  const PRO_START = -150; // arrancó hace 2 h 30
+  const PRO_END = PRO_START + 330;
+  const proEvent: RougeEvent = {
+    id: DEMO_IDS.proEvent,
+    kind: "corporate",
+    slug: "encuentro-pyme",
+    name: "Encuentro Pyme Conecta",
+    description: "Ronda de negocios, charlas y networking para pymes y emprendedores. Encontrá clientes, proveedores, socios e inversión.",
+    venue_name: "Centro de Convenciones · Costanera",
+    venue_map_url: null,
+    venue_layout_json: PRO_VENUE_LAYOUT,
+    lineup_json: [
+      { id: "ag-1", artist: "Acreditación y café de bienvenida", from: 0, to: 40 },
+      { id: "ag-2", artist: "Charla: Financiamiento para pymes en 2027", from: 40, to: 100, headliner: true },
+      { id: "ag-3", artist: "Ronda de negocios (salas 1 a 6)", from: 100, to: 190 },
+      { id: "ag-4", artist: "Panel: Vender online sin morir en el intento", from: 190, to: 250 },
+      { id: "ag-5", artist: "Cierre y brindis", from: 250, to: 330 },
+    ].map((a) => ({ id: a.id, artist: a.artist, is_headliner: !!a.headliner, starts_at: t(PRO_START + a.from), ends_at: t(PRO_START + a.to) })),
+    cover_url: null,
+    starts_at: t(PRO_START),
+    ends_at: t(PRO_END),
+    // Networking antes y después: el lobby abre una semana antes y cierra una semana después.
+    lobby_opens_at: t(PRO_START - 7 * 24 * 60),
+    lobby_expires_at: t(PRO_END + 7 * 24 * 60),
+    max_capacity: 400,
+    master_invite_code: "PYME26",
+    created_by: DEMO_IDS.organizer,
+    created_at: t(-60 * 24 * 14),
+    brand_id: DEMO_IDS.proBrand,
+    logo_url: null,
+    theme_primary: null,
+    theme_accent: null,
+  };
+  brands.push({ id: DEMO_IDS.proBrand, owner_id: DEMO_IDS.organizer, name: "Red Pyme Conecta", logo_url: null, primary_color: "#2563EB", accent_color: "#FBBF24", payments_enabled: false, created_at: t(-60 * 24 * 14) });
+
+  profiles.push(
+    ...PRO_ONLY.map<Profile>((p) => ({
+      id: id(p.n),
+      username: p.username,
+      full_name: p.full_name,
+      birth_date: birth(p.age, p.n),
+      gender: "undisclosed",
+      phone_normalized: p.phone,
+      bio: "",
+      photos: [],
+      loop_video_url: null,
+      music_genres: [],
+      spotify_embed_url: null,
+      instagram_username: null,
+      instagram_verified: false,
+      is_verified: false,
+      created_at: t(-60 * 24 * 12),
+    })),
+  );
+  const nameOf = (n: number) => profiles.find((p) => p.id === id(n))?.full_name ?? "";
+  const profile_personas: ProfilePersona[] = PRO_SEEDS.map((p) => ({
+    id: p.n === 1 ? DEMO_IDS.mePro : id(1900 + p.n),
+    user_id: id(p.n),
+    kind: "corporate",
+    label: p.label,
+    display_name: nameOf(p.n),
+    bio: p.bio,
+    // Foto profesional: las cuentas de la noche usan otra foto (la 2); las nuevas, iniciales.
+    photos: p.n < 20 ? [{ url: `/demo/avatars/${profiles.find((x) => x.id === id(p.n))?.username}-2.svg`, width: 600, height: 800, blur_color: "#121216" }] : [],
+    music_genres: [],
+    spotify_embed_url: null,
+    job_title: p.job,
+    company: p.company,
+    industry: p.industry,
+    looking_for: p.looking,
+    offering: p.offering,
+    linkedin_url: p.linkedin ?? null,
+    created_at: t(-60 * 24 * 10),
+  }));
+  const proAttendees: EventAttendee[] = PRO_SEEDS.map((p, i) => ({
+    id: id(3100 + p.n),
+    event_id: proEvent.id,
+    user_id: id(p.n),
+    mood_tag: p.mood,
+    persona_id: p.n === 1 ? DEMO_IDS.mePro : id(1900 + p.n),
+    ghost_mode: false,
+    only_liked_can_icebreak: false,
+    icebreaker_used: p.n === 23,
+    total_spent: [2500, 9500, 0, 6000][i % 4],
+    joined_via: i % 3 ? "master_link" : "single_use_code",
+    last_active_at: t(-(i * 3 + 1)),
+    visited_sectors: i % 2 ? ["Coffee & Networking"] : ["Auditorio", "Coffee & Networking"],
+    referred_by: null,
+    checked_in_at: t(PRO_START + 5 + i * 3),
+    joined_at: t(PRO_START - 60 * 24 + i * 30),
+  }));
+  const proConn = (n: number, from: number, to: number, status: Connection["status"], minAgo: number, extra: Partial<Connection> = {}): Connection => ({
+    ...conn(100 + n, from, to, status, minAgo, extra),
+    event_id: proEvent.id,
+  });
+  const proConnections: Connection[] = [
+    proConn(1, 21, 1, "accepted", 70), // Carla (Textil Norte) ↔ Sofi: busca diseño para vender online
+    proConn(2, 22, 1, "pending", 25), // Ezequiel → Sofi
+    proConn(3, 23, 1, "pending", 12, { type: "icebreaker", icebreaker_message: "Hola Sofía, hacemos la logística de varios e-commerce que necesitan diseño. ¿Café a las 17 en el coffee?" }),
+    proConn(4, 5, 8, "accepted", 50), // Mateo (Logix) ↔ Joaquín (Vera Alimentos)
+    proConn(5, 10, 8, "accepted", 35), // Tomás (inversor) ↔ Joaquín
+    proConn(6, 1, 4, "pending", 8), // Sofi → Melina
+  ];
+  const proSquad: Squad = {
+    id: DEMO_IDS.proTeam,
+    event_id: proEvent.id,
+    name: "Mesa 12 · Ronda de negocios",
+    invite_code: "EQ-MESA12",
+    has_vip_table_to_share: false,
+    base_pin_x: 79,
+    base_pin_y: 63,
+    base_pin_label: "Sala 3 — Ronda de negocios",
+    created_by: id(21),
+    created_at: t(PRO_START + 60),
+  };
+  const proMembers: SquadMember[] = [
+    { ...member(101, DEMO_IDS.proTeam, 21, null, 80), squad_id: DEMO_IDS.proTeam },
+    { ...member(102, DEMO_IDS.proTeam, 1, 21, 75), squad_id: DEMO_IDS.proTeam },
+    { ...member(103, DEMO_IDS.proTeam, 22, 21, 70), squad_id: DEMO_IDS.proTeam },
+  ];
+  const PC = { connection: id(6101) };
+  const proMessages: Message[] = [
+    { ...msg(101, 21, 68, "Hola Sofía! Te vi en la charla. Necesitamos una tienda online para los uniformes, ¿hacés eso?", PC), event_id: proEvent.id },
+    { ...msg(102, 1, 64, "¡Hola Carla! Sí, justo hago tiendas para fábricas. ¿Te paso casos?", PC), event_id: proEvent.id },
+    { ...msg(103, 21, 60, "Dale. Me sumé a la Mesa 12 de la ronda, vení que está Ezequiel también.", PC), event_id: proEvent.id },
+    { ...msg(104, 21, 59, "👋 Sofía se sumó al equipo", { squad: DEMO_IDS.proTeam }, "system_alert"), event_id: proEvent.id },
+  ];
+  const proBlasts: EventBlast[] = [
+    { id: id(13101), event_id: proEvent.id, title: "🤝 Ronda de negocios en las salas", message: "La ronda empieza ahora en las Salas de reunión. Mirá tus contactos recomendados en Networking.", target_segment: { kind: "all" }, cta_label: "Ver networking", cta_link: "/lobby", is_flash_promo: false, expires_at: null, created_at: t(PRO_START + 95) },
+  ];
+  const proPerks: UserPerkQR[] = [
+    { ...perk(101, 1, "☕ Café de bienvenida", "free_drink", "manual", null, 140), event_id: proEvent.id },
+  ];
+  const proStaff: EventStaff[] = (["manager", "bartender", "security"] as StaffRole[]).map((role) => ({
+    event_id: proEvent.id,
+    user_id: STAFF.find((m) => m.role === role)!.id,
+    role,
+    created_at: t(-60 * 24 * 5),
+  }));
+
   return {
     version: STATE_VERSION,
     seeded_at: new Date(now).toISOString(),
     current_user_id: DEMO_IDS.me,
     active_event_id: event.id,
     profiles,
+    profile_personas,
     instagram_links,
     user_blocks,
-    events: [event],
+    events: [event, proEvent],
     brands,
     brand_payment_accounts,
-    event_staff: STAFF.map<EventStaff>((m) => ({ event_id: event.id, user_id: m.id, role: m.role, created_at: t(-60 * 24 * 5) })),
+    event_staff: [...STAFF.map<EventStaff>((m) => ({ event_id: event.id, user_id: m.id, role: m.role, created_at: t(-60 * 24 * 5) })), ...proStaff],
     event_invite_codes: invite_codes,
     promoter_links,
     api_keys: [],
-    event_attendees: attendees,
+    event_attendees: [...attendees, ...proAttendees],
     event_bans: [],
-    connections,
-    squads,
-    squad_members,
+    connections: [...connections, ...proConnections],
+    squads: [...squads, proSquad],
+    squad_members: [...squad_members, ...proMembers],
     map_pins,
-    messages,
-    event_blasts,
-    user_perks_qrs,
+    messages: [...messages, ...proMessages],
+    event_blasts: [...event_blasts, ...proBlasts],
+    user_perks_qrs: [...user_perks_qrs, ...proPerks],
     perk_rules,
     raffles,
     song_requests,
     bar_menu: BAR_MENU,
+    // Demo: el menú del estado es el del evento activo (como en Supabase); los de los demás eventos esperan acá.
+    bar_menu_event_id: event.id,
+    demo_menus: { [proEvent.id]: CORPORATE_MENU },
     bar_orders,
     squad_expenses,
     squad_settlements: [],

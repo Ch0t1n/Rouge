@@ -38,6 +38,7 @@ import { BrandLogo } from "@/components/brand/BrandTheme";
 import { QrBlock } from "@/components/perks/QrCard";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { passValue } from "@/lib/engine/door";
+import { verticalOf } from "@/lib/engine/verticals";
 
 const PHASE_LABEL: Record<LobbyPhase, string> = {
   upcoming: "Próximamente",
@@ -62,6 +63,8 @@ function Home() {
   const me = currentUser(state)!;
   const attendee = getAttendee(state, event.id, me.id);
   const phase = lobbyPhase(event, now);
+  const v = verticalOf(state, event.id);
+  const pro = v.kind === "corporate";
 
   const data = useMemo(() => {
     const sq = squadOf(state, event.id, me.id);
@@ -126,7 +129,7 @@ function Home() {
               </span>
               <button
                 type="button"
-                onClick={() => shareSheet.open({ url: `/join/${event.slug}`, title: `Invitá a ${event.name}`, text: `Entrá al lobby de ${event.name} en ROUGE 🔴`, fileName: `rouge-${event.slug}`, accent: "rouge" })}
+                onClick={() => shareSheet.open({ url: `/join/${event.slug}`, title: `Invitá a ${event.name}`, text: pro ? `Sumate al networking de ${event.name} en ROUGE Pro 🤝` : `Entrá al lobby de ${event.name} en ROUGE 🔴`, fileName: `rouge-${event.slug}`, accent: "rouge" })}
                 className="glass-pill inline-flex min-h-[32px] items-center gap-1 hover:bg-white/10"
                 aria-label="QR para invitar al evento"
               >
@@ -139,7 +142,7 @@ function Home() {
                 <Avatar profile={me} size={44} ring="rouge" />
                 <div className="min-w-0">
                   <p className="text-sm font-semibold">Hola, {me.full_name.split(" ")[0]}</p>
-                  <p className="truncate text-xs text-muted">{attendee ? (mood ? `${mood.emoji} ${mood.label}` : "Elegí tu mood de la noche") : "Todavía no entraste al lobby"}</p>
+                  <p className="truncate text-xs text-muted">{attendee ? (mood ? `${mood.emoji} ${mood.label}` : (pro ? "Elegí a qué venís hoy" : "Elegí tu mood de la noche")) : "Todavía no entraste al lobby"}</p>
                 </div>
               </div>
               <span className="flex shrink-0 items-center gap-1 text-xs font-semibold text-muted">
@@ -148,7 +151,7 @@ function Home() {
             </Link>
             {phase !== "expired" && phase !== "upcoming" && (
               <Link href={attendee ? "/lobby" : `/join/${event.slug}`} className={cn(buttonVariants({ size: "lg", block: true }), "mt-3")}>
-                <DoorOpen /> {attendee ? "Ir al lobby" : "Entrar al lobby"}
+                <DoorOpen /> {attendee ? (pro ? "Ir al networking" : "Ir al lobby") : pro ? "Entrar al evento" : "Entrar al lobby"}
               </Link>
             )}
           </div>
@@ -191,9 +194,9 @@ function Home() {
         {/* Métricas personales */}
         <section className="grid grid-cols-2 gap-3">
           <StatTile href="/lobby" icon={<Users />} tone="rouge" value={data.grid.length} label="Asistentes visibles" hint="Ir a la grilla →" />
-          <StatTile href="/inbox" icon={<Heart />} tone="rouge" value={data.matches.length} label="Matches" hint={`${data.inbox.length} en tu bandeja`} />
+          <StatTile href="/inbox" icon={<Heart />} tone="rouge" value={data.matches.length} label={v.copy.matches} hint={`${data.inbox.length} en tu bandeja`} />
           <StatTile href="/perks" icon={<Gift />} tone="vip" value={data.perks.length} label="Perks & QRs" hint="listos para canjear" />
-          <StatTile href="/bar" icon={<Martini />} tone="vip" value={data.orders.length} label="Barra Express" hint="Pedí sin hacer fila →" />
+          <StatTile href="/bar" icon={<Martini />} tone="vip" value={data.orders.length} label={v.copy.bar} hint="Pedí sin hacer fila →" />
         </section>
 
         {/* Squad */}
@@ -201,7 +204,7 @@ function Home() {
           <Link href="/squad" className="glass block rounded-3xl p-4 transition hover:bg-white/10">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-squad">Tu Squad</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-squad">Tu {v.copy.squad}</p>
                 <h2 className="text-lg">{data.squad.squad.name}</h2>
               </div>
               {data.squad.squad.has_vip_table_to_share && <Badge tone="vip">🍾 Mesa VIP</Badge>}
@@ -245,7 +248,7 @@ function Home() {
           attendee && (
             <Link href="/squad" className="flex items-center gap-3 rounded-3xl border border-squad/30 bg-squad/[0.06] p-4">
               <Users className="size-6 text-squad" />
-              <span className="flex-1 text-sm"><b>Armá tu Squad</b> · se ven en el plano, botón de rescate y perks para el grupo.</span>
+              <span className="flex-1 text-sm"><b>Armá tu {v.copy.squad}</b> · se ven en el plano, botón de rescate y perks para el grupo.</span>
               <ArrowRight className="size-5 text-muted" />
             </Link>
           )
@@ -259,8 +262,8 @@ function Home() {
               <Link href="/map" className="-my-3 inline-flex min-h-touch items-center text-xs font-semibold text-squad">Abrir plano y dejar mi pin →</Link>
             </div>
             <div className="flex gap-3 text-[11px] font-semibold">
-              <Legend className="bg-squad" label="Squad" />
-              <Legend className="bg-rouge" label="Match" />
+              <Legend className="bg-squad" label={v.copy.squad} />
+              <Legend className="bg-rouge" label={v.copy.match} />
               <Legend className="bg-vip" label="Base" />
             </div>
           </div>

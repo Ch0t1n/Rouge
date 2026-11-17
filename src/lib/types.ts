@@ -23,15 +23,72 @@ export const MUSIC_GENRES = [
 ] as const;
 export type MusicGenre = (typeof MUSIC_GENRES)[number];
 
+/**
+ * Verticales de ROUGE (columna `events.kind`, enum `event_kind_t`):
+ *  - "nightlife": fiestas y boliches (ROUGE).
+ *  - "corporate": eventos de empresas, pymes y networking (ROUGE Pro).
+ * Lo que cambia por vertical (moods, campos del perfil, vocabulario, funciones) vive en `engine/verticals.ts`.
+ */
+export const EVENT_KINDS = ["nightlife", "corporate"] as const;
+export type EventKind = (typeof EVENT_KINDS)[number];
+
+/** Mood de la noche / "¿a qué venís?": cada uno pertenece a UNA vertical (espejo de `mood_kind()` en SQL). */
 export const MOOD_TAGS = [
-  { id: "with_friends", label: "Voy con amigos", emoji: "👯" },
-  { id: "lost_group", label: "Perdí a mi grupo", emoji: "🧭" },
-  { id: "at_bar", label: "En la barra", emoji: "🍸" },
-  { id: "open_to_meet", label: "Abierto a conocer gente", emoji: "✨" },
-  { id: "just_dance", label: "Solo vengo a bailar", emoji: "💃" },
-  { id: "after_hunt", label: "Buscando after", emoji: "🌅" },
+  { id: "with_friends", label: "Voy con amigos", emoji: "👯", kind: "nightlife" },
+  { id: "lost_group", label: "Perdí a mi grupo", emoji: "🧭", kind: "nightlife" },
+  { id: "at_bar", label: "En la barra", emoji: "🍸", kind: "nightlife" },
+  { id: "open_to_meet", label: "Abierto a conocer gente", emoji: "✨", kind: "nightlife" },
+  { id: "just_dance", label: "Solo vengo a bailar", emoji: "💃", kind: "nightlife" },
+  { id: "after_hunt", label: "Buscando after", emoji: "🌅", kind: "nightlife" },
+  { id: "pro_networking", label: "Haciendo networking", emoji: "🤝", kind: "corporate" },
+  { id: "pro_selling", label: "Busco clientes", emoji: "💼", kind: "corporate" },
+  { id: "pro_buying", label: "Busco proveedores", emoji: "🛒", kind: "corporate" },
+  { id: "pro_partners", label: "Busco socios o alianzas", emoji: "🧩", kind: "corporate" },
+  { id: "pro_funding", label: "Busco inversión", emoji: "🚀", kind: "corporate" },
+  { id: "pro_hiring", label: "Estoy contratando", emoji: "🧑‍💼", kind: "corporate" },
+  { id: "pro_learning", label: "Vengo a aprender", emoji: "📚", kind: "corporate" },
+  { id: "pro_coffee", label: "En el coffee break", emoji: "☕", kind: "corporate" },
 ] as const;
 export type MoodTag = (typeof MOOD_TAGS)[number]["id"];
+
+/** Rubro de una persona en eventos corporativos (perfil profesional). */
+export const INDUSTRIES = [
+  { id: "retail", label: "Comercio" },
+  { id: "manufacturing", label: "Industria" },
+  { id: "services", label: "Servicios profesionales" },
+  { id: "tech", label: "Tecnología" },
+  { id: "food", label: "Gastronomía y alimentos" },
+  { id: "agro", label: "Agro" },
+  { id: "construction", label: "Construcción" },
+  { id: "health", label: "Salud" },
+  { id: "education", label: "Educación" },
+  { id: "tourism", label: "Turismo" },
+  { id: "fashion", label: "Moda y textil" },
+  { id: "logistics", label: "Logística y transporte" },
+  { id: "finance", label: "Finanzas y seguros" },
+  { id: "other", label: "Otro rubro" },
+] as const;
+export type Industry = (typeof INDUSTRIES)[number]["id"];
+
+/**
+ * Lo que una persona BUSCA u OFRECE en un evento corporativo. El mismo catálogo para las dos listas:
+ * la afinidad de negocio cruza lo que uno busca con lo que el otro ofrece (complementariedad).
+ */
+export const BUSINESS_NEEDS = [
+  { id: "clients", label: "Clientes", emoji: "💼" },
+  { id: "suppliers", label: "Proveedores e insumos", emoji: "📦" },
+  { id: "partners", label: "Socios y alianzas", emoji: "🧩" },
+  { id: "investment", label: "Inversión", emoji: "🚀" },
+  { id: "financing", label: "Financiamiento y crédito", emoji: "🏦" },
+  { id: "talent", label: "Talento y empleo", emoji: "🧑‍💼" },
+  { id: "mentoring", label: "Mentoría", emoji: "🧭" },
+  { id: "software", label: "Software y tecnología", emoji: "💻" },
+  { id: "marketing", label: "Marketing y ventas", emoji: "📣" },
+  { id: "logistics", label: "Logística", emoji: "🚚" },
+  { id: "export", label: "Distribución y exportación", emoji: "🌎" },
+  { id: "advisory", label: "Asesoría contable o legal", emoji: "⚖️" },
+] as const;
+export type BusinessNeed = (typeof BUSINESS_NEEDS)[number]["id"];
 
 export type Gender = "female" | "male" | "non_binary" | "undisclosed";
 
@@ -62,6 +119,35 @@ export interface Profile {
   /** true solo si coincide con la cuenta conectada por OAuth (trigger profile_instagram). */
   instagram_verified: boolean;
   is_verified: boolean;
+  created_at: ISODate;
+}
+
+/**
+ * Perfil adicional de una cuenta (tabla `profile_personas`). Una persona puede tener varios y elige con cuál
+ * mostrarse al entrar a cada evento (`event_attendees.persona_id`). El perfil de la cuenta (`Profile`) es el
+ * "Perfil principal" de la noche; para eventos corporativos hace falta un perfil `corporate`.
+ * Regla: en un evento solo se ve la cara con la que la persona entró (`faceOf`), nunca la de otra vertical.
+ */
+export interface ProfilePersona {
+  id: UUID;
+  user_id: UUID;
+  kind: EventKind;
+  /** Nombre interno para elegirlo (solo lo ve su dueño/a): "Trabajo", "Mi pyme", "Noche techno". */
+  label: string;
+  /** Nombre que ven los demás en ese evento. */
+  display_name: string;
+  bio: string; // ≤160
+  photos: ProfilePhoto[]; // ≤4
+  // Noche
+  music_genres: MusicGenre[];
+  spotify_embed_url: string | null;
+  // Corporativo
+  job_title: string; // cargo ≤60
+  company: string; // empresa ≤60
+  industry: Industry | null;
+  looking_for: BusinessNeed[]; // ≤3
+  offering: BusinessNeed[]; // ≤3
+  linkedin_url: string | null;
   created_at: ISODate;
 }
 
@@ -96,7 +182,8 @@ export interface LineupSlot {
 export interface VenueSector {
   id: string;
   name: string;
-  kind: "dancefloor" | "bar" | "vip" | "outdoor" | "entrance" | "booth" | "restroom" | "lounge";
+  /** stage / stand / meeting: sectores de eventos corporativos (escenario, stands de expositores, salas). */
+  kind: "dancefloor" | "bar" | "vip" | "outdoor" | "entrance" | "booth" | "restroom" | "lounge" | "stage" | "stand" | "meeting";
   x: number;
   y: number;
   w: number;
@@ -141,6 +228,8 @@ export interface BrandPaymentAccount {
 
 export interface RougeEvent {
   id: UUID;
+  /** Vertical del evento: noche (ROUGE) o corporativo (ROUGE Pro). No cambia una vez que entró alguien. */
+  kind: EventKind;
   slug: string;
   name: string;
   description: string;
@@ -238,6 +327,8 @@ export interface EventAttendee {
   event_id: UUID;
   user_id: UUID;
   mood_tag: MoodTag | null;
+  /** Perfil con el que se muestra en este evento (null = Perfil principal; obligatorio en eventos corporativos). */
+  persona_id: UUID | null;
   ghost_mode: boolean;
   only_liked_can_icebreak: boolean;
   icebreaker_used: boolean;
@@ -516,6 +607,8 @@ export interface RougeState {
   current_user_id: UUID;
   active_event_id: UUID;
   profiles: Profile[];
+  /** Perfiles adicionales (los míos y los que otros usan en mis eventos). */
+  profile_personas: ProfilePersona[];
   /** Cuentas de Instagram conectadas (demo: todas las personas; Supabase: solo la mía). */
   instagram_links: InstagramLink[];
   user_blocks: UserBlock[];
@@ -549,6 +642,9 @@ export interface RougeState {
   payout_aliases: PayoutAlias[];
   /** Supabase: números por RRPP calculados en el servidor (RPC promoter_stats). El RRPP no ve a los asistentes. */
   promoter_stats?: { user_id: UUID; link_id: UUID | null; code: string | null; commission_per_entry: number; entries: number; checked_in: number; billable: number; to_pay: number }[] | null;
+  /** Modo Demo: evento al que pertenece `bar_menu` y menús de los otros eventos (en Supabase se carga el del activo). */
+  bar_menu_event_id?: UUID;
+  demo_menus?: Record<UUID, BarMenuItem[]>;
   /** Solo staff en Modo Supabase: conteos de conexiones (que son privadas por RLS). */
   admin_stats?: AdminStats | null;
 }

@@ -31,8 +31,11 @@ TypeScript (`src/lib/types.ts`) son su espejo 1:1.
 | `payout_aliases` | Alias o CBU/CVU para cobrar (visible solo para quienes comparten un Squad). |
 | `promoter_links` | Link propio de cada RRPP por evento (`code` RP…, comisión por ingreso). `event_attendees.referred_by` guarda la atribución. |
 | `event_bans` | Expulsados de un evento (no pueden volver a entrar a ese evento). Altas por `remove_attendee`. |
+| `profile_personas` | **[v1.7]** Perfiles adicionales de una cuenta (`kind` noche / corporativo): nombre visible, fotos, géneros y Spotify, o cargo, empresa, rubro, `looking_for` / `offering` y LinkedIn. Máx. 5 por cuenta (`personas_limit`). Legible solo por quien comparte con su dueño/a un evento donde se usó. |
 
 `events` suma `brand_id` (de quien creó el evento: trigger `events_brand_owner`), `logo_url`, `theme_primary` y `theme_accent`.
+**[v1.7]** `events.kind` (`event_kind_t`: `nightlife` | `corporate`) y `event_attendees.persona_id` (perfil con el que se
+muestra en ese evento; `null` = Perfil principal, solo en la noche).
 
 ## Funciones (RPCs)
 
@@ -104,6 +107,22 @@ visitado; pedidos → `updated_at`; perfil → Instagram verificado (`profile_in
 
 `advance_bar_order` y `redeem_pickup_code` rechazan pedidos que esperan pago (`not_paid`).
 
+### Verticales y perfiles adicionales (v1.7)
+
+| Función / trigger | Quién | Qué hace |
+|---|---|---|
+| `join_event(code, mood, p_persona)` | asistente | Valida mood de la vertical (`invalid_mood`), perfil propio del mismo tipo (`invalid_persona`) y perfil obligatorio en corporativo (`persona_required`). |
+| `mood_kind(mood)` | checks | Vertical de un mood (los `pro_*` son corporativos). |
+| `business_affinity(...)` | `event_grid` | Afinidad de negocio, espejo de `businessAffinity()` del motor. |
+| `event_grid(event)` | asistente | Devuelve la **cara del evento** (perfil elegido; neutra en corporativo si no hay perfil profesional). |
+| `delete_persona(persona)` | dueño/a del perfil | Borra un perfil que no se usa en un evento con el lobby abierto (`persona_in_use`). |
+| trigger `events_kind_locked` | — | El tipo de evento no cambia si ya entró alguien (`kind_locked`). |
+| trigger `attendee_vertical` | — | Mood y perfil del asistente siempre de la vertical del evento (también si el cliente cambia el mood directo). |
+| `not_in_vertical` | — | `send_icebreaker` (con trago), `vote_song`, `draw_raffle` (por género) y `ensure_promoter_link` en un evento corporativo. |
+
+Los valores nuevos del enum `mood_tag_t` se agregan con `alter type … add value` y en el script se comparan como texto
+(`mood::text`), igual que `promoter`, para que `schema.sql` se pueda aplicar en una sola transacción.
+
 ## Storage
 
 | Bucket | Uso | Acceso |
@@ -115,7 +134,8 @@ visitado; pedidos → `updated_at`; perfil → Instagram verificado (`profile_in
 ## Realtime
 
 Publicadas en `supabase_realtime`: `messages`, `map_pins`, `connections`, `squad_members`, `squads`,
-`blast_deliveries`, `user_perks_qrs`, `bar_orders`, `song_requests`, `raffles`, `event_attendees`. Realtime respeta
+`blast_deliveries`, `user_perks_qrs`, `bar_orders`, `song_requests`, `raffles`, `event_attendees`, `brands`,
+`squad_expenses`, `squad_settlements` y `profile_personas`. Realtime respeta
 RLS: cada usuario solo recibe lo que puede ver.
 
 ## Reglas para cambiar el esquema

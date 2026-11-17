@@ -11,6 +11,7 @@ import { eventTheme } from "@/lib/engine/branding";
 import { getProfile } from "@/lib/engine/selectors";
 import { formatMoney } from "@/lib/utils";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { faceOf } from "@/lib/engine/verticals";
 
 /** Número corto y legible del pedido para el ticket (los últimos 6 del id). */
 export const orderNumber = (id: string) => id.replace(/-/g, "").slice(-6).toUpperCase();
@@ -45,7 +46,7 @@ export function PrintTicket() {
   }
 
   const theme = eventTheme(state, event.id);
-  const customer = getProfile(state, order.user_id);
+  const customer = faceOf(state, order.user_id);
   const copy = params.get("copia") === "cliente" ? "cliente" : "barra";
   const when = new Date(order.created_at).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
   const paid = order.payment_status === "paid";

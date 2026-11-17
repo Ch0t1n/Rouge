@@ -19,6 +19,7 @@ import * as T from "@/lib/engine/settle";
 import * as E from "@/lib/engine/eventAdmin";
 import * as RP from "@/lib/engine/promoters";
 import * as D from "@/lib/engine/door";
+import { BAR_MENU, CORPORATE_MENU } from "@/lib/mock/seed";
 
 export interface Command<T> {
   name: string;
@@ -125,17 +126,52 @@ export const unblock = (blockerId: UUID, blockId: UUID): Command<undefined> => (
  * `serverEventId`: el código lo resolvió el servidor (resolve_access_code) porque el cliente no puede
  * verlo por RLS (códigos de 1 uso, squads ajenos). Si la regla local no lo encuentra, decide el servidor.
  */
-export const joinEvent = (userId: UUID, code: string, mood: MoodTag, serverEventId?: UUID): Command<{ eventId: UUID; squadId?: UUID }> => ({
+export const joinEvent = (userId: UUID, code: string, mood: MoodTag, serverEventId?: UUID, personaId: UUID | null = null): Command<{ eventId: UUID; squadId?: UUID }> => ({
   name: "joinEvent",
   optimistic: false,
   local: (s) => {
-    const r = A.joinEvent(s, userId, code, mood);
+    const r = A.joinEvent(s, userId, code, mood, Date.now(), personaId);
     if (!r.ok && serverEventId && !A.resolveAccessCode(s, code)) return { ok: true, state: s, data: { eventId: serverEventId } };
     return r;
   },
   remote: async (sb, local) => {
-    const eventId = await rpc<UUID>(sb, "join_event", { p_code: code, p_mood: mood });
+    const eventId = await rpc<UUID>(sb, "join_event", { p_code: code, p_mood: mood, p_persona: personaId });
     return { ...local, eventId };
+  },
+});
+
+// ── Perfiles adicionales (una cuenta, varias caras) ──────────────────
+
+/** Crea o edita un perfil adicional. Mismo id en el insert que en el optimista (no se duplica). */
+export const upsertPersona = (userId: UUID, input: A.PersonaInput): Command<RougeState["profile_personas"][number]> => ({
+  name: "upsertPersona",
+  local: (s) => A.upsertPersona(s, userId, input),
+  remote: async (sb, p, before) => {
+    const fields = {
+      label: p.label,
+      display_name: p.display_name,
+      bio: p.bio,
+      photos: p.photos,
+      music_genres: p.music_genres,
+      spotify_embed_url: p.spotify_embed_url,
+      job_title: p.job_title,
+      company: p.company,
+      industry: p.industry,
+      looking_for: p.looking_for,
+      offering: p.offering,
+      linkedin_url: p.linkedin_url,
+    };
+    const existed = before.profile_personas.some((x) => x.id === p.id);
+    if (existed) must(await sb.from("profile_personas").update(fields).eq("id", p.id).eq("user_id", userId));
+    else must(await sb.from("profile_personas").insert({ id: p.id, user_id: userId, kind: p.kind, ...fields }));
+  },
+});
+
+export const deletePersona = (userId: UUID, personaId: UUID): Command<undefined> => ({
+  name: "deletePersona",
+  local: (s) => A.deletePersona(s, userId, personaId),
+  remote: async (sb) => {
+    await rpc(sb, "delete_persona", { p_persona: personaId });
   },
 });
 
@@ -455,6 +491,7 @@ export const upsertEvent = (input: Parameters<typeof A.upsertEvent>[1]): Command
     const isNew = !before.events.some((x) => x.id === e.id);
     const row = {
       id: e.id,
+      kind: e.kind,
       slug: e.slug,
       name: e.name,
       description: e.description,
@@ -476,8 +513,10 @@ export const upsertEvent = (input: Parameters<typeof A.upsertEvent>[1]): Command
     };
     if (isNew) {
       must(await sb.from("events").insert(row));
-      // Menú base de Barra Express para el evento nuevo (el staff lo puede editar después).
-      must(await sb.from("bar_menu_items").insert(before.bar_menu.map((i) => ({ id: i.id, event_id: e.id, name: i.name, category: i.category, price: i.price, emoji: i.emoji }))));
+      // Menú base para el evento nuevo según su vertical (el staff lo puede editar después).
+      const sameKind = before.events.find((x) => x.id === before.active_event_id)?.kind === e.kind;
+      const menu = sameKind && before.bar_menu.length ? before.bar_menu : e.kind === "corporate" ? CORPORATE_MENU : BAR_MENU;
+      must(await sb.from("bar_menu_items").insert(menu.map((i) => ({ id: i.id, event_id: e.id, name: i.name, category: i.category, price: i.price, emoji: i.emoji }))));
     } else {
       must(await sb.from("events").update(row).eq("id", e.id));
     }
@@ -646,7 +685,7 @@ export const duplicateEvent = (eventId: UUID, startsAt: string): Command<{ event
   remote: async (sb, { event: e, rules }, before) => {
     must(
       await sb.from("events").insert({
-        id: e.id, slug: e.slug, name: e.name, description: e.description, venue_name: e.venue_name, venue_map_url: e.venue_map_url,
+        id: e.id, kind: e.kind, slug: e.slug, name: e.name, description: e.description, venue_name: e.venue_name, venue_map_url: e.venue_map_url,
         venue_layout_json: e.venue_layout_json, lineup_json: e.lineup_json, cover_url: e.cover_url, starts_at: e.starts_at, ends_at: e.ends_at,
         lobby_opens_at: e.lobby_opens_at, lobby_expires_at: e.lobby_expires_at, max_capacity: e.max_capacity, master_invite_code: e.master_invite_code,
         created_by: e.created_by, brand_id: e.brand_id, logo_url: e.logo_url, theme_primary: e.theme_primary, theme_accent: e.theme_accent,

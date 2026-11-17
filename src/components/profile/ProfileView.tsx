@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { BadgeCheck, Music2 } from "lucide-react";
-import { MOOD_TAGS, type MoodTag, type Profile } from "@/lib/types";
+import { BadgeCheck } from "lucide-react";
+import { MOOD_TAGS, type EventKind, type MoodTag, type Profile, type ProfilePersona } from "@/lib/types";
+import { vertical } from "@/lib/engine/verticals";
+import { ProFacts } from "./ProFacts";
 import type { AffinityResult } from "@/lib/engine/affinity";
 import { ageFrom, cn } from "@/lib/utils";
 import { MediaImage } from "@/components/media/MediaImage";
@@ -13,7 +15,8 @@ import { InstagramIcon } from "@/components/ui/brand-icons";
 import { instagramUrl } from "@/lib/engine/profile";
 
 interface ProfileViewProps {
-  profile: Profile;
+  /** Perfil o cara del evento (`faceOf`): con `persona` corporativa muestra el perfil profesional. */
+  profile: Profile & { persona?: ProfilePersona | null; face_kind?: EventKind };
   mood?: MoodTag | null;
   affinity?: AffinityResult | null;
   /** Botones de acción bajo la media (conectar, rompehielos, squad…) */
@@ -32,6 +35,8 @@ export function ProfileView({ profile, mood, affinity, actions, className }: Pro
   const [active, setActive] = useState(0);
   const track = useRef<HTMLDivElement>(null);
   const moodMeta = MOOD_TAGS.find((m) => m.id === mood);
+  const v = vertical(profile.face_kind);
+  const pro = profile.persona?.kind === "corporate" ? profile.persona : null;
 
   useEffect(() => {
     const el = track.current;
@@ -86,7 +91,7 @@ export function ProfileView({ profile, mood, affinity, actions, className }: Pro
 
         {affinity && (
           <span className="absolute right-3 top-6 inline-flex items-center gap-1 rounded-full bg-rouge px-2.5 py-1 font-display text-xs font-bold text-white shadow-glow-rouge">
-            <Music2 className="size-3.5" /> {affinity.musicPercent}% afinidad
+            <span aria-hidden>{vertical(affinity.kind).copy.affinityIcon}</span> {affinity.percent}% afinidad
           </span>
         )}
 
@@ -97,11 +102,12 @@ export function ProfileView({ profile, mood, affinity, actions, className }: Pro
             </span>
           )}
           <h2 className="flex items-center gap-2 text-[28px] leading-none">
-            {profile.full_name.split(" ")[0]}
-            <span className="font-sans text-2xl font-normal text-primary/80">{ageFrom(profile.birth_date)}</span>
+            {v.features.showAge ? profile.full_name.split(" ")[0] : profile.full_name}
+            {v.features.showAge && <span className="font-sans text-2xl font-normal text-primary/80">{ageFrom(profile.birth_date)}</span>}
             {profile.is_verified && <BadgeCheck className="size-6 text-squad" aria-label="Verificado" />}
           </h2>
-          <p className="mt-1 text-sm text-muted">@{profile.username}</p>
+          {/* En corporativo no se muestra el @ de la cuenta (puede delatar el perfil de la noche): cargo y empresa. */}
+          <p className="mt-1 text-sm text-muted">{pro ? [pro.job_title, pro.company].filter(Boolean).join(" · ") : `@${profile.username}`}</p>
         </div>
       </div>
 
@@ -125,6 +131,8 @@ export function ProfileView({ profile, mood, affinity, actions, className }: Pro
       )}
 
       {profile.bio && <p className="text-[15px] leading-relaxed text-primary/90">{profile.bio}</p>}
+
+      {pro && <ProFacts persona={pro} highlights={affinity?.highlights} />}
 
       {profile.music_genres.length > 0 && (
         <section>

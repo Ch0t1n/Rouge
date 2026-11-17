@@ -5,6 +5,15 @@
  */
 const MESSAGES: Record<string, string> = {
   not_authenticated: "Tu sesión expiró. Volvé a ingresar.",
+  // [v1.7] Verticales y perfiles adicionales
+  invalid_mood: "Ese mood no corresponde a este evento: elegí uno de la lista.",
+  persona_required: "Para este evento necesitás un perfil profesional.",
+  invalid_persona: "Ese perfil no es para este tipo de evento.",
+  kind_locked: "No se puede cambiar el tipo de evento: ya entró gente con perfiles y moods de este tipo.",
+  not_in_vertical: "Esta función no está disponible en este tipo de evento.",
+  persona_in_use: "Estás usando este perfil en un evento en curso: cambialo desde el evento antes de borrarlo.",
+  too_many_personas: "Podés tener hasta 5 perfiles además del principal.",
+  personas_pro_chk: "Contá tu cargo o tu empresa y elegí algo que buscás u ofrecés.",
   invalid_code: "Código o link inválido.",
   lobby_not_open: "El lobby todavía no abrió.",
   lobby_expired: "Este lobby ya cerró.",
@@ -82,7 +91,10 @@ export function friendlyError(e: unknown): string {
     if (/phone/.test(msg + (err.details ?? ""))) return "Ese teléfono ya está asociado a otra cuenta.";
     return "Eso ya existe.";
   }
-  if (err.code === "23514") return "Algún dato no es válido. Revisalo e intentá de nuevo.";
+  if (err.code === "23514") {
+    if (/personas_pro_chk/.test(msg)) return MESSAGES.personas_pro_chk;
+    return "Algún dato no es válido. Revisalo e intentá de nuevo.";
+  }
   if (err.code === "42501" || /row-level security/i.test(msg)) return "No tenés permiso para hacer esto.";
   if (/Failed to fetch|NetworkError|fetch failed/i.test(msg)) return "Sin conexión con el servidor. Probá de nuevo con mejor señal.";
   return "Algo salió mal. Probá de nuevo.";
