@@ -67,3 +67,32 @@ export function hit(store: RateStore, key: string, rule: Pick<RateRule, "limit" 
 export function clientIp(headers: { get(name: string): string | null }): string {
   return headers.get("x-forwarded-for")?.split(",")[0]?.trim() || headers.get("x-real-ip") || "unknown";
 }
+
+/**
+ * Límite por clave (IP o usuario) con ventana deslizante exacta, en memoria: lo usan las rutas de la API para frenar
+ * por clave de API o por usuario (además del límite por IP de `src/proxy.ts`). De "mejor esfuerzo" en serverless
+ * (cada instancia tiene su memoria): no reemplaza un límite en el borde (Vercel Firewall / WAF).
+ */
+export interface RateLimitRule {
+  /** Pedidos permitidos por ventana. */
+  limit: number;
+  /** Duración de la ventana en ms. */
+  windowMs: number;
+}
+
+export class RateLimiter {
+  private hits = new Map<string, number[]>();
+  constructor(private maxKeys = 10_000) {}
+
+  /** true si el pedido entra; false si superó el límite. */
+  take(key: string, rule: RateLimitRule, now = Date.now()): boolean {
+    const from = now - rule.windowMs;
+    const list = (this.hits.get(key) ?? []).filter((t) => t > from);
+    const ok = list.length < rule.limit;
+    if (ok) list.push(now);
+    this.hits.delete(key); // re-inserta al final: el Map queda ordenado por uso reciente
+    this.hits.set(key, list);
+    if (this.hits.size > this.maxKeys) this.hits.delete(this.hits.keys().next().value as string);
+    return ok;
+  }
+}

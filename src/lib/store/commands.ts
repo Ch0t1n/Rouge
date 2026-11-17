@@ -144,7 +144,9 @@ export const joinEvent = (userId: UUID, code: string, mood: MoodTag, serverEvent
     return r;
   },
   remote: async (sb, local) => {
-    const eventId = await rpc<UUID>(sb, "join_event", { p_code: code, p_mood: mood });
+    const eventId = await rpc<UUID | null>(sb, "join_event", { p_code: code, p_mood: mood });
+    // El servidor devuelve null (en vez de un error) ante un código inexistente para poder registrar el intento.
+    if (!eventId) throw new Error("invalid_code");
     return { ...local, eventId };
   },
 });

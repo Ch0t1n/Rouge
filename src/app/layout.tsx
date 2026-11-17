@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { connection } from "next/server";
 import { Plus_Jakarta_Sans, Space_Grotesk } from "next/font/google";
 import { AppShell } from "@/components/layout/AppShell";
 import { ServiceWorkerRegister } from "@/components/layout/ServiceWorkerRegister";
@@ -53,7 +54,10 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Render por request: Next aplica a sus scripts el nonce de la CSP que arma src/proxy.ts.
+  // Una página estática no tendría nonce y la CSP estricta la bloquearía.
+  await connection();
   return (
     <html lang="es-AR" className={`${display.variable} ${body.variable}`}>
       <body>

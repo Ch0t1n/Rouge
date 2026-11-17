@@ -47,12 +47,13 @@ Seguridad). Guion de 7 minutos en [Demo comercial](../producto/demo-comercial.md
 |---|---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | Sí | Navegador | *Project Settings → API → Project URL* |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Sí | Navegador | *Project Settings → API → anon public* |
-| `NEXT_PUBLIC_APP_URL` | Con Instagram o API | Servidor | `https://app.tudominio.com` (vuelta del OAuth y links/QR que devuelve la API) |
+| `NEXT_PUBLIC_APP_URL` | Con Instagram o API | Servidor | `https://app.tudominio.com` (vuelta del OAuth y links/QR que devuelve la API). **Obligatoria en producción**: sin ella Instagram queda deshabilitado (el origen nunca se toma del header `Host`). |
 | `NEXT_PUBLIC_AUTH_GOOGLE` | No | Navegador | `1` para mostrar "Continuar con Google" |
 | `NEXT_PUBLIC_AUTH_INSTAGRAM` | No | Navegador | `1` para mostrar Instagram (login, conectar e importar fotos) |
 | `INSTAGRAM_APP_ID` | Con Instagram | Servidor | App de Meta |
 | `INSTAGRAM_APP_SECRET` | Con Instagram | Servidor | App de Meta (secreto) |
 | `SUPABASE_SERVICE_ROLE_KEY` | Con Instagram o API | **Solo servidor** | *Project Settings → API → service_role*. Nunca con prefijo `NEXT_PUBLIC_`. |
+| `INSTAGRAM_TOKEN_KEY` | Recomendada con Instagram | **Solo servidor** | Secreto largo para cifrar los tokens de Instagram en la base (AES-256-GCM). Generarlo con `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`. Si se cambia, cada usuario reconecta Instagram. |
 
 Opcionales (tests o casos especiales): `INSTAGRAM_OAUTH_URL`, `INSTAGRAM_TOKEN_URL`, `INSTAGRAM_GRAPH_URL`,
 `INSTAGRAM_MEDIA_HOSTS`, `INSTAGRAM_PLACEHOLDER_EMAIL_DOMAIN`.
@@ -105,14 +106,24 @@ envían sin query ni fragmento y con `/join/[code]`, `/u/[username]` y `/chat/[c
 ### 6. Dominio y verificación final
 
 1. Asignar `app.tudominio.com` en Vercel.
-2. Recorrer el [checklist de lanzamiento](./checklist-lanzamiento-v1.md).
+2. Verificar los headers de seguridad: `curl -sI https://app.tudominio.com/app` tiene que mostrar
+   `content-security-policy` (con `nonce-…` y el dominio de Supabase), `strict-transport-security`, `x-frame-options: DENY`
+   y `permissions-policy`. Un escáner gratuito (securityheaders.com o MDN HTTP Observatory) sirve de control externo.
+3. **Límite de pedidos en el borde:** el de `/api/*` es en memoria por instancia. Para un evento grande, sumar una regla en
+   *Vercel → Firewall* (por ejemplo 60 pedidos/min por IP a `/api/instagram/*`).
+4. Reportes de CSP: aparecen en los logs de Vercel como `[csp] <directiva> <recurso bloqueado> <página>`. Si aparece un
+   origen legítimo nuevo, se agrega en `src/lib/security/headers.ts`.
+5. Recorrer el [checklist de lanzamiento](./checklist-lanzamiento-v1.md).
 3. Opcional: correr las pruebas de integración contra un proyecto de **staging** (nunca contra producción):
    ver [Testing](./testing.md).
 
 ## Actualizar el esquema en producción
 
-`schema.sql` es idempotente: se vuelve a ejecutar completo en el SQL Editor. Antes, probarlo en staging y correr
-`npm run test:integration` contra staging.
+`schema.sql` es idempotente: se vuelve a ejecutar completo en el SQL Editor. Antes, `npm test` (incluye los ataques a RLS
+sobre PGlite), probarlo en staging y correr `npm run test:integration` contra staging.
+
+Nunca agregar el schema `private` a *Project Settings → API → Exposed schemas*: ahí viven los helpers de permisos y no
+tienen que poder llamarse por la API.
 
 ## Costos de referencia
 

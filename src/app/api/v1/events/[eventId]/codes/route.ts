@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { apiAdmin, authenticate, handler, issueCodes, listCodes, parseListQuery, publicBase, resolveEvent, serializeCode, validateIssueBody, ApiError } from "@/lib/api/v1";
+import { apiAdmin, authenticate, handler, issueCodes, listCodes, parseListQuery, publicBase, resolveEvent, serializeCode, validateIssueBody, readApiBody } from "@/lib/api/v1";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,9 +15,7 @@ export const POST = handler<Ctx>(async (req, { params }) => {
   const db = apiAdmin();
   const key = await authenticate(db, req);
   const event = await resolveEvent(db, key, (await params).eventId, "codes:write");
-  const body = await req.json().catch(() => {
-    throw new ApiError("validation_error", "El body no es JSON válido.");
-  });
+  const body = await readApiBody(req);
   const rows = await issueCodes(db, key, event.id, validateIssueBody(body));
   const base = publicBase(req);
   const created = rows.filter((r) => r.created).length;

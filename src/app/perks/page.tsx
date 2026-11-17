@@ -16,6 +16,7 @@ import { DynamicQr } from "@/components/perks/DynamicQr";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { useIsDesktop } from "@/lib/hooks/useMediaQuery";
+import { isSafeCtaLink } from "@/lib/security/paths";
 
 const TYPE: Record<UserPerkQR["perk_type"], { label: string; icon: string }> = {
   free_drink: { label: "Trago gratis", icon: "🍹" },
@@ -117,7 +118,7 @@ function Wallet() {
                     </p>
                   </div>
                 </div>
-                {b.cta_label && b.cta_link && !expired && (
+                {b.cta_label && isSafeCtaLink(b.cta_link) && !expired && (
                   <Link href={b.cta_link} className={cn(buttonVariants({ size: "sm", variant: b.is_flash_promo ? "vip" : "glass" }), "mt-3")}>
                     {b.cta_label}
                   </Link>

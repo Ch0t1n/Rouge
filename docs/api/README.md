@@ -185,11 +185,12 @@ Formato: `{ "error": { "code": "…", "message": "…" } }`.
 | 404 | `event_not_found` · `code_not_found` | El evento no existe o no es de esta clave; el código no existe en ese evento. |
 | 409 | `code_already_used` | Se quiso anular un código que ya se usó. |
 | 422 | `validation_error` | Body o parámetros inválidos (el `message` dice cuál). |
+| 429 | `rate_limited` | Demasiados pedidos (300/min por IP, 600/min por clave; QR: 120/min por IP). Esperá lo que indica `Retry-After`. |
 | 500 / 503 | `internal_error` · `not_configured` | Error del servidor: reintentá con espera. |
 
 ## 7. Límites y buenas prácticas
 
-- Hasta **1000 códigos por request**; para tiradas grandes, mandá varios lotes.
+- Hasta **1000 códigos por request** (body de hasta 512 KB); para tiradas grandes, mandá varios lotes.
 - `external_ref`: 1–120 caracteres, único por evento. `label`: hasta 60.
 - Los códigos tienen 10 caracteres de un alfabeto sin 0/O/1/I (se pueden dictar en la puerta) y ≈ 2^50 combinaciones.
 - El código es **personal**: al entrar queda asociado al perfil de quien lo usó.
@@ -200,4 +201,6 @@ Formato: `{ "error": { "code": "…", "message": "…" } }`.
 
 La API corre en el mismo despliegue de la app y necesita, en el servidor:
 `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` y `NEXT_PUBLIC_APP_URL` (dominio que va en `join_url` y `qr_url`).
+En producción `NEXT_PUBLIC_APP_URL` es obligatoria: sin ella la API responde `503 not_configured` (los links y QRs nunca se
+arman con el header `Host` del pedido, que podría apuntar a otro dominio).
 Ver [Puesta en producción](../operaciones/puesta-en-produccion.md).

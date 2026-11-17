@@ -22,6 +22,7 @@
  * (datos existentes y RLS siguen intactos).
  */
 import type { RougeEvent, RougeState, StaffAssignment, StaffRole, UUID } from "@/lib/types";
+import { isSafeInternalPath } from "@/lib/security/paths";
 
 export type Role = StaffRole | "attendee" | "guest";
 
@@ -203,8 +204,8 @@ export function permissionForPath(pathname: string): Permission | null {
 
 export const NO_PERMISSION = "Tu rol no tiene permiso para esto.";
 
-/** Rutas internas seguras para redirigir después del login (evita open redirects). */
-export const safeNext = (n: string | null | undefined): string | null => (n && n.startsWith("/") && !n.startsWith("//") && !n.startsWith("/login") ? n : null);
+/** Rutas internas seguras para redirigir después del login (evita open redirects; ver security/paths.ts). */
+export const safeNext = (n: string | null | undefined): string | null => (isSafeInternalPath(n) && !n.startsWith("/login") ? n : null);
 
 /**
  * A dónde va cada usuario al entrar: al `next` pedido si su rol puede verlo,

@@ -45,6 +45,7 @@ node scripts/generate-promo.cjs [app] [url demo] # piezas 1080×1350 para organi
 
 ```
 src/
+  proxy.ts                # CSP con nonce por request (Next 16: "proxy" = ex middleware)
   app/                    # Rutas (App Router)
     layout.tsx            # Fuentes, metadata PWA, RougeProvider, AppShell
     page.tsx              # Landing PÚBLICA 3D (asistentes): solo sus beneficios. SIN demo, CRM, ventas ni planes
@@ -54,6 +55,7 @@ src/
     login/                # Login por tipo de usuario: Asistente / Equipo. Supabase: magic link, Google, Instagram; demo: persona/rol
       instagram/          # Vuelta del login con Instagram: canjea #token_hash por la sesión (verifyOtp)
     api/instagram/        # OAuth de Instagram (SOLO servidor): start, callback, media (listar/importar), DELETE, data-deletion
+    api/csp-report/       # Reportes de violaciones de la CSP (solo log)
     api/v1/               # API para ticketeras (SOLO servidor): events, events/[eventId]/codes(/[code]), qr/[code], openapi.json
     onboarding/           # Alta del perfil persistente en 4 pasos (guarda progresivamente)
     profile/              # "Así te ven" + completitud · profile/edit (editor completo)
@@ -129,11 +131,13 @@ src/
       monetization.ts     # Trago desde el chat, Mesa VIP dividida, cola virtual, Wrapped
       engine.test.ts      # Tests de invariantes de negocio
     demo/script.ts        # Guion de la demo (7 pasos), roles demo y openAs(rol, ruta)
+    security/             # headers.ts (CSP + headers), paths.ts (redirecciones/links seguros), rateLimit.ts, api.ts
     mock/seed.ts          # Motor de Mock Data (fechas relativas a "ahora")
     store/RougeContext.tsx# Estado global: Modo Demo (localStorage) o Supabase (sesión + carga + Realtime); exec()
     store/commands.ts     # Comandos: regla local del motor + contraparte remota (RPC/tabla) de CADA acción
     store/commands.test.ts# Contrato cliente ↔ schema.sql (RPCs, parámetros, tablas, columnas, cargador)
     store/supabase.integration.test.ts # Flujo completo con usuarios reales, RLS, Realtime y Storage (se saltea sin credenciales)
+    store/schema.security.test.ts      # schema.sql real en PGlite + ~50 ataques a RLS/RPCs (corre en npm test)
     store/hooks.ts        # useRequireProfile() → /login (Supabase sin sesión) o /onboarding (sin perfil)
     supabase/sync.ts      # fetchRemoteState() (RLS) + subscribeRealtime()
     supabase/errors.ts    # friendlyError(): excepciones de RPC/RLS → mensajes en español
@@ -149,6 +153,7 @@ src/
     media/compress.ts     # Compresión WebP, color dominante, transcodificación del loop (sin audio)
     media/mediaStore.ts   # Blobs en IndexedDB (`idb:<uuid>`) para el Modo Demo
     media/upload.ts       # uploadMedia(): Supabase Storage si hay sesión, si no IndexedDB
+.claude/skills/           # Skills de Claude Code (auditorías, QA, diseño, seguridad); ver su README.md
 docs/                     # Documentación: producto, técnica, operaciones y api/ (guía para ticketeras)
 e2e/                      # E2E Playwright (demo, Supabase, Instagram con API imitada) + env.cjs + run.cjs
 CHANGELOG.md              # Historial de versiones (SemVer); pendientes conocidos
@@ -291,6 +296,13 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
 21. **Cobros.** Ningún cliente acredita pagos: `confirm_order_payment` es solo `service_role` y el servidor la llama tras
    verificar el pago con la API de Mercado Pago (token de ESA marca, external_reference, monto, moneda). Tokens siempre
    cifrados (`MP_TOKEN_KEY`). Un pedido `awaiting_payment` no avanza (`not_paid`) ni suma gasto. En demo: `payOrderDemo`.
+22. **Seguridad (no romper).** Helpers de permisos SQL en el schema `private` (no expuesto por la API): referenciarlos
+    como `private.<helper>(…)` y nunca crear helpers con ids arbitrarios en `public`. Cada tabla nueva: RLS + `revoke` +
+    `grant` solo de las columnas que el cliente escribe; lo sensible (estados, totales, dueños, pines) va por RPC. Toda
+    política o RPC nueva suma su ataque en `src/lib/store/schema.security.test.ts`. La CSP está en
+    `src/lib/security/headers.ts`: un origen externo nuevo se agrega ahí con su motivo (sin `*` ni CDNs). El root layout es
+    dinámico por el nonce. Redirecciones con `safeNext`/`safeInternalPath` (`src/lib/security/paths.ts`); links que vienen de
+    datos (blasts) con `isSafeCtaLink`. Rutas `/api/*` nuevas: `rateLimited()` + `readJsonBody()` (`src/lib/security/api.ts`).
 8. **Guardado sincrónico.** `run()` persiste en el acto (y hay flush en `pagehide`): una acción
    nunca se pierde por cerrar la PWA o navegar inmediatamente.
 
@@ -394,6 +406,39 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
 - **Ergonomía:** botones ≥ 44px (`min-h-touch`), modales `BottomSheet`, una mano.
 - No inventar colores nuevos: si hace falta un estado, usar opacidades de los tokens.
 - Respetar `prefers-reduced-motion` (ya global en `globals.css`).
+
+## Skills y pulido seguro
+
+En `.claude/skills/` hay 14 skills importadas de `rampstackco/claude-skills` (MIT). La procedencia, la revisión de
+seguridad y la política para sumar más están en `.claude/skills/README.md`. Son guías genéricas: **este archivo
+manda**. Si una skill sugiere algo que contradice una regla de arriba (motor puro, RLS, privacidad, tokens de
+diseño), gana la regla de ROUGE.
+
+**Cuándo usar cada una en ROUGE**
+
+| Tarea | Skill | Lo que importa en ROUGE |
+|---|---|---|
+| Revisar un diff o PR, debuggear | `code-review-web` | Regla de negocio fuera de `engine/` o UI que llama al motor sin `exec(C.…)` = bloqueante. Comando sin contraparte en `schema.sql` ni en `commands.test.ts` = bloqueante. |
+| Seguridad / pre-lanzamiento | `security-baseline` | RLS en toda tabla, `security definer` con `search_path`, service role solo en `/api/*`, nada secreto con `NEXT_PUBLIC_`. CSP en `next.config.ts`: probarla en modo *Report-Only* antes (Spotify, Supabase, Meta y blobs de IndexedDB). |
+| Accesibilidad | `accessibility-audit`, `frontend-component-build` | `min-h-touch` (44px), foco y ESC en `BottomSheet`, `aria-live` en `Toaster`/`LiveNotifications`, `prefers-reduced-motion`. El rescate tiene que andar con una mano, con lector de pantalla y sin banners encima. |
+| Rendimiento | `performance-optimization`, `media-asset-management` | Pensar en baja señal: `compressImage()` antes de subir, `blur_color` como placeholder, Spotify lazy, SW cache-first. Nunca data URLs en el estado. |
+| UI nueva o pulido visual | `design-standards`, `design-system` | Solo tokens de "Velvet & Laser" (sin colores nuevos). Verificar contraste AA de `text-muted` sobre `surface`. Probar a 375px dentro del shell `max-w-md`, y `/admin` también en desktop. |
+| Formularios | `form-strategy`, `onboarding-wizard-design` | Validar en el motor (mismo mensaje en demo y Supabase) y en SQL; `type`/`autocomplete` correctos; input ≥16px (sin zoom en iOS). El onboarding guarda de a poco y nunca pierde lo cargado. |
+| Tests de una feature o bug | `test-case-authoring`, `qa-testing` | Nivel más bajo que alcance: invariantes en `engine.test.ts`, contrato en `commands.test.ts`, RLS en integración, flujo en `e2e/`. Evidencia = salida real del runner. |
+| Dependencias | `dependency-management` | Por defecto no agregar paquetes. Si hace falta, checklist de la skill + impacto en bundle + `npm audit`. |
+| Operación de la noche | `monitoring-and-alerting` | Rutas críticas: ingreso, rescate, pedidos de barra y Realtime. Ver `docs/operaciones/checklist-lanzamiento-v1.md`. |
+
+**Reglas para pulir sin romper**
+
+- Un cambio por vez y con alcance claro. Los refactors grandes van en su propio commit, nunca mezclados con fixes.
+- Antes de tocar algo, leer su test. Después: `npm run typecheck && npm test && npm run build`. Si tocaste
+  `schema.sql` o `commands.ts`, también `npm run test:integration` (o decir que no se pudo correr y por qué).
+- Nunca cambiar una aserción, un valor esperado o un fixture para que un test pase, salvo que el valor esperado
+  estuviera mal (y decirlo).
+- Las auditorías (a11y, rendimiento, seguridad) se entregan como hallazgos priorizados. Si falta una medición
+  (Lighthouse, lector de pantalla, dispositivo real), se dice que falta: no se inventan números.
+- Mejoras de UX no pueden quitar salvaguardas: bloqueos mutuos, mensaje genérico "no disponible", teléfono
+  privado, audiencia manual de pines, rescate en 1 toque.
 
 ## Roadmap
 

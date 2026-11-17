@@ -91,6 +91,11 @@ const MESSAGES: Record<string, string> = {
   is_staff: "No podés expulsar a alguien del equipo: primero sacalo del equipo.",
   event_has_attendees: "Ya entró gente a este evento: no se puede eliminar (sus matches y chats se conservan). Podés cerrar el lobby desde el editor.",
   event_has_payments: "Este evento tiene cobros registrados con Mercado Pago: no se puede eliminar.",
+  too_many_attempts: "Probaste demasiados códigos. Esperá 15 minutos e intentá de nuevo.",
+  slow_down: "Vas muy rápido. Esperá unos minutos antes de mandar más solicitudes.",
+  invalid_blast: "Revisá el aviso: título (hasta 80), mensaje (hasta 280) y duración de la Flash Promo.",
+  invalid_cta_link: "El link del botón tiene que ser una sección de Rouge Pass (por ejemplo /bar) o una dirección https://.",
+  invalid_song: "Escribí el nombre del tema.",
 };
 
 export interface SupabaseLikeError {

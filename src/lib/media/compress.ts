@@ -25,6 +25,8 @@ export async function compressImage(file: File, preset: ImagePreset = "profile")
     useWebWorker: true,
     // Privacidad: la recodificación por canvas a WebP NO conserva EXIF (GPS, modelo del teléfono, fecha).
     preserveExif: false,
+    // El worker importa la librería: desde nuestro dominio (la CSP bloquea el CDN por defecto, jsdelivr).
+    libURL: new URL("/vendor/browser-image-compression.js", window.location.origin).href,
     fileType: "image/webp",
     initialQuality: 0.82,
   });

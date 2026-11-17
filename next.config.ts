@@ -1,46 +1,11 @@
 import type { NextConfig } from "next";
+import { securityHeadersFor } from "./src/lib/security/headers";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-const supabaseHost = supabaseUrl ? new URL(supabaseUrl).host : "";
-const dev = process.env.NODE_ENV !== "production";
 /**
  * El modo presentador de la demo (/demo/presentador) muestra la app en iframes del MISMO sitio: solo en el Modo Demo
  * (sin Supabase) se permite enmarcar páginas propias. En producción (con Supabase) nada se puede enmarcar (DENY).
  */
-const demoFrames = !supabaseUrl;
-
-/** Content-Security-Policy: solo orígenes que la app usa de verdad. */
-const csp = [
-  "default-src 'self'",
-  // Next inyecta scripts inline de arranque; 'unsafe-eval' solo en desarrollo (React Refresh).
-  `script-src 'self' 'unsafe-inline'${dev ? " 'unsafe-eval'" : ""}`,
-  "style-src 'self' 'unsafe-inline'",
-  "font-src 'self' data:",
-  // Fotos: Storage de Supabase, CDN de Instagram (importar), avatares demo, blobs/data de la compresión local.
-  "img-src 'self' data: blob: https:",
-  "media-src 'self' data: blob: https:",
-  `connect-src 'self'${supabaseHost ? ` https://${supabaseHost} wss://${supabaseHost}` : ""}${dev ? " ws: http://localhost:*" : ""}`,
-  "frame-src 'self' https://open.spotify.com",
-  "worker-src 'self' blob:",
-  "manifest-src 'self'",
-  "object-src 'none'",
-  "base-uri 'self'",
-  "form-action 'self' https://auth.mercadopago.com https://www.mercadopago.com.ar https://api.instagram.com https://www.instagram.com",
-  `frame-ancestors ${demoFrames ? "'self'" : "'none'"}`,
-  ...(dev ? [] : ["upgrade-insecure-requests"]),
-].join("; ");
-
-const securityHeaders = [
-  { key: "Content-Security-Policy", value: csp },
-  { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
-  { key: "X-Frame-Options", value: demoFrames ? "SAMEORIGIN" : "DENY" },
-  { key: "X-Content-Type-Options", value: "nosniff" },
-  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  // Cámara solo para el propio sitio (escáner de puerta y barra, loop del perfil); nada de geolocalización ni micrófono de terceros.
-  { key: "Permissions-Policy", value: "camera=(self), microphone=(self), geolocation=(), payment=(self), usb=(), interest-cohort=()" },
-  { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" },
-  { key: "X-DNS-Prefetch-Control", value: "on" },
-];
+const demoFrames = !process.env.NEXT_PUBLIC_SUPABASE_URL;
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
@@ -53,7 +18,30 @@ const nextConfig: NextConfig = {
   },
   async headers() {
     return [
-      { source: "/:path*", headers: securityHeaders },
+      // Headers de seguridad en TODAS las respuestas (la CSP con nonce la pone src/proxy.ts).
+      { source: "/:path*", headers: securityHeadersFor({ allowSelfFraming: demoFrames }) },
+      {
+        // La API nunca se cachea (respuestas por usuario, tokens, fotos privadas). El QR público queda afuera: su ruta
+        // decide (inmutable si sale bien, no-store si falla). Ojo: estos headers PISAN a los que pone la ruta.
+        source: "/api/:path((?!v1/qr/).*)",
+        headers: [{ key: "Cache-Control", value: "no-store, max-age=0" }],
+      },
+      {
+        // QRs de entradas y especificación OpenAPI: se embeben desde webs y mails de las ticketeras (otro origen).
+        // Va DESPUÉS de los anteriores: en Next gana el último header que coincide.
+        source: "/api/v1/qr/:code",
+        headers: [
+          // La caché la pone la ruta (inmutable solo si el QR se generó bien).
+          { key: "Cross-Origin-Resource-Policy", value: "cross-origin" },
+        ],
+      },
+      {
+        source: "/api/v1/openapi.json",
+        headers: [
+          { key: "Cross-Origin-Resource-Policy", value: "cross-origin" },
+          { key: "Cache-Control", value: "public, max-age=300" },
+        ],
+      },
       {
         // The service worker must never be served stale, or PWA updates get stuck.
         source: "/sw.js",
