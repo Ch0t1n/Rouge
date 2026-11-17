@@ -299,7 +299,9 @@ export function saveEventFromBuilder(state: RougeState, actorId: UUID, input: Ev
   // upsertEvent valida y asigna created_by/marca contra quien "crea": se ejecuta como la organización dueña.
   const asOrg = { ...state, current_user_id: orgId };
   const { features, lists, organization_id, lifecycle_status, id: _id, ...base } = input;
-  const r = upsertEvent(asOrg, { ...(existing ?? {}), ...base, ...(existing ? { id: existing.id } : {}) }, now);
+  // Slug vacío → se arma con el nombre (el campo del creador es opcional).
+  const slug = base.slug?.trim() || existing?.slug || undefined;
+  const r = upsertEvent(asOrg, { ...(existing ?? {}), ...base, slug, ...(existing ? { id: existing.id } : {}) }, now);
   if (!r.ok) return r;
   const event: RougeEvent = { ...r.data, created_by: existing && !isPlatformAdmin(state, actorId) ? existing.created_by : organization_id, features: resolveFeatures(features), lifecycle_status };
   let next: RougeState = { ...r.state, current_user_id: state.current_user_id, events: r.state.events.map((e) => (e.id === event.id ? event : e)) };

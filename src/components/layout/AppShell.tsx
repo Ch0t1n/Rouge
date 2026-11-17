@@ -6,6 +6,8 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { CalendarX2 } from "lucide-react";
 import { activeEvent, getProfile } from "@/lib/engine/selectors";
 import { canAccessPath, ROLE_META } from "@/lib/engine/roles";
+import { isPathEnabled } from "@/lib/engine/features";
+import { useEventFeatures } from "@/lib/store/hooks";
 import { useRouge } from "@/lib/store/RougeContext";
 import { Toaster } from "@/components/ui/toaster";
 import { BottomNav, NAV_ROUTES } from "./BottomNav";
@@ -42,7 +44,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const opsPage = pathname === "/ops" || pathname.startsWith("/ops/") || pathname.startsWith("/superadmin");
   const chromeless = CHROMELESS.some((p) => pathname === p || pathname.startsWith(p + "/"));
   const wide = WIDE.some((p) => pathname === p || pathname.startsWith(p + "/"));
-  const { state, mode, signedIn } = useRouge();
+  const { state, mode, signedIn, notify } = useRouge();
   const [collapsed, setCollapsed] = useState(false);
   useEffect(() => {
     try {
@@ -81,6 +83,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   const sidebar = !expanded && !chromeless && !needsLogin && !opsPage;
   // Aislamiento de plataformas (app del asistente y consola global; /admin y /ops tienen su propio chrome).
   const access = canAccessPath(state, state.active_event_id, state.current_user_id, pathname);
+  // Módulos del evento (v1.8): una ruta de un módulo apagado vuelve a /app con un aviso sutil.
+  const features = useEventFeatures();
+  const moduleOff = !expanded && !chromeless && !!activeEvent(state) && !isPathEnabled(features, pathname);
+  useEffect(() => {
+    if (!moduleOff) return;
+    notify({ tone: "info", title: "Esa sección no está activa en este evento", duration: 2600 });
+    router.replace("/app");
+  }, [moduleOff, notify, router]);
   const blocked = !access.ok && access.surface !== "owner_admin" && access.surface !== "staff_ops" && !!getProfile(state, state.current_user_id) ? access : null;
   // El ancho del sidebar vive en una variable CSS de <html> para que los elementos fixed (portales incluidos) lo respeten.
   useEffect(() => {
@@ -125,7 +135,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         )}
       >
         {sidebar ? (
-          <div className={cn("mx-auto w-full", wide ? "md:max-w-7xl md:px-4 lg:px-6" : "md:max-w-3xl md:px-4")}>{needsLogin ? null : blocked ? <WrongSurface redirect={blocked.redirect} /> : missingEvent ? <NoEvent admin={false} /> : children}</div>
+          <div className={cn("mx-auto w-full", wide ? "md:max-w-7xl md:px-4 lg:px-6" : "md:max-w-3xl md:px-4")}>{needsLogin || moduleOff ? null : blocked ? <WrongSurface redirect={blocked.redirect} /> : missingEvent ? <NoEvent admin={false} /> : children}</div>
         ) : needsLogin ? null : blocked ? (
           <WrongSurface redirect={blocked.redirect} />
         ) : missingEvent ? (

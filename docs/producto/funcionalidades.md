@@ -384,3 +384,11 @@ cliente y para la barra. Es un comprobante interno: la factura la emite cada com
 - Cola virtual de la barra con aviso cuando el pedido está listo.
 - Rouge Wrapped: la noche en una tarjeta 9:16 para Stories.
 
+## 32. Creador modular de eventos y módulos
+
+- ROUGE HQ crea cada evento con un asistente de 5 pasos (datos, fechas/aforo/listas, line-up y estética, módulos,
+  revisión) y lo asigna a la organización dueña. Presets: Fiesta Completa, Solo Ticketera + Puerta, Solo Barra + QR
+  Drops, Bar / Previa Social, Evento Privado / Corporativo.
+- Cada módulo se prende o apaga en vivo; la app del asistente, el panel y la operación se adaptan al instante.
+- Autogestión: si ROUGE la habilita, el dueño/a usa el mismo creador desde /admin/events.
+

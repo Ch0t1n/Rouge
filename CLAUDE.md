@@ -246,6 +246,11 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
     se dibujan con `DynamicQr` (nunca `QrBlock` para credenciales de la app). Secreto del evento en `event_secrets`
     (sin RLS para clientes). Puerta: `door_scan` (terminal, listas free, atómico) y `door_reconcile` (offline,
     `engine/doorOffline.ts` + `lib/offline/doorVault.ts`). Barra: `redeem_dynamic_qr`.
+15d. **Módulos por evento (v1.8).** `EventFeatureFlags` en `engine/features.ts` (presets, `resolveFeatures` con
+    dependencias, `ROUTE_FEATURES`). Toda pantalla/acción nueva de un módulo: agregar su ruta a `ROUTE_FEATURES`, el
+    guarda `featureOn(...)` en el motor y `event_feature(...)` en su RPC. Hook `useEventFeatures()` (`store/hooks`).
+    Crear eventos y tocar módulos: `canManageModules` ⇔ `can_manage_modules` (ROUGE HQ o autogestión);
+    `EventBuilderWizard` es el único creador (en `/superadmin` y, con autogestión, en `/admin/events`).
 16. **Todo link se comparte con QR.** Usar `useShare()` / `ShareButton` (`components/share`) para cualquier link
     nuevo (evento, códigos, Squad, perfil). Links relativos se completan con el dominio actual.
 17. **Login social.** Google = proveedor nativo de Supabase (`signInWithOAuth`, vuelve a `/login`). Instagram = OAuth

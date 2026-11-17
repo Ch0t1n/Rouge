@@ -4,6 +4,24 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Sin publicar]
 
+### Agregado — Creador modular de eventos y módulos por evento (v1.8)
+- **Módulos por evento** (`EventFeatureFlags`, `engine/features.ts`): 13 interruptores en 4 categorías (acceso y
+  puerta, social, grupos y mapa, barra y beneficios) con **dependencias** (regalar tragos exige Barra + Chat; Vaquita
+  exige Squads; listas free exige Entradas) y **5 presets** de 1 clic. Eventos anteriores: todo prendido.
+- **La app se adapta**: barra inferior y sidebar muestran solo los módulos prendidos; una ruta apagada vuelve a `/app`
+  con un aviso; el panel del dueño/a marca las secciones apagadas ("Off") y no las abre; `/ops` igual. Cada acción
+  del motor y su RPC valida su módulo (`event_feature` en SQL, error `feature_disabled`).
+- **Creador modular** (`EventBuilderWizard`): datos, link `/join`, organización dueña, ciclo de vida
+  (borrador/preventa/en vivo/terminado), aforo, listas free (hora límite y precio tardío), line-up, estética y módulos.
+  Hoy lo usa **ROUGE HQ** en `/superadmin` → *Creador de eventos* (también módulos en vivo y autogestión por
+  organización). Con `allow_owner_self_service` el dueño/a usa **el mismo componente** desde `/admin/events`.
+- SQL: `events.features`, `events.lifecycle_status`, `organization_settings`, `event_feature`, `can_manage_modules`,
+  `resolve_features`, `builder_save_event`, `set_event_features`, `sa_set_owner_self_service`; `join_event` rechaza
+  borradores (`event_draft`).
+
+### Cambiado
+- Crear eventos ya no está abierto a cualquier cuenta: es de ROUGE HQ o de organizaciones con autogestión.
+
 ### Agregado — Experiencia en PC y tablet
 - **Layout fluido**: en tablet/PC (≥ 768px) la app del asistente deja el "teléfono recortado": sidebar izquierdo
   fijo (riel de íconos en tablet, expandible/colapsable en PC con **Ctrl/⌘ + B**), indicadores en vivo (bandeja,

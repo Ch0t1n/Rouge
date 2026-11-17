@@ -10,6 +10,8 @@ import { getProfile } from "@/lib/engine/selectors";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
+import { isPathEnabled } from "@/lib/engine/features";
+import { useEventFeatures } from "@/lib/store/hooks";
 
 export const ADMIN_NAV = [
   { href: "/admin", label: "Resumen", icon: BarChart3 },
@@ -35,12 +37,16 @@ export function AdminChrome({ children }: { children: ReactNode }) {
   const access = (href: string) => canAccessPath(state, state.active_event_id, state.current_user_id, href);
   const allowed = signedIn && access(pathname).ok;
   const nav = ADMIN_NAV.filter((n) => can(permissionForPath(n.href)!) && access(n.href).ok);
+  // Módulos del evento activo (v1.8): las secciones de un módulo apagado se ven atenuadas y no se abren.
+  const features = useEventFeatures();
+  const moduleOn = (href: string) => isPathEnabled(features, href);
   const me = getProfile(state, state.current_user_id);
   const meta = ROLE_META[role];
 
   const shortcuts = useAdminShortcuts(nav.map((n) => n.href));
 
   if (!allowed) return <NoAccess />;
+  if (!moduleOn(pathname)) return <ModuleOff />;
   // La Pantalla LED va a pantalla completa (HDMI), sin chrome.
   if (pathname.startsWith("/admin/live-wall") || pathname.startsWith("/admin/print-codes") || pathname.startsWith("/admin/print-ticket")) return <>{children}</>;
 
@@ -78,10 +84,12 @@ export function AdminChrome({ children }: { children: ReactNode }) {
               href={href}
               aria-current={isActive(href) ? "page" : undefined}
               aria-keyshortcuts={i < 9 ? `Alt+${i + 1}` : undefined}
-              className={cn("group flex min-h-touch items-center gap-3 rounded-xl px-3 text-sm font-medium transition", isActive(href) ? "bg-vip/15 text-vip" : "text-muted hover:bg-white/5 hover:text-primary")}
+              title={moduleOn(href) ? undefined : "Módulo desactivado para este evento"}
+              className={cn("group flex min-h-touch items-center gap-3 rounded-xl px-3 text-sm font-medium transition", isActive(href) ? "bg-vip/15 text-vip" : "text-muted hover:bg-white/5 hover:text-primary", !moduleOn(href) && "opacity-40")}
             >
               <Icon className="size-[18px]" />
               <span className="flex-1">{label}</span>
+              {!moduleOn(href) && <span className="rounded-md bg-white/10 px-1.5 font-display text-[10px] font-bold uppercase">Off</span>}
               {i < 9 && <kbd className="hidden rounded-md border border-white/10 px-1.5 font-display text-[10px] text-muted/70 group-hover:inline xl:inline">⌥{i + 1}</kbd>}
             </Link>
           ))}
@@ -125,7 +133,7 @@ export function AdminChrome({ children }: { children: ReactNode }) {
                 key={href}
                 href={href}
                 aria-current={isActive(href) ? "page" : undefined}
-                className={cn("flex min-h-[40px] shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-semibold", isActive(href) ? "bg-vip text-background" : "bg-white/[0.05] text-muted")}
+                className={cn("flex min-h-[40px] shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-semibold", isActive(href) ? "bg-vip text-background" : "bg-white/[0.05] text-muted", !moduleOn(href) && "opacity-40 line-through")}
               >
                 <Icon className="size-4" /> {label}
               </Link>
@@ -196,6 +204,24 @@ function useAdminShortcuts(hrefs: string[]) {
     </BottomSheet>
   );
   return { sheet, open: () => setHelp(true) };
+}
+
+/** Sección de un módulo apagado en el evento activo (lo configura ROUGE o el dueño/a con autogestión). */
+function ModuleOff() {
+  return (
+    <main className="grid min-h-[70vh] place-items-center px-5">
+      <div className="glass w-full max-w-md rounded-3xl p-8 text-center">
+        <span className="mx-auto grid size-14 place-items-center rounded-2xl bg-white/10 text-muted">
+          <Lock className="size-6" />
+        </span>
+        <h1 className="mt-5 text-2xl">Módulo desactivado para este evento</h1>
+        <p className="mt-2 text-sm text-muted">Esta sección no forma parte de la configuración del evento activo. Elegí otro evento o pedí que activen el módulo.</p>
+        <Link href="/admin" className={cn(buttonVariants({ variant: "vip", block: true }), "mt-6")}>
+          Volver al resumen
+        </Link>
+      </div>
+    </main>
+  );
 }
 
 /** Pantalla para quien no tiene sesión o cuyo rol no incluye esta sección. */

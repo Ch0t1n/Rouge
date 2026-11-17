@@ -120,6 +120,9 @@ describe("creador modular de eventos", () => {
     expect(matchingPreset(f)).toBe("ticketing_door");
     expect(r.data.lists[0]).toMatchObject({ name: "Lista Free", late_price: 8000 });
     expect(r.state.current_user_id).toBe(HQ);
+    // Sin slug, el link se arma con el nombre
+    const noSlug = saveEventFromBuilder({ ...s, current_user_id: HQ }, HQ, { ...base("full"), name: "Neon Club", slug: "" }, T0);
+    expect(noSlug.ok && noSlug.data.event.slug).toBe("neon-club");
   });
 
   it("el dueño/a solo usa el creador con autogestión habilitada por ROUGE HQ", () => {

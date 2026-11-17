@@ -11,6 +11,8 @@ import { cn } from "@/lib/utils";
 import { Avatar } from "@/components/ui/avatar";
 import { LiveDot } from "@/components/ui/badge";
 import { isNavActive, NAV_ITEMS, useNavBadges } from "./BottomNav";
+import { enabledNav } from "@/lib/engine/features";
+import { useEventFeatures } from "@/lib/store/hooks";
 import { PersonaSwitcher } from "./PersonaSwitcher";
 
 const EXTRA = [
@@ -27,6 +29,9 @@ export function DesktopSidebar({ collapsed, onToggle }: { collapsed: boolean; on
   const { state, setActiveEvent, role } = useRouge();
   const now = useNow(30_000);
   const badges = useNavBadges();
+  const features = useEventFeatures();
+  const main = enabledNav(NAV_ITEMS, features);
+  const extra = enabledNav(EXTRA, features);
   const me = getProfile(state, state.current_user_id);
   const event = activeEvent(state);
   const phase = event ? lobbyPhase(event, now) : null;
@@ -88,11 +93,11 @@ export function DesktopSidebar({ collapsed, onToggle }: { collapsed: boolean; on
 
       <nav className="flex-1 overflow-y-auto px-3">
         <ul className="space-y-1">
-          {[...NAV_ITEMS, ...EXTRA].map(({ href, label: text, icon: Icon }, i) => {
+          {[...main, ...extra].map(({ href, label: text, icon: Icon }, i) => {
             const active = isNavActive(href, pathname);
             const b = badgeFor(href);
             return (
-              <li key={href} className={cn(i === NAV_ITEMS.length && "mt-3 border-t border-white/10 pt-3")}>
+              <li key={href} className={cn(i === main.length && i > 0 && "mt-3 border-t border-white/10 pt-3")}>
                 <Link
                   href={href}
                   aria-current={active ? "page" : undefined}

@@ -9,6 +9,8 @@ import { activeEvent, lobbyPhase } from "@/lib/engine/selectors";
 import { useNow, useRouge } from "@/lib/store/RougeContext";
 import { cn, formatTime } from "@/lib/utils";
 import { KioskBadge, KioskProvider, useKiosk } from "./Kiosk";
+import { isPathEnabled } from "@/lib/engine/features";
+import { useEventFeatures } from "@/lib/store/hooks";
 
 /**
  * Plataforma operativa (Puerta y Barra): interfaz limpia, alto contraste (negro/blanco + estado en color), botones
@@ -20,6 +22,7 @@ export function OpsChrome({ children }: { children: ReactNode }) {
   const { state, role, signedIn, mode } = useRouge();
   const now = useNow(30_000);
   const event = activeEvent(state);
+  const features = useEventFeatures();
   const decision = canAccessPath(state, state.active_event_id, state.current_user_id, pathname, now);
   const redirect = !decision.ok ? decision.redirect : null;
   useEffect(() => {
@@ -50,8 +53,8 @@ export function OpsChrome({ children }: { children: ReactNode }) {
           <span className="hidden truncate text-sm text-white/70 sm:inline">{event.name}</span>
           <span className={cn("rounded-full px-2.5 py-1 font-display text-xs font-bold", live ? "bg-squad text-black" : "bg-white/15 text-white")}>{live ? "EN VIVO" : formatTime(new Date(now).toISOString())}</span>
           <nav className="ml-auto flex items-center gap-2" aria-label="Operación">
-            <OpsTab href="/ops/door" icon={<DoorOpen className="size-5" />} label="Puerta" active={pathname.startsWith("/ops/door")} show={canAccessPath(state, event.id, state.current_user_id, "/ops/door", now).ok} />
-            <OpsTab href="/ops/bar" icon={<Wine className="size-5" />} label="Barra" active={pathname.startsWith("/ops/bar")} show={canAccessPath(state, event.id, state.current_user_id, "/ops/bar", now).ok} />
+            <OpsTab href="/ops/door" icon={<DoorOpen className="size-5" />} label="Puerta" active={pathname.startsWith("/ops/door")} show={canAccessPath(state, event.id, state.current_user_id, "/ops/door", now).ok && isPathEnabled(features, "/ops/door")} />
+            <OpsTab href="/ops/bar" icon={<Wine className="size-5" />} label="Barra" active={pathname.startsWith("/ops/bar")} show={canAccessPath(state, event.id, state.current_user_id, "/ops/bar", now).ok && isPathEnabled(features, "/ops/bar")} />
             <KioskBadge />
             <KioskToggle />
             <Link href="/login?as=staff" aria-label={mode === "demo" ? "Cambiar de rol" : "Cambiar de cuenta"} className="grid size-11 place-items-center rounded-full bg-white/10 hover:bg-white/20">
@@ -59,7 +62,11 @@ export function OpsChrome({ children }: { children: ReactNode }) {
             </Link>
           </nav>
         </header>
-        {children}
+        {isPathEnabled(features, pathname) ? (
+          children
+        ) : (
+          <p className="mx-auto mt-16 max-w-md rounded-3xl border-2 border-white/25 p-8 text-center text-xl text-white/80">Este módulo está desactivado para este evento.</p>
+        )}
       </div>
     </KioskProvider>
   );

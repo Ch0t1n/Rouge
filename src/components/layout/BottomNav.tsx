@@ -6,6 +6,8 @@ import { House, Inbox, LayoutGrid, Map as MapIcon, UsersRound } from "lucide-rea
 import { inboxOf, ordersOf, pendingSquadInvites, perksOf, rescueAlertsFor } from "@/lib/engine/selectors";
 import { useRouge } from "@/lib/store/RougeContext";
 import { cn } from "@/lib/utils";
+import { enabledNav } from "@/lib/engine/features";
+import { useEventFeatures } from "@/lib/store/hooks";
 
 export const NAV_ITEMS = [
   { href: "/app", label: "Inicio", icon: House },
@@ -37,14 +39,16 @@ export function useNavBadges() {
 export function BottomNav() {
   const pathname = usePathname() ?? "/";
   const { pending, rescue, invites } = useNavBadges();
+  // Solo los módulos prendidos en el evento (ej. sin lobby ni chat: Inicio, Plano, Squad).
+  const items = enabledNav(NAV_ITEMS, useEventFeatures());
 
   return (
     <nav
       aria-label="Navegación principal"
       className="fixed inset-x-0 bottom-0 z-40 mx-auto max-w-md border-t border-white/10 bg-background/85 pb-[var(--safe-bottom)] backdrop-blur-xl md:hidden"
     >
-      <ul className="grid grid-cols-5">
-        {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+      <ul className="grid" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
+        {items.map(({ href, label, icon: Icon }) => {
           const active = isNavActive(href, pathname);
           return (
             <li key={href}>

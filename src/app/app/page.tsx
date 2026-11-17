@@ -21,7 +21,7 @@ import {
   type LobbyPhase,
 } from "@/lib/engine/selectors";
 import { blastsFor } from "@/lib/engine/actions";
-import { useRequireProfile } from "@/lib/store/hooks";
+import { useEventFeatures, useRequireProfile } from "@/lib/store/hooks";
 import { buttonVariants } from "@/components/ui/button";
 import { useNow, useRouge } from "@/lib/store/RougeContext";
 import { LineupBanner } from "@/components/event/LineupBanner";
@@ -57,6 +57,8 @@ function Home() {
   const shareSheet = useShare();
   const router = useRouter();
   const now = useNow(15_000);
+  // Módulos del evento (v1.8): el inicio solo muestra lo que está prendido.
+  const f = useEventFeatures();
   const event = activeEvent(state)!;
   const me = currentUser(state)!;
   const attendee = getAttendee(state, event.id, me.id);
@@ -156,7 +158,7 @@ function Home() {
         </section>
 
         {/* Mi entrada: pase para escanear en la puerta */}
-        {attendee && phase !== "expired" && (
+        {attendee && phase !== "expired" && f.enableTicketing && (
           <button type="button" onClick={() => setPass(true)} className="glass flex w-full items-center gap-3 rounded-2xl p-4 text-left transition hover:bg-white/10" data-testid="my-pass">
             <QrCode className="size-6 shrink-0 text-squad" />
             <span className="min-w-0 flex-1 text-sm">
@@ -191,12 +193,14 @@ function Home() {
 
         {/* Métricas personales */}
         <section className="grid grid-cols-2 gap-3 lg:col-span-2 lg:grid-cols-4">
-          <StatTile href="/lobby" icon={<Users />} tone="rouge" value={data.grid.length} label="Asistentes visibles" hint="Ir a la grilla →" />
-          <StatTile href="/inbox" icon={<Heart />} tone="rouge" value={data.matches.length} label="Matches" hint={`${data.inbox.length} en tu bandeja`} />
-          <StatTile href="/perks" icon={<Gift />} tone="vip" value={data.perks.length} label="Perks & QRs" hint="listos para canjear" />
-          <StatTile href="/bar" icon={<Martini />} tone="vip" value={data.orders.length} label="Barra Express" hint="Pedí sin hacer fila →" />
+          {f.enableSocialLobby && <StatTile href="/lobby" icon={<Users />} tone="rouge" value={data.grid.length} label="Asistentes visibles" hint="Ir a la grilla →" />}
+          {f.enableDirectChat && <StatTile href="/inbox" icon={<Heart />} tone="rouge" value={data.matches.length} label="Matches" hint={`${data.inbox.length} en tu bandeja`} />}
+          {f.enablePerks && <StatTile href="/perks" icon={<Gift />} tone="vip" value={data.perks.length} label="Perks & QRs" hint="listos para canjear" />}
+          {f.enableSmartBar && <StatTile href="/bar" icon={<Martini />} tone="vip" value={data.orders.length} label="Barra Express" hint="Pedí sin hacer fila →" />}
         </section>
 
+        {f.enableSquads && (
+          <>
         {/* Squad */}
         {data.squad ? (
           <Link href="/squad" className="glass block rounded-3xl p-4 transition hover:bg-white/10">
@@ -251,8 +255,12 @@ function Home() {
             </Link>
           )
         )}
+          </>
+        )}
 
-        {/* Plano */}
+        {f.enableVenueMap && (
+          <>
+{/* Plano */}
         <section>
           <div className="mb-2 flex items-end justify-between">
             <div>
@@ -283,6 +291,8 @@ function Home() {
             }
           />
         </section>
+          </>
+        )}
 
         <Link href="/settings/privacy" className="glass flex min-h-touch items-center gap-3 rounded-2xl p-4 transition hover:bg-white/5">
           <span className="grid size-10 place-items-center rounded-xl bg-squad/15 text-squad">
@@ -295,6 +305,8 @@ function Home() {
           <ArrowRight className="size-5 text-muted" />
         </Link>
 
+        {f.enablePostPartyRecap && (
+          <>
         {/* Rouge Wrapped: tu noche en una tarjeta para Stories */}
         <Link href="/wrapped" className="glass flex min-h-touch items-center gap-3 rounded-2xl border-rouge/30 p-4 transition hover:bg-white/5">
           <span className="grid size-10 place-items-center rounded-xl bg-rouge/15 text-xl">✨</span>
@@ -304,6 +316,8 @@ function Home() {
           </div>
           <ArrowRight className="size-5 text-muted" />
         </Link>
+          </>
+        )}
 
         {isStaff && (
           <Link href={roleHome(role)} className="glass flex min-h-touch items-center gap-3 rounded-2xl p-4 transition hover:bg-white/5">

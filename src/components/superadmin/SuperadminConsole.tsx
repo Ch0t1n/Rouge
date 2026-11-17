@@ -3,6 +3,8 @@
 import * as C from "@/lib/store/commands";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { Wand2 } from "lucide-react";
+import { EventCreatorConsole } from "./EventCreatorConsole";
 import { AlertTriangle, Building2, DoorOpen, EyeOff, Lock, Power, Search, ShieldAlert, Ticket, UserX, Users } from "lucide-react";
 import { globalAttendeeSearch, globalEventBoard, globalStaffMatrix, type GlobalAttendeeRow } from "@/lib/engine/superadmin";
 import { isPlatformAdmin, ROLE_META } from "@/lib/engine/roles";
@@ -32,7 +34,7 @@ export function SuperadminConsole() {
   const { state, mode, signedIn } = useRouge();
   const now = useNow(15_000);
   const allowed = signedIn && isPlatformAdmin(state, state.current_user_id);
-  const [tab, setTab] = useState<"events" | "people" | "staff">("events");
+  const [tab, setTab] = useState<"events" | "builder" | "people" | "staff">("events");
   if (!allowed) {
     return (
       <main className="grid min-h-screen place-items-center px-5">
@@ -57,6 +59,7 @@ export function SuperadminConsole() {
             {(
               [
                 ["events", "Eventos y boliches", Building2],
+                ["builder", "Creador de eventos", Wand2],
                 ["people", "Asistentes", Users],
                 ["staff", "Staff", ShieldAlert],
               ] as const
@@ -71,6 +74,7 @@ export function SuperadminConsole() {
       </header>
       <main className="mx-auto max-w-[1600px] space-y-6 px-5 py-6 lg:px-10">
         {tab === "events" && <EventsBoard now={now} />}
+        {tab === "builder" && <EventCreatorConsole />}
         {tab === "people" && <PeopleControl />}
         {tab === "staff" && <StaffMatrix now={now} />}
       </main>
