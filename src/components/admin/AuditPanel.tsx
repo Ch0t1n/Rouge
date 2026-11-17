@@ -29,6 +29,9 @@ export const AUDIT_LABEL: Record<AuditAction, string> = {
   "attendee.removed": "Expulsión",
   "report.created": "Reporte",
   "account.deleted": "Cuenta borrada",
+  "event.created": "Evento creado",
+  "event.updated": "Evento editado",
+  "event.modules_changed": "Módulos del evento",
 };
 
 /** Auditoría inmutable de la organización (altas/bajas, cortesías, precios, anulaciones, kiosco). Exportable. */

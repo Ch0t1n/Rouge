@@ -40,7 +40,7 @@ import type {
 } from "@/lib/types";
 import { pinHash } from "@/lib/engine/security";
 
-export const STATE_VERSION = 11;
+export const STATE_VERSION = 12;
 
 /**
  * Últimas 3 fechas de la organización (demo): curvas de 15' de ingresos en puerta y ventas de barra, alineadas al
@@ -296,6 +296,8 @@ export function createSeedState(now = Date.now()): RougeState {
     id: DEMO_IDS.event,
     // Secreto de los QR dinámicos (demo). En Supabase vive solo en el servidor (y en los dispositivos de puerta/barra).
     qr_secret: "demo-qr-secret-bresh-sabado-0000000000000000",
+    lifecycle_status: "live",
+    features: null,
     slug: "bresh-sabado",
     name: "ROUGE Night × Bresh Sábado",
     description: "La noche más grande del mes. Line-up de house y techno, Mesa VIP, Barra Express y sorteos en vivo.",
@@ -732,5 +734,7 @@ export function createSeedState(now = Date.now()): RougeState {
     campaigns: [],
     campaign_contacts: [],
     vip_reservations: [],
+    // La creación de eventos y los módulos los gestiona ROUGE HQ (autogestión apagada por defecto).
+    organization_settings: [{ organization_id: DEMO_IDS.organizer, allow_owner_self_service: false, updated_at: t(-60 * 24 * 10) }],
   };
 }

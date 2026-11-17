@@ -130,6 +130,8 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
         q<NonNullable<RougeState["campaign_contacts"]>[number]>(sb.from("campaign_contacts").select("*")).catch(() => []),
       ])
     : [[], [], []];
+  // Configuración de organizaciones (la mía; ROUGE HQ ve todas) → autogestión del creador de eventos.
+  const orgSettings = await q<NonNullable<RougeState["organization_settings"]>[number]>(sb.from("organization_settings").select("*")).catch(() => []);
   const vipReservations = await byEvent<NonNullable<RougeState["vip_reservations"]>[number]>("vip_reservations").catch(() => []);
   const curves = eventId && isManager ? await q<NonNullable<RougeState["event_curves_history"]>[number]>(sb.rpc("org_event_curves", { p_event: eventId }).then((r) => ({ data: (r.data as unknown[]) ?? [], error: r.error }))).catch(() => []) : [];
   const [invites, terminalPins, audit, reports, platformAdmin] = await Promise.all([
@@ -180,7 +182,7 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
     profiles: profiles.map((p) => ({ ...p, phone_normalized: phones.get(p.id) ?? null, photos: p.photos ?? [], music_genres: p.music_genres ?? [] })),
     instagram_links: igRows.map((r) => ({ user_id: userId, username: r.username, account_type: r.account_type, connected_at: r.connected_at })),
     user_blocks: blocks,
-    events: events.map((e) => ({ ...e, brand_id: e.brand_id ?? null, logo_url: e.logo_url ?? null, theme_primary: e.theme_primary ?? null, theme_accent: e.theme_accent ?? null, qr_secret: e.id === eventId ? eventSecret : null })),
+    events: events.map((e) => ({ ...e, brand_id: e.brand_id ?? null, logo_url: e.logo_url ?? null, theme_primary: e.theme_primary ?? null, theme_accent: e.theme_accent ?? null, qr_secret: e.id === eventId ? eventSecret : null, features: e.features ?? null, lifecycle_status: e.lifecycle_status ?? "live" })),
     brands,
     brand_payment_accounts: payAccounts,
     event_staff: eventStaff,
@@ -228,6 +230,7 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
     org_contacts: orgContacts.map((c) => ({ ...c, total_spent: Number(c.total_spent) })),
     campaigns,
     campaign_contacts: campaignContacts,
+    organization_settings: orgSettings,
     vip_reservations: vipReservations.map((r) => ({ ...r, total_amount: Number(r.total_amount) })),
     event_curves_history: curves.map((c) => ({ ...c, points: c.points.map((p) => ({ m: Number(p.m), entries: Number(p.entries), sales: Number(p.sales) })) })),
   };

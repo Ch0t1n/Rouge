@@ -7,6 +7,7 @@
 import type { BarOrder, RougeState, UserPerkQR, UUID } from "@/lib/types";
 import { redeemPerk, redeemPickupCode, type Result } from "./actions";
 import { eventQrSecret, isDynamicQr, isStaticAppQr, QR_REJECT_MESSAGES, verifyDynamicQr } from "./qr";
+import { FEATURE_DISABLED, featureOn } from "./features";
 
 export type DynamicRedeem = { kind: "PERK"; perk: UserPerkQR } | { kind: "ORDER"; order: BarOrder };
 
@@ -23,6 +24,7 @@ export function redeemDynamicQr(state: RougeState, eventId: UUID, value: string,
     return r.ok ? { ok: true, state: r.state, data: { kind: "PERK", perk: r.data } } : r;
   }
   if (chk.kind === "ORDER") {
+    if (!featureOn(state, eventId, "enableSmartBar")) return { ok: false, error: FEATURE_DISABLED };
     const order = state.bar_orders.find((o) => o.id === chk.ref && o.event_id === eventId);
     if (!order?.pickup_code) return { ok: false, error: "No existe un pedido con ese QR." };
     const r = redeemPickupCode(state, eventId, order.pickup_code, now);

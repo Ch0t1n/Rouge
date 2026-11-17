@@ -173,6 +173,20 @@ export interface RougeEvent {
    * y la barra (RPC event_qr_secret) para validar sin conexión. En el Modo Demo vive en el estado.
    */
   qr_secret?: string | null;
+  /** Módulos activos del evento (null = todos, eventos anteriores a v1.8). Ver engine/features.ts. */
+  features?: import("@/lib/engine/features").EventFeatureFlags | null;
+  /** Ciclo de vida: borrador (no se puede entrar), preventa, en vivo, terminado. */
+  lifecycle_status?: EventLifecycle;
+}
+
+export type EventLifecycle = "draft" | "presale" | "live" | "ended";
+
+/** Configuración de la organización (cuenta del dueño/a). La edita ROUGE HQ. */
+export interface OrganizationSettings {
+  organization_id: UUID;
+  /** true = el dueño/a crea sus eventos y prende/apaga módulos desde /admin/events con el mismo creador. */
+  allow_owner_self_service: boolean;
+  updated_at: ISODate;
 }
 
 /**
@@ -270,7 +284,10 @@ export type AuditAction =
   | "code.revoked"
   | "attendee.removed"
   | "report.created"
-  | "account.deleted";
+  | "account.deleted"
+  | "event.created"
+  | "event.updated"
+  | "event.modules_changed";
 
 /** Registro inmutable (append-only) de acciones sensibles. En SQL: sin UPDATE/DELETE, lo escriben triggers y RPCs. */
 export interface AuditEntry {
@@ -768,6 +785,8 @@ export interface RougeState {
   user_reports: UserReport[];
   /** Administradores globales de ROUGE (consola /superadmin). */
   platform_admin_ids: UUID[];
+  /** Configuración de organizaciones (la mía; ROUGE HQ: todas). */
+  organization_settings?: OrganizationSettings[];
   /** Listas / lotes de ingreso del evento (free con horario límite). */
   ticket_lists: TicketList[];
   /** Consola global (solo administradores de ROUGE en Supabase): tablero y matriz calculados en el servidor. */

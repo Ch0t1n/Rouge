@@ -28,6 +28,8 @@ const MESSAGES: Record<string, string> = {
   owns_live_events: "Tenés eventos con asistentes: escribinos para transferirlos antes de borrar tu cuenta.",
   invalid_email: "Revisá el email.",
   rate_limited: "Demasiados intentos. Esperá un momento y probá de nuevo.",
+  feature_disabled: "Esta función no está activa en este evento.",
+  event_draft: "Este evento todavía no está publicado.",
   qr_expired: "QR vencido o falso: es una captura. Pedile que abra el QR en vivo.",
   invalid_method: "Elegí cómo pagó.",
   no_late_fee: "Esta entrada no tiene diferencial para cobrar.",

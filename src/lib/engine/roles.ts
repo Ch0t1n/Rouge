@@ -233,8 +233,9 @@ export function canAccessPath(s: RougeState, eventId: UUID, userId: UUID, pathna
   const platform = isStaffRole(role) ? PLATFORM_ROLE[role] : "attendee";
   const allowed = PLATFORM_SURFACES[platform];
   const opsException = surface === "owner_admin" && (platform === "bar_pos" || platform === "door_scanner") && OPS_ADMIN_EXCEPTIONS.some((p) => pathname === p || pathname.startsWith(p + "/"));
-  // Crear un evento nuevo sigue abierto a cualquier asistente con sesión (queda como dueño/a de SU organización).
-  const createEvent = surface === "owner_admin" && (platform === "attendee" || platform === "rrpp") && pathname === "/admin/events";
+  // v1.8: crear un evento propio desde /admin/events solo con autogestión habilitada por ROUGE HQ.
+  const selfService = (s.organization_settings ?? []).some((o) => o.organization_id === userId && o.allow_owner_self_service);
+  const createEvent = surface === "owner_admin" && (platform === "attendee" || platform === "rrpp") && pathname === "/admin/events" && selfService;
   if (!allowed.includes(surface) && !opsException && !createEvent) return { ok: false, surface, reason: "surface", redirect: home };
   const perm = permissionForPath(pathname);
   if (perm && surface !== "client_app" && !createEvent && !can(s, eventId, userId, perm, now)) return { ok: false, surface, reason: "permission", redirect: home };

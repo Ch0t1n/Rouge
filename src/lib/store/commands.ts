@@ -9,7 +9,8 @@
  * En Modo Demo solo corre `local`. Las pantallas siempre llaman `exec(C.algo(...))`.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Campaign, CampaignContact, VipReservation } from "@/lib/types";
+import type { Campaign, CampaignContact, OrganizationSettings, VipReservation } from "@/lib/types";
+import type { EventFeatureFlags } from "@/lib/engine/features";
 import type { ApiKey, BarOrder, Connection, EventAttendee, EventInviteCode, LatePaymentMethod, MoodTag, PerkRule, Raffle, RaffleFilter, ReportReason, RougeEvent, RougeState, SongRequest, Squad, StaffRole, UUID } from "@/lib/types";
 import * as A from "@/lib/engine/actions";
 import type { Result } from "@/lib/engine/actions";
@@ -456,10 +457,18 @@ export const sendBlast = (eventId: UUID, input: A.BlastInput): Command<{ blast: 
 
 // ── Eventos (staff) ──────────────────────────────────────────────────
 
+export const CREATE_EVENT_LOCKED = "La creación de eventos la gestiona ROUGE. Pedí que activen la autogestión de tu organización.";
+
 export const upsertEvent = (input: Parameters<typeof A.upsertEvent>[1]): Command<RougeEvent> => ({
   name: "upsertEvent",
-  // Cualquiera con sesión crea un evento (queda como owner); editar uno existente exige admin.events.
-  local: (s) => (input.id && s.events.some((e) => e.id === input.id) && !can(s, input.id, s.current_user_id, "admin.events") ? { ok: false, error: NO_PERMISSION } : A.upsertEvent(s, input)),
+  // v1.8: crear un evento nuevo es de ROUGE HQ (o del dueño/a con autogestión, ver el creador modular);
+  // editar los datos de uno existente exige admin.events.
+  local: (s) => {
+    const exists = !!input.id && s.events.some((e) => e.id === input.id);
+    if (exists && !can(s, input.id!, s.current_user_id, "admin.events")) return { ok: false, error: NO_PERMISSION };
+    if (!exists && !E.canManageModules(s, s.current_user_id, s.current_user_id)) return { ok: false, error: CREATE_EVENT_LOCKED };
+    return A.upsertEvent(s, input);
+  },
   remote: async (sb, e, before) => {
     const isNew = !before.events.some((x) => x.id === e.id);
     const row = {
@@ -976,4 +985,62 @@ export const createVipReservation = (squadId: UUID, itemId: string): Command<Vip
   optimistic: false,
   local: (s) => MO.createVipReservation(s, squadId, s.current_user_id, itemId),
   remote: async (sb, local) => ({ ...local, id: await rpc<UUID>(sb, "create_vip_reservation", { p_squad: squadId, p_item: itemId }) }),
+});
+
+// ── Creador modular de eventos y módulos (v1.8) ──────────────────────
+
+/**
+ * Crea o edita un evento desde el creador (ROUGE HQ, o el dueño/a con autogestión). No optimista: el id y el código
+ * maestro de un evento nuevo los genera el servidor.
+ */
+export const saveEventFromBuilder = (input: E.EventBuilderInput): Command<{ event: RougeEvent; lists: RougeState["ticket_lists"] }> => ({
+  name: "saveEventFromBuilder",
+  optimistic: false,
+  local: (s) => E.saveEventFromBuilder(s, s.current_user_id, input),
+  remote: async (sb, local, before) => {
+    const e = local.event;
+    const isNew = !before.events.some((x) => x.id === e.id);
+    const id = await rpc<UUID>(sb, "builder_save_event", {
+      p_event: {
+        id: isNew ? null : e.id,
+        organization_id: input.organization_id,
+        slug: e.slug,
+        name: e.name,
+        description: e.description,
+        venue_name: e.venue_name,
+        starts_at: e.starts_at,
+        ends_at: e.ends_at,
+        lobby_opens_at: e.lobby_opens_at,
+        lobby_expires_at: e.lobby_expires_at,
+        max_capacity: e.max_capacity,
+        lineup_json: e.lineup_json,
+        brand_id: e.brand_id,
+        logo_url: e.logo_url,
+        theme_primary: e.theme_primary,
+        theme_accent: e.theme_accent,
+        features: e.features,
+        lifecycle_status: e.lifecycle_status,
+      },
+      p_lists: local.lists.map((l) => ({ id: l.id, name: l.name, free_until: l.free_until, late_price: l.late_price })),
+      p_menu: isNew ? before.bar_menu.map((i) => ({ id: i.id, name: i.name, category: i.category, price: i.price, emoji: i.emoji })) : [],
+    });
+    return { ...local, event: { ...e, id } };
+  },
+});
+
+/** Prende / apaga módulos de un evento (dependencias resueltas en el motor y en SQL). */
+export const setEventFeatures = (eventId: UUID, flags: Partial<EventFeatureFlags>): Command<EventFeatureFlags> => ({
+  name: "setEventFeatures",
+  local: (s) => E.setEventFeatures(s, s.current_user_id, eventId, flags),
+  remote: async (sb, f) => {
+    await rpc(sb, "set_event_features", { p_event: eventId, p_features: f });
+    return f;
+  },
+});
+
+/** ROUGE HQ: habilitar que el dueño/a use el creador por su cuenta (/admin/events). */
+export const setOwnerSelfService = (orgId: UUID, allow: boolean): Command<OrganizationSettings> => ({
+  name: "setOwnerSelfService",
+  local: (s) => E.setOwnerSelfService(s, s.current_user_id, orgId, allow),
+  remote: async (sb) => void (await rpc(sb, "sa_set_owner_self_service", { p_org: orgId, p_allow: allow })),
 });

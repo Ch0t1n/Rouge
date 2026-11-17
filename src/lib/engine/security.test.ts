@@ -52,12 +52,14 @@ describe("superficies de plataforma (aislamiento)", () => {
     expect(!d.ok && d.redirect).toBe("/ops/door");
   });
 
-  it("asistentes: solo la app (más crear SU evento); dueño/a: panel, ops y app; ROUGE HQ: consola global", () => {
+  it("asistentes: solo la app (más crear SU evento con autogestión); dueño/a: panel, ops y app; ROUGE HQ: consola global", () => {
     const s = seed();
     expect(canAccessPath(s, EV, DEMO_IDS.me, "/lobby", NOW).ok).toBe(true);
     expect(canAccessPath(s, EV, DEMO_IDS.me, "/ops/door", NOW).ok).toBe(false);
     expect(canAccessPath(s, EV, DEMO_IDS.me, "/admin/crm", NOW).ok).toBe(false);
-    expect(canAccessPath(s, EV, DEMO_IDS.me, "/admin/events", NOW).ok).toBe(true);
+    // v1.8: solo con autogestión habilitada por ROUGE HQ
+    expect(canAccessPath(s, EV, DEMO_IDS.me, "/admin/events", NOW).ok).toBe(false);
+    expect(canAccessPath({ ...s, organization_settings: [{ organization_id: DEMO_IDS.me, allow_owner_self_service: true, updated_at: "" }] }, EV, DEMO_IDS.me, "/admin/events", NOW).ok).toBe(true);
     expect(canAccessPath(s, EV, DEMO_IDS.me, "/superadmin", NOW).ok).toBe(false);
     for (const p of ["/admin/crm", "/ops/door", "/ops/bar", "/lobby"]) expect(canAccessPath(s, EV, ORG, p, NOW).ok).toBe(true);
     expect(canAccessPath(s, EV, ORG, "/superadmin", NOW).ok).toBe(false);

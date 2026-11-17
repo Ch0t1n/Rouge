@@ -58,6 +58,10 @@ import {
 import { BIO_MAX, MAX_PHOTOS, NAME_MAX, checkBirthDate, checkGenres, checkUsername, parseInstagram, parseSpotify } from "./profile";
 import { checkEventBranding, normalizeHex } from "./branding";
 import { NOT_PAID, addSpend, initialPaymentStatus, isPayable, spendShares } from "./payments";
+import { FEATURE_DISABLED, featureOn, type FeatureKey } from "./features";
+
+/** Módulo apagado en el evento → la acción no se procesa (mismo criterio que event_feature en SQL). */
+const off = (state: RougeState, eventId: UUID, ...keys: FeatureKey[]) => (keys.every((k) => featureOn(state, eventId, k)) ? null : fail(FEATURE_DISABLED));
 
 export type Result<T = undefined> = { ok: true; state: RougeState; data: T } | { ok: false; error: string };
 
@@ -351,6 +355,10 @@ export function joinEvent(
   const { event, via, inviteCode, squad, promoter } = resolved;
   // Expulsado por el organizador: mensaje genérico (mismo criterio que join_event → 'banned').
   if (state.event_bans.some((b) => b.event_id === event.id && b.user_id === userId)) return fail("No podés entrar a este evento.");
+  // Borrador: el evento existe pero todavía no está publicado (mismo criterio que join_event → 'event_draft').
+  if (event.lifecycle_status === "draft") return fail("Este evento todavía no está publicado.");
+  // Con la ticketera apagada no hay entradas de 1 uso: solo el link del evento (o de un Squad).
+  if (via === "single_use_code" && !featureOn(state, event.id, "enableTicketing")) return fail(FEATURE_DISABLED);
 
   const phase = lobbyPhase(event, now);
   if (phase === "upcoming") return fail("El lobby todavía no abrió. Volvé más cerca de la fiesta.");
@@ -446,6 +454,8 @@ export function sendConnection(
   receiverId: UUID,
   now = Date.now(),
 ): Result<{ connection: Connection; matched: boolean }> {
+  const disabled = off(state, eventId, "enableSocialLobby");
+  if (disabled) return disabled;
   const err = validatePair(state, eventId, senderId, receiverId, now);
   if (err) return err;
   const receiver = getAttendee(state, eventId, receiverId)!;
@@ -560,6 +570,8 @@ export function sendIcebreaker(
   input: IcebreakerInput,
   now = Date.now(),
 ): Result<Connection> {
+  const disabledIb = off(state, eventId, "enableSocialLobby", ...(input.giftDrinkItemId ? (["enableSmartBar"] as FeatureKey[]) : []));
+  if (disabledIb) return disabledIb;
   const blocked = icebreakerEligibility(state, eventId, senderId, receiverId, now);
   if (blocked) return fail(blocked);
   const sender = getAttendee(state, eventId, senderId)!;
@@ -611,6 +623,8 @@ export function sendIcebreaker(
 // ═════════════════════════════════════════════════════════════════════
 
 export function createSquad(state: RougeState, eventId: UUID, userId: UUID, name: string, now = Date.now()): Result<Squad> {
+  const disabled = off(state, eventId, "enableSquads");
+  if (disabled) return disabled;
   const gate = requireInteractive(state, eventId, now);
   if (gate) return gate;
   if (!getAttendee(state, eventId, userId)) return fail("No estás en este evento.");
@@ -836,6 +850,8 @@ export interface DropPinInput {
 }
 
 export function dropPin(state: RougeState, eventId: UUID, userId: UUID, input: DropPinInput, now = Date.now()): Result<MapPin> {
+  const disabled = off(state, eventId, "enableVenueMap");
+  if (disabled) return disabled;
   const gate = requireInteractive(state, eventId, now);
   if (gate) return gate;
   if (!getAttendee(state, eventId, userId)) return fail("No estás en este evento.");
@@ -905,11 +921,13 @@ export function sendMessage(
     if (c.sender_id !== senderId && c.receiver_id !== senderId) return fail("No sos parte de esta conversación.");
     if (isBlockedBetween(state, c.sender_id, c.receiver_id)) return fail(UNAVAILABLE);
     eventId = c.event_id;
+    if (!featureOn(state, eventId, "enableDirectChat")) return fail(FEATURE_DISABLED);
   } else {
     const sq = state.squads.find((s) => s.id === to.squadId);
     if (!sq) return fail("Squad inexistente.");
     if (!squadMembers(state, sq.id).some((m) => m.user_id === senderId)) return fail("No sos parte de este Squad.");
     eventId = sq.event_id;
+    if (!featureOn(state, eventId, "enableSquads")) return fail(FEATURE_DISABLED);
   }
 
   const msg: Message = {
@@ -996,6 +1014,8 @@ export function redeemPerk(state: RougeState, qrOrId: string, now = Date.now()):
 }
 
 export function upsertPerkRule(state: RougeState, rule: Omit<PerkRule, "id" | "created_at"> & { id?: UUID }, now = Date.now()): Result<PerkRule> {
+  const disabled = off(state, rule.event_id, "enablePerks");
+  if (disabled) return disabled;
   if (rule.trigger.min_members < 2) return fail("El Squad mínimo es de 2 personas.");
   const full: PerkRule = { ...rule, id: rule.id ?? uid(), created_at: iso(now) };
   const exists = state.perk_rules.some((r) => r.id === full.id);
@@ -1021,6 +1041,8 @@ export function raffleEligible(state: RougeState, eventId: UUID, filter: RaffleF
 }
 
 export function createRaffle(state: RougeState, eventId: UUID, prizeTitle: string, filter: RaffleFilter, now = Date.now()): Result<Raffle> {
+  const disabled = off(state, eventId, "enablePerks");
+  if (disabled) return disabled;
   if (!prizeTitle.trim()) return fail("Definí el premio.");
   const raffle: Raffle = {
     id: uid(),
@@ -1166,6 +1188,8 @@ export function createBarOrder(
   now = Date.now(),
   opts: { splitWith?: UUID[] } = {},
 ): Result<BarOrder> {
+  const disabled = off(state, eventId, "enableSmartBar");
+  if (disabled) return disabled;
   const gate = requireInteractive(state, eventId, now);
   if (gate) return gate;
   if (!getAttendee(state, eventId, userId)) return fail("No estás en este evento.");

@@ -14,6 +14,7 @@ import { uid } from "@/lib/utils";
 import { GIFTABLE_CATEGORIES, type Result } from "./actions";
 import { addSpend, initialPaymentStatus, paymentHooks } from "./payments";
 import { getEvent, getProfile, isBlockedBetween, isLobbyInteractive, squadMembers, squadOf } from "./selectors";
+import { FEATURE_DISABLED, featureOn } from "./features";
 
 const fail = (error: string): { ok: false; error: string } => ({ ok: false, error });
 const iso = (now: number) => new Date(now).toISOString();
@@ -63,6 +64,7 @@ export function giftDrinkInChat(state: RougeState, senderId: UUID, connectionId:
   const to = c.sender_id === senderId ? c.receiver_id : c.sender_id;
   if (isBlockedBetween(state, senderId, to)) return fail("Este perfil no está disponible");
   const ev = getEvent(state, c.event_id);
+  if (!featureOn(state, c.event_id, "enableChatDrinkGifting")) return fail(FEATURE_DISABLED);
   if (!ev || !isLobbyInteractive(ev, now)) return fail("Los tragos se regalan mientras la fiesta está abierta.");
   if (!state.event_attendees.some((a) => a.event_id === ev.id && a.user_id === to)) return fail("Esa persona no está en esta fiesta.");
   const item = state.bar_menu.find((i) => i.id === itemId);
@@ -125,6 +127,7 @@ export function createVipReservation(state: RougeState, squadId: UUID, userId: U
   if (!members.some((m) => m.user_id === userId)) return fail("No sos parte de este Squad.");
   if (members.length < 2) return fail("La mesa dividida necesita al menos 2 integrantes en el Squad.");
   const ev = getEvent(state, sq.event_id);
+  if (!featureOn(state, sq.event_id, "enableSquadBillSplit") || !featureOn(state, sq.event_id, "enableSmartBar")) return fail(FEATURE_DISABLED);
   if (!ev || !isLobbyInteractive(ev, now)) return fail("Las reservas se hacen mientras la fiesta está abierta.");
   if ((state.vip_reservations ?? []).some((r) => r.squad_id === squadId && !vipReservationStatus(state, r).complete)) return fail("Ya tienen una reserva en curso: completen esa primero.");
   const item = state.bar_menu.find((i) => i.id === itemId);
@@ -191,7 +194,7 @@ export function wrappedFor(state: RougeState, userId: UUID, eventId: UUID, now =
   const ev = getEvent(state, eventId);
   const me = getProfile(state, userId);
   const att = state.event_attendees.find((a) => a.event_id === eventId && a.user_id === userId);
-  if (!ev || !me || !att) return null;
+  if (!ev || !me || !att || !featureOn(state, eventId, "enablePostPartyRecap")) return null;
   const conns = state.connections.filter((c) => c.event_id === eventId && (c.sender_id === userId || c.receiver_id === userId));
   const matches = conns.filter((c) => c.status === "accepted");
   const mine = squadOf(state, eventId, userId);

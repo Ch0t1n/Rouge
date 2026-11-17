@@ -18,8 +18,9 @@
 import type { LatePaymentMethod, RougeState, TicketList, UUID } from "@/lib/types";
 import { ageFrom } from "@/lib/utils";
 import { eventQrSecret, isDynamicQr, verifyDynamicQr } from "./qr";
+import { featureOn } from "./features";
 
-export type DoorStatus = "ok" | "already" | "invalid" | "revoked" | "banned" | "other_event" | "not_attendee" | "general_link" | "static_qr" | "expired_qr" | "late_free";
+export type DoorStatus = "ok" | "already" | "invalid" | "revoked" | "banned" | "other_event" | "not_attendee" | "general_link" | "static_qr" | "expired_qr" | "late_free" | "module_off";
 
 export interface DoorResult {
   status: DoorStatus;
@@ -52,12 +53,15 @@ export const DOOR_MESSAGES: Record<DoorStatus, string> = {
   static_qr: "QR estático (captura): pedí el QR en vivo",
   expired_qr: "QR vencido o falso: pedí el QR en vivo",
   late_free: "Fuera de horario Free",
+  module_off: "La puerta no está activa en este evento",
 };
 
 /** Lista de un código y si ya pasó su horario free (sin diferencial cobrado). */
 export function lateFreeFor(state: RougeState, code: { list_id?: UUID | null; late_paid_at?: string | null }, now = Date.now()): TicketList | null {
   if (!code.list_id || code.late_paid_at) return null;
   const list = (state.ticket_lists ?? []).find((l) => l.id === code.list_id);
+  // Módulo apagado: la lista free no se convierte (entra free a cualquier hora).
+  if (list && !featureOn(state, list.event_id, "enableFreeCutoffConversion")) return null;
   return list?.free_until && now > +new Date(list.free_until) && list.late_price > 0 ? list : null;
 }
 
@@ -79,6 +83,7 @@ const empty = (status: DoorStatus, kind: DoorResult["kind"] = null): DoorResult 
 /** Valida y registra un ingreso en la puerta. Espejo de la RPC door_scan (door_check_in la llama). */
 export function doorCheckIn(state: RougeState, eventId: UUID, raw: string, now = Date.now(), opts: { terminal?: string | null } = {}): { ok: true; state: RougeState; data: DoorResult } {
   const terminal = opts.terminal?.trim().slice(0, 40) || null;
+  if (!featureOn(state, eventId, "enableTicketing")) return { ok: true, state, data: empty("module_off") };
   const done = (data: DoorResult, next = state) => ({ ok: true as const, state: next, data: { ...data, terminal: data.terminal ?? (data.status === "ok" ? terminal : null) } });
   // Pase dinámico (TOTP) → se valida la firma y el paso, y se sigue como un pase con su usuario.
   let target: ReturnType<typeof parseDoorValue>;

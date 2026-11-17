@@ -13,6 +13,7 @@ import { createSeedState, DEMO_IDS } from "@/lib/mock/seed";
 import type { RougeState } from "@/lib/types";
 import * as C from "./commands";
 import { credentialSecret, dynamicQrValue } from "@/lib/engine/qr";
+import * as E from "@/lib/engine/eventAdmin";
 import type { Command } from "./commands";
 
 const SQL = readFileSync(path.resolve(__dirname, "../../../supabase/schema.sql"), "utf8");
@@ -180,7 +181,7 @@ describe("contrato comandos ↔ schema.sql", () => {
     ["createRaffle", () => runRemote(C.createRaffle(EV, "Botella", "all"), st())],
     ["drawRaffle", () => runRemote(C.drawRaffle(s0().raffles[0].id, () => 0), st(), { draw_raffle: ME })],
     ["sendBlast", () => runRemote(C.sendBlast(EV, { title: "2x1", message: "Barra", segment: { kind: "squad_min_size", min: 4 }, flashMinutes: 20 }), st(), { send_blast: 4 })],
-    ["upsertEvent (nuevo)", () => runRemote(C.upsertEvent({ name: "Neon Sunday", starts_at: new Date(NOW + 72e5).toISOString(), ends_at: new Date(NOW + 9e6).toISOString() }), s0())],
+    ["upsertEvent (nuevo)", () => runRemote(C.upsertEvent({ name: "Neon Sunday", starts_at: new Date(NOW + 72e5).toISOString(), ends_at: new Date(NOW + 9e6).toISOString() }), { ...s0(), current_user_id: DEMO_IDS.platformAdmin })],
     ["upsertEvent (edición)", () => runRemote(C.upsertEvent({ ...s0().events[0], name: "Otro nombre" }), st())],
     ["generateInviteCodes", () => runRemote(C.generateInviteCodes(EV, 5), st(), { generate_invite_codes: [] })],
     ["setStaffRole", () => runRemote(C.setStaffRole(EV, "@" + s0().profiles.find((p) => p.id === ME)!.username, "bartender"), st(), { set_staff_role: ME })],
@@ -237,6 +238,10 @@ describe("contrato comandos ↔ schema.sql", () => {
     ["saRevokeStaff", () => runRemote(C.saRevokeStaff(DEMO_IDS.organizer, DEMO_IDS.doorScanner), { ...s0(), current_user_id: DEMO_IDS.platformAdmin }, { sa_revoke_staff: 1 })],
     ["giftDrink", () => { const s = s0(); const c = s.connections.find((x) => x.status === "accepted" && (x.sender_id === ME || x.receiver_id === ME) && x.event_id === EV)!; return runRemote(C.giftDrink(c.id, "gin"), s, { gift_drink: { order_id: id(9) } }); }],
     ["createVipReservation", () => runRemote(C.createVipReservation(DEMO_IDS.squadMain, s0().bar_menu.find((i) => i.category === "botella")!.id), s0(), { create_vip_reservation: id(9) })],
+    ["saveEventFromBuilder (nuevo)", () => runRemote(C.saveEventFromBuilder({ organization_id: DEMO_IDS.organizer, name: "Techno Bunker", starts_at: new Date(NOW + 864e5).toISOString(), ends_at: new Date(NOW + 864e5 + 6 * 36e5).toISOString(), lifecycle_status: "presale", max_capacity: 800, features: { enableSocialLobby: false }, lists: [{ name: "Free", free_until: new Date(NOW + 864e5 + 36e5).toISOString(), late_price: 8000 }] }), { ...s0(), current_user_id: DEMO_IDS.platformAdmin }, { builder_save_event: id(9) })],
+    ["saveEventFromBuilder (edición)", () => runRemote(C.saveEventFromBuilder({ ...E.builderInputOf(s0(), s0().events[0]), name: "Bresh XL" }), { ...s0(), current_user_id: DEMO_IDS.platformAdmin }, { builder_save_event: EV })],
+    ["setEventFeatures", () => runRemote(C.setEventFeatures(EV, { enableSmartBar: false }), { ...s0(), current_user_id: DEMO_IDS.platformAdmin })],
+    ["setOwnerSelfService", () => runRemote(C.setOwnerSelfService(DEMO_IDS.organizer, true), { ...s0(), current_user_id: DEMO_IDS.platformAdmin })],
     ["deleteAccount", () => runRemote(C.deleteAccount("@" + s0().profiles.find((p) => p.id === ME)!.username), s0())],
   ];
 
@@ -407,11 +412,14 @@ describe("permisos por rol (misma regla que has_staff_role en SQL)", () => {
     expect(C.setStaffRole(EV, "no.existe", "waiter").local(as(DEMO_IDS.organizer)).ok).toBe(false);
     expect(C.setStaffRole(EV, "no.existe", "waiter", { serverLookup: true }).local(as(DEMO_IDS.organizer)).ok).toBe(true);
   });
-  it("cualquiera crea un evento nuevo, pero solo el staff con permiso edita uno existente", () => {
+  it("crear eventos es de ROUGE HQ o de dueños/as con autogestión; editar exige el permiso del evento", () => {
     const s = as(ME);
     const start = new Date(Date.now() + 72e5).toISOString();
     const end = new Date(Date.now() + 9e6).toISOString();
-    expect(C.upsertEvent({ name: "Mi fiesta", starts_at: start, ends_at: end }).local(s).ok).toBe(true);
+    expect(C.upsertEvent({ name: "Mi fiesta", starts_at: start, ends_at: end }).local(s).ok).toBe(false);
+    expect(C.upsertEvent({ name: "Mi fiesta", starts_at: start, ends_at: end }).local(as(DEMO_IDS.platformAdmin)).ok).toBe(true);
+    const selfService = { ...as(ME), organization_settings: [{ organization_id: ME, allow_owner_self_service: true, updated_at: "" }] };
+    expect(C.upsertEvent({ name: "Mi fiesta", starts_at: start, ends_at: end }).local(selfService).ok).toBe(true);
     expect(C.upsertEvent({ ...s.events[0], name: "Hackeado" }).local(s).ok).toBe(false);
     expect(C.upsertEvent({ ...s.events[0], name: "Renombrado" }).local(as(DEMO_IDS.manager)).ok).toBe(true);
   });

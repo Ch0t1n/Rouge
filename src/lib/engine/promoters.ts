@@ -10,6 +10,7 @@
 import type { CommissionTier, PromoterLink, RougeState, UUID } from "@/lib/types";
 import { shortCode, uid } from "@/lib/utils";
 import { can, staffRoleOf } from "./roles";
+import { FEATURE_DISABLED, featureOn } from "./features";
 
 type R<T> = { ok: true; state: RougeState; data: T } | { ok: false; error: string };
 const fail = (error: string): { ok: false; error: string } => ({ ok: false, error });
@@ -24,6 +25,7 @@ export const promoterLinkOf = (s: RougeState, eventId: UUID, userId: UUID) => s.
  * equipo. El código lo genera el servidor (en Supabase el comando no es optimista).
  */
 export function ensurePromoterLink(state: RougeState, eventId: UUID, promoterId: UUID, actorId: UUID, now = Date.now()): R<PromoterLink> {
+  if (!featureOn(state, eventId, "enableRrpp")) return fail(FEATURE_DISABLED);
   if (staffRoleOf(state, eventId, promoterId) !== "promoter") return fail("Esa persona no es RRPP de este evento: sumala al equipo con el rol RRPP.");
   if (actorId !== promoterId && !can(state, eventId, actorId, "admin.events")) return fail("Tu rol no tiene permiso para esto.");
   const existing = promoterLinkOf(state, eventId, promoterId);

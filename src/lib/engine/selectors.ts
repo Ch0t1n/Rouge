@@ -309,3 +309,7 @@ export function openVipSquads(s: RougeState, eventId: UUID, viewerId: UUID) {
     .filter((sq) => !squadMembers(s, sq.id).some((m) => isBlockedBetween(s, viewerId, m.user_id)))
     .map((sq) => ({ squad: sq, members: squadMembers(s, sq.id).map((m) => getProfile(s, m.user_id)!).filter(Boolean) }));
 }
+
+// ── Módulos del evento (v1.8) ────────────────────────────────────────
+// Flags efectivos (con dependencias resueltas). En React: useEventFeatures() de lib/store/hooks.
+export { eventFeatures, featureOn, isPathEnabled } from "./features";
