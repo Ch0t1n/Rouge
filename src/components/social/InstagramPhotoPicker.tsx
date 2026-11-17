@@ -81,7 +81,7 @@ export function InstagramPhotoPicker({ open, onClose, max, username, onPicked }:
                   className={cn("relative block aspect-square w-full overflow-hidden rounded-xl", idx >= 0 && "ring-2 ring-rouge")}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={p.url} alt="" loading="lazy" referrerPolicy="no-referrer" className="size-full object-cover" />
+                  <img src={p.url} alt="" loading="lazy" referrerPolicy="no-referrer" className="size-full bg-black/40 object-contain" />
                   {idx >= 0 && (
                     <span className="absolute right-1.5 top-1.5 grid size-6 place-items-center rounded-full bg-rouge font-display text-xs font-bold text-white shadow-glow-rouge">
                       {max > 1 ? idx + 1 : <Check className="size-3.5" />}

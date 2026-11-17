@@ -13,11 +13,13 @@ import { averageColor, compressImage, formatBytes, imageSize } from "@/lib/media
 import { uploadMedia } from "@/lib/media/upload";
 import { useRouge } from "@/lib/store/RougeContext";
 import { MediaImage } from "@/components/media/MediaImage";
+import { PhotoCropper } from "@/components/profile/PhotoCropper";
 import { cn } from "@/lib/utils";
 
 /**
- * Hasta 4 fotos 3:4. Cada foto se comprime en el cliente a WebP (~250 KB)
- * ANTES de subir, y se muestra el ahorro para que el usuario lo entienda.
+ * Hasta 4 fotos, SIEMPRE verticales 3:4. Al subir, cada una pasa por el encuadre (`PhotoCropper`): la persona elige
+ * qué parte se ve; la app nunca recorta sola. Después se comprime en el cliente a WebP (~250 KB) ANTES de subir y se
+ * muestra el ahorro para que el usuario lo entienda.
  */
 export function PhotoSlots({ photos, onChange }: { photos: ProfilePhoto[]; onChange: (p: ProfilePhoto[]) => void }) {
   const { notify, state, mode, exec } = useRouge();
@@ -41,31 +43,53 @@ export function PhotoSlots({ photos, onChange }: { photos: ProfilePhoto[]; onCha
     if (err) notify({ tone: "error", title: err });
   };
 
-  const onFiles = async (files: FileList | File[] | null) => {
+  /** Fotos elegidas que esperan su encuadre (de a una). */
+  const [queue, setQueue] = useState<File[]>([]);
+  const batch = useRef({ total: 0, done: 0 });
+  const savings = useRef({ before: 0, after: 0, pending: 0 });
+
+  /** Del teléfono o de Instagram: cada foto pasa primero por el encuadre vertical (la elige la persona). */
+  const onFiles = (files: FileList | File[] | null) => {
     if (!files?.length) return;
-    const free = MAX_PHOTOS - latest.current.length;
-    const list = Array.from(files).slice(0, free);
-    if (files.length > free) notify({ tone: "info", title: `Máximo ${MAX_PHOTOS} fotos`, description: `Se agregan solo ${free}.` });
-    setBusy((b) => b + list.length);
-    let before = 0;
-    let after = 0;
-    for (const file of list) {
-      try {
-        const compressed = await compressImage(file, "profile");
-        const [blur_color, size, url] = await Promise.all([averageColor(compressed), imageSize(compressed), uploadMedia(compressed, "photo")]);
-        before += file.size;
-        after += compressed.size;
-        const next = [...latest.current, { url, blur_color, ...size }];
-        latest.current = next;
-        onChange(next);
-      } catch (e) {
-        notify({ tone: "error", title: "No pudimos procesar esa foto", description: e instanceof Error && /imagen/.test(e.message) ? e.message : "Probá con JPG o PNG." });
-      } finally {
-        setBusy((b) => b - 1);
+    const free = MAX_PHOTOS - latest.current.length - busy - queue.length;
+    const list = Array.from(files).filter((f) => f.type.startsWith("image/")).slice(0, Math.max(0, free));
+    if (files.length > list.length) notify({ tone: "info", title: `Máximo ${MAX_PHOTOS} fotos`, description: list.length ? `Se agregan solo ${list.length}.` : "Borrá una para sumar otra." });
+    if (input.current) input.current.value = "";
+    if (!list.length) return;
+    if (!queue.length) batch.current = { total: 0, done: 0 };
+    batch.current.total += list.length;
+    setQueue((q) => [...q, ...list]);
+  };
+
+  const next = () => {
+    batch.current.done += 1;
+    setQueue((q) => q.slice(1));
+  };
+
+  /** Foto ya encuadrada → WebP liviano → Storage (o IndexedDB en demo). */
+  const upload = async (original: File, cropped: File) => {
+    next();
+    setBusy((b) => b + 1);
+    savings.current.pending += 1;
+    try {
+      const compressed = await compressImage(cropped, "profile");
+      const [blur_color, size, url] = await Promise.all([averageColor(compressed), imageSize(compressed), uploadMedia(compressed, "photo")]);
+      savings.current.before += original.size;
+      savings.current.after += compressed.size;
+      const updated = [...latest.current, { url, blur_color, ...size }];
+      latest.current = updated;
+      onChange(updated);
+    } catch (e) {
+      notify({ tone: "error", title: "No pudimos procesar esa foto", description: e instanceof Error && /imagen/.test(e.message) ? e.message : "Probá con JPG o PNG." });
+    } finally {
+      setBusy((b) => b - 1);
+      const sv = savings.current;
+      sv.pending -= 1;
+      if (sv.pending === 0 && sv.after) {
+        notify({ tone: "squad", title: "📶 Fotos optimizadas para la pista", description: `${formatBytes(sv.before)} → ${formatBytes(sv.after)}. Cargan al instante con poca señal.` });
+        savings.current = { before: 0, after: 0, pending: 0 };
       }
     }
-    if (after) notify({ tone: "squad", title: "📶 Fotos optimizadas para la pista", description: `${formatBytes(before)} → ${formatBytes(after)}. Cargan al instante con poca señal.` });
-    if (input.current) input.current.value = "";
   };
 
   const remove = (i: number) => onChange(photos.filter((_, j) => j !== i));
@@ -104,7 +128,7 @@ export function PhotoSlots({ photos, onChange }: { photos: ProfilePhoto[]; onCha
             <button
               key={`empty-${i}`}
               type="button"
-              disabled={!isNext || busy > 0}
+              disabled={!isNext || busy > 0 || queue.length > 0}
               onClick={() => input.current?.click()}
               className={cn(
                 "flex aspect-card flex-col items-center justify-center gap-2 rounded-2xl border border-dashed text-sm transition",
@@ -134,6 +158,14 @@ export function PhotoSlots({ photos, onChange }: { photos: ProfilePhoto[]; onCha
       )}
       <InstagramPhotoPicker open={picker} onClose={() => setPicker(false)} max={MAX_PHOTOS - photos.length} username={igLink?.username} onPicked={(files) => onFiles(files)} />
       <input ref={input} type="file" accept="image/*" multiple hidden onChange={(e) => onFiles(e.target.files)} data-testid="photo-input" />
+      <PhotoCropper
+        key={batch.current.done}
+        file={queue[0] ?? null}
+        position={batch.current.done + 1}
+        total={batch.current.total}
+        onDone={(cropped) => queue[0] && upload(queue[0], cropped)}
+        onCancel={next}
+      />
     </div>
   );
 }

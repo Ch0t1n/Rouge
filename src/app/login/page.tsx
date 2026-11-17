@@ -17,13 +17,15 @@ import { Button } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
 import { OrDivider, SocialLoginButtons } from "@/components/social/SocialLoginButtons";
 import { useInstagramReturn } from "@/components/social/InstagramField";
+import { Wordmark } from "@/components/brand/Wordmark";
 
 /**
  * Ingreso e identificación del tipo de usuario.
  *  - Asistente: entra a la app (lobby, squad, plano, barra).
  *  - Equipo del evento: dueño/a, producción, barra, mozo/a o seguridad → cada uno a su pantalla.
  * Supabase: magic link y el rol lo define `event_staff` (lo asigna el dueño/a en Eventos → Equipo).
- * Modo Demo: elegís la persona y entrás con su rol.
+ * Modo Demo: el selector de personas/roles solo aparece después de entrar por /demo (`demoVisible`).
+ * En el sitio principal se ve el login normal y el ingreso abre una cuenta nueva (onboarding).
  */
 export default function LoginPage() {
   return (
@@ -36,7 +38,7 @@ export default function LoginPage() {
 type Tab = "attendee" | "staff";
 
 function Login() {
-  const { mode, signedIn, state, role, signOut } = useRouge();
+  const { mode, demoVisible, signedIn, state, role, signOut } = useRouge();
   const router = useRouter();
   const params = useSearchParams();
   const next = safeNext(params.get("next"));
@@ -58,7 +60,7 @@ function Login() {
     <main className="safe-top relative flex min-h-dvh flex-col overflow-hidden px-6 pb-10 pt-10">
       <div aria-hidden className="pointer-events-none absolute -top-40 left-1/2 size-[420px] -translate-x-1/2 rounded-full bg-rouge/20 blur-[120px]" />
       <Link href="/" className="relative font-display text-5xl font-bold tracking-tight text-rouge text-glow-rouge">
-        ROUGE
+        <Wordmark />
       </Link>
       <h1 className="relative mt-5 text-[28px] leading-tight">¿Cómo entrás esta noche?</h1>
       <p className="relative mt-2 text-sm text-muted">Cada tipo de usuario ve su propia pantalla: la fiesta para asistentes, el panel para el equipo.</p>
@@ -89,10 +91,10 @@ function Login() {
       <div className="relative mt-6 flex-1">
         {mode === "supabase" && signedIn && switching ? (
           <SessionCard me={me} roleLabel={`${ROLE_META[role].emoji} ${ROLE_META[role].label}`} onContinue={() => router.replace(destinationFor(state, state.active_event_id, state.current_user_id, next))} onSignOut={signOut} />
-        ) : mode === "supabase" ? (
-          <EmailLogin tab={tab} next={next} />
-        ) : (
+        ) : mode === "demo" && demoVisible ? (
           <DemoPicker tab={tab} next={next} />
+        ) : (
+          <EmailLogin tab={tab} next={next} />
         )}
       </div>
     </main>
@@ -122,6 +124,8 @@ function SessionCard({ me, roleLabel, onContinue, onSignOut }: { me?: Profile; r
 }
 
 function EmailLogin({ tab, next }: { tab: Tab; next: string | null }) {
+  const { mode, startNewPersona } = useRouge();
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -129,6 +133,12 @@ function EmailLogin({ tab, next }: { tab: Tab; next: string | null }) {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (mode === "demo") {
+      // Sin backend no hay mail que mandar: abre una cuenta nueva y sigue al onboarding.
+      startNewPersona();
+      router.push(`/onboarding${next ? `?next=${encodeURIComponent(next)}` : ""}`);
+      return;
+    }
     const sb = getSupabase();
     if (!sb) return;
     setBusy(true);

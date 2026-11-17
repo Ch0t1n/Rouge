@@ -12,6 +12,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { isPathEnabled } from "@/lib/engine/features";
 import { useEventFeatures } from "@/lib/store/hooks";
+import { Wordmark } from "@/components/brand/Wordmark";
 
 export const ADMIN_NAV = [
   { href: "/admin", label: "Resumen", icon: BarChart3 },
@@ -30,7 +31,7 @@ export const ADMIN_NAV = [
 /** Estructura del panel: sidebar en desktop, pestañas horizontales en pantallas chicas. */
 export function AdminChrome({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? "/admin";
-  const { state, mode, setActiveEvent, signedIn, role, can } = useRouge();
+  const { state, demoVisible, setActiveEvent, signedIn, role, can } = useRouge();
   const perm = permissionForPath(pathname);
   // Aislamiento de plataformas: puerta y barra van a /ops; el asistente solo puede crear SU evento; el resto según
   // su permiso (misma regla que canAccessPath y que has_staff_role en el servidor).
@@ -73,7 +74,7 @@ export function AdminChrome({ children }: { children: ReactNode }) {
       {shortcuts.sheet}
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col overflow-y-auto border-r border-white/10 bg-surface/60 p-5 lg:flex 2xl:w-72">
         <Link href="/app" className="font-display text-2xl font-bold tracking-tight text-rouge text-glow-rouge">
-          ROUGE
+          <Wordmark />
         </Link>
         <p className="mt-1 text-xs font-semibold uppercase tracking-widest text-vip">Organizer Suite</p>
         <div className="mt-6">{eventSelect}</div>
@@ -104,10 +105,10 @@ export function AdminChrome({ children }: { children: ReactNode }) {
               <span aria-hidden>{meta.emoji}</span> {meta.label}
             </p>
             <Link href="/login?as=staff" className="mt-2 flex items-center gap-1.5 text-xs text-muted hover:text-primary">
-              <LogOut className="size-3.5" /> {mode === "demo" ? "Cambiar de rol" : "Cambiar de cuenta"}
+              <LogOut className="size-3.5" /> {demoVisible ? "Cambiar de rol" : "Cambiar de cuenta"}
             </Link>
           </div>
-          {mode === "demo" && (
+          {demoVisible && (
             <p className="flex items-start gap-2 rounded-xl bg-white/[0.04] p-3 text-[11px] text-muted">
               <ShieldCheck className="size-4 shrink-0 text-squad" /> Modo Demo: cada rol ve solo sus secciones (igual que con Supabase, donde lo exige el servidor).
             </p>
@@ -121,7 +122,7 @@ export function AdminChrome({ children }: { children: ReactNode }) {
       <div className="min-w-0 flex-1">
         <div className="sticky top-0 z-30 border-b border-white/10 bg-background/90 backdrop-blur-xl lg:hidden">
           <div className="flex items-center gap-3 px-4 pt-3">
-            <Link href="/app" className="font-display text-xl font-bold text-rouge">ROUGE</Link>
+            <Link href="/app" className="font-display text-xl font-bold text-rouge"><Wordmark /></Link>
             <div className="min-w-0 flex-1">{eventSelect}</div>
             <Link href="/login?as=staff" aria-label={`${meta.label}: cambiar de rol`} className="flex min-h-touch shrink-0 items-center gap-1 rounded-full bg-vip/15 px-3 font-display text-xs font-semibold text-vip">
               <span aria-hidden>{meta.emoji}</span> {meta.label}
@@ -227,7 +228,7 @@ function ModuleOff() {
 /** Pantalla para quien no tiene sesión o cuyo rol no incluye esta sección. */
 function NoAccess() {
   const pathname = usePathname() ?? "/admin";
-  const { signedIn, role, mode } = useRouge();
+  const { signedIn, role, demoVisible } = useRouge();
   const meta = ROLE_META[role];
   const home = roleHome(role);
   const next = encodeURIComponent(pathname);
@@ -256,7 +257,7 @@ function NoAccess() {
                 Ir a mi pantalla
               </Link>
               <Link href={`/login?as=staff&next=${next}`} className={buttonVariants({ variant: "glass", block: true })}>
-                {mode === "demo" ? "Entrar con otro rol" : "Ingresar con otra cuenta"}
+                {demoVisible ? "Entrar con otro rol" : "Ingresar con otra cuenta"}
               </Link>
             </div>
           </>

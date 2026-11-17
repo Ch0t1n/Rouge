@@ -7,6 +7,7 @@ import { FRAME_PERSONA_PREFIX, useRouge } from "@/lib/store/RougeContext";
 import { DEMO_ROLES, DEMO_SCRIPT, type DemoRole } from "@/lib/demo/script";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { Wordmark } from "@/components/brand/Wordmark";
 
 const PHONE = { w: 390, h: 844 };
 const PANEL_ROLES: DemoRole[] = ["duena", "produccion", "barra", "mozo", "seguridad", "rrpp"];
@@ -75,7 +76,7 @@ export function Presenter() {
         <Link href="/demo" className={buttonVariants({ size: "sm", variant: "ghost" })} aria-label="Volver a la página de la demo">
           <ArrowLeft />
         </Link>
-        <span className="font-display text-lg font-bold text-rouge">ROUGE</span>
+        <span className="font-display text-lg font-bold text-rouge"><Wordmark /></span>
         <div className="mx-2 flex items-center gap-1">
           <Button size="icon" variant="ghost" aria-label="Paso anterior" disabled={step === 0} onClick={() => go(step - 1)}>
             <ChevronLeft />

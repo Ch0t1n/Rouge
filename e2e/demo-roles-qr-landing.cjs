@@ -37,9 +37,16 @@ const assert = (c, m) => { if (!c) throw new Error("✘ " + m); log("✔ " + m);
   await org.close();
   await p.click("header >> text=Entrar a un Evento");
   await p.waitForURL("**/join");
-  await p.goto(`${B}/login`);
+  // Sitio principal: el login no muestra la demo (personas ni roles) hasta entrar por /demo
+  await p.goto(`${B}/login`, { waitUntil: "networkidle" });
+  assert(await p.isVisible("text=Continuar con Instagram") && await p.isVisible('input[type="email"]'), "login del sitio principal: Instagram, Google y email");
+  assert(!(await p.isVisible("text=Sofía")) && !/modo demo|persona del demo/i.test(await p.evaluate(() => document.body.innerText)), "login del sitio principal sin personas ni menciones a la demo");
+  await p.goto(`${B}/login?as=staff`, { waitUntil: "networkidle" });
+  assert(!(await p.isVisible("text=Daniela Ortiz")), "login de equipo del sitio principal sin roles del demo");
+  await p.goto(`${B}/demo`, { waitUntil: "networkidle" });
+  await p.goto(`${B}/login`, { waitUntil: "networkidle" });
 
-  // Login como asistente → /app
+  // Login como asistente → /app (tras pasar por /demo)
   await p.click("text=Sofía");
   await p.waitForURL("**/app");
   await p.waitForSelector("text=Hola, Sofía");
@@ -151,12 +158,13 @@ const assert = (c, m) => { if (!c) throw new Error("✘ " + m); log("✔ " + m);
   await ig.click("text=/Importar de Instagram/");
   await ig.click('[aria-label="Foto de Instagram demo-2"]');
   await ig.click("text=Agregar 1 foto");
+  await ig.click('[role="dialog"] button:has-text("Usar foto")');
   await ig.waitForSelector('img[alt="Foto 1"]', { timeout: 20000 });
   assert(true, "demo: foto importada del feed de Instagram");
   await ig.click("text=Continuar");
   await ig.click('button[aria-pressed]:has-text("House")');
   await ig.click("text=Continuar");
-  await ig.click("text=Entrar a ROUGE");
+  await ig.click("text=Entrar a Rouge Pass");
   await ig.waitForURL("**/app");
   await ig.goto(`${B}/profile`, { waitUntil: "networkidle" });
   assert(await ig.isVisible(`text=@${sug}`) && await ig.isVisible("text=Cuenta conectada"), "demo: el perfil muestra el Instagram verificado");

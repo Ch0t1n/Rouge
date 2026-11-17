@@ -65,7 +65,7 @@ function useOnline() {
  * valida contra el padrón cifrado del dispositivo y reconcilia al volver la red.
  */
 export function DoorScanner({ variant = "admin" }: { variant?: "admin" | "ops" }) {
-  const { state, exec, mode, notify } = useRouge();
+  const { state, exec, mode, demoVisible, notify } = useRouge();
   const kiosk = useKiosk();
   const ops = variant === "ops";
   const event = activeEvent(state)!;
@@ -280,7 +280,7 @@ export function DoorScanner({ variant = "admin" }: { variant?: "admin" | "ops" }
             <MonitorSmartphone className="size-4" /> Terminal
             <input value={terminal} onChange={(e) => setTerminal(e.target.value.slice(0, 40))} aria-label="Nombre de esta terminal" className={cn("w-32 rounded-lg border px-2 py-1", ops ? "border-white/30 bg-black text-white" : "border-white/10 bg-white/[0.04]")} />
           </label>
-          {mode === "demo" && (
+          {mode === "demo" && demoVisible && (
             <button type="button" onClick={() => setSimOffline((v) => !v)} className={cn("inline-flex min-h-[36px] items-center gap-1.5 rounded-full px-3 font-semibold", simOffline ? "bg-sos text-white" : "bg-white/10")}>
               <CloudOff className="size-3.5" /> {simOffline ? "Volver a conectar" : "Simular sin conexión"}
             </button>

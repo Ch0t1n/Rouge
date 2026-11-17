@@ -31,7 +31,7 @@ export default function PerksPage() {
 }
 
 function Wallet() {
-  const { state, exec, mode, notify } = useRouge();
+  const { state, exec, mode, demoVisible, notify } = useRouge();
   const now = useNow(15_000);
   const event = activeEvent(state)!;
   const meId = state.current_user_id;
@@ -133,7 +133,7 @@ function Wallet() {
   const qrDetail = live && (
           <div className="space-y-4 pb-2">
             <DynamicQr eventId={live.event_id} kind="PERK" refId={live.id} dimmed={live.status === "redeemed"} label={live.title} size={desktop ? 200 : 232} />
-            {mode === "demo" && live.status === "available" && (
+            {mode === "demo" && demoVisible && live.status === "available" && (
               <Button
                 block
                 variant="glass"

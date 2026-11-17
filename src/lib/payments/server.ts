@@ -177,7 +177,7 @@ export async function createCheckout(order: OrderWithEvent, site: string): Promi
     method: "POST",
     token,
     headers: { "X-Idempotency-Key": `rouge-${order.id}-${Math.floor(Date.now() / 60_000)}` },
-    body: JSON.stringify(buildPreference(order, { site, brandId, eventName: order.events?.name ?? "ROUGE", feePercent: c.feePercent, currency: c.currency })),
+    body: JSON.stringify(buildPreference(order, { site, brandId, eventName: order.events?.name ?? "Rouge Pass", feePercent: c.feePercent, currency: c.currency })),
   })) as { id?: string; init_point?: string };
   if (!pref.id || !pref.init_point) throw new MpError("mp_api_error", 502);
   await adminClient().from("bar_orders").update({ mp_preference_id: pref.id }).eq("id", order.id);

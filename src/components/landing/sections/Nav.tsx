@@ -59,7 +59,7 @@ export function Nav() {
             <span className="absolute inline-flex size-full animate-pin-pulse rounded-full bg-rouge" />
             <span className="relative inline-flex size-2.5 rounded-full bg-rouge shadow-glow-rouge" />
           </span>
-          ROUGE
+          <span>ROUGE <span className="text-rouge">PASS</span></span>
         </Link>
         <div className="ml-6 hidden items-center gap-1 lg:flex">
           {links.map((l) => (

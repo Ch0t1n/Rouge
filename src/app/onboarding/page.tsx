@@ -22,8 +22,9 @@ import { SpotifyField } from "@/components/profile/SpotifyField";
 import { BlacklistManager } from "@/components/profile/BlacklistManager";
 import { useInstagramReturn } from "@/components/social/InstagramField";
 import { getSupabase } from "@/lib/supabase/client";
+import { APP_NAME } from "@/lib/brand";
 
-/** @ de Instagram → @username válido de ROUGE ([a-z0-9._]{3,20}); vacío si no sirve. */
+/** @ de Instagram → @username válido de Rouge Pass ([a-z0-9._]{3,20}); vacío si no sirve. */
 function suggestUsername(ig: string | null | undefined): string {
   const u = (ig ?? "").toLowerCase().replace(/[^a-z0-9._]/g, "").slice(0, 20);
   return u.length >= 3 ? u : "";
@@ -161,7 +162,7 @@ function Onboarding() {
 
       <div className="flex-1 space-y-6 px-5 pb-32 pt-2">
         <div>
-          {step === 0 && <p className="font-display text-sm font-bold tracking-tight text-rouge text-glow-rouge">BIENVENIDO A ROUGE</p>}
+          {step === 0 && <p className="font-display text-sm font-bold tracking-tight text-rouge text-glow-rouge">BIENVENIDO A ROUGE PASS</p>}
           <h1 className="mt-1 text-[30px] leading-[1.05]">{STEPS[step].title}</h1>
           <p className="mt-2 text-sm text-muted">{STEPS[step].subtitle}</p>
         </div>
@@ -238,7 +239,7 @@ function Onboarding() {
         <Button block size="lg" onClick={advance} variant={stepValid ? "rouge" : "glass"}>
           {step === STEPS.length - 1 ? (
             <>
-              <PartyPopper /> Entrar a ROUGE
+              <PartyPopper /> Entrar a {APP_NAME}
             </>
           ) : (
             <>

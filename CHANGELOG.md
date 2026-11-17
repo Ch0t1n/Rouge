@@ -4,6 +4,27 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Sin publicar]
 
+### Cambiado
+- **Fotos reales en el demo** para Sofía, Camila, Julieta, Mateo y Valentina (WebP 600×800 en
+  `public/demo/avatars`, `src/lib/demo/photos.ts`); el resto sigue con retratos vectoriales. `STATE_VERSION` 9 (la demo
+  se vuelve a sembrar). La maqueta del teléfono de la landing usa las mismas fotos.
+- **La demo ya no se ve en el sitio principal.** El login muestra solo Instagram, Google y email (en Modo Demo abren
+  una cuenta nueva y siguen al onboarding); las personas y roles del demo, el cambio de persona, los links de prueba,
+  los botones "Simular…" y el badge "Modo Demo" aparecen recién después de entrar por **`/demo`** (queda recordado en
+  ese navegador, `rouge:demo-access`). `/demo` suma el botón "Elegir persona". Ver `src/lib/demo/access.ts`.
+- **Fotos de perfil verticales y encuadradas por cada persona:** al subir una foto (del teléfono o de Instagram) se
+  abre el **encuadre 3:4**: se arrastra y se acerca (con dos dedos o con la barra) para elegir qué se ve. La app ya no
+  recorta nada por su cuenta: las fotos se ven enteras en la grilla, el perfil, el editor y la puerta, y los avatares
+  pasan de círculo a vertical 3:4 con esquinas suaves. El loop de video también se ve entero.
+- Nueva dependencia: `react-easy-crop` (encuadre con arrastre y pellizco).
+- **Nuevo nombre: Rouge Pass** (antes ROUGE). Cambian los textos visibles: wordmark (ROUGE **PASS**), metadata y
+  nombre de la PWA, landing pública y de organizadores, demo, login, onboarding, mensajes al compartir, ticket y QRs
+  impresos, nombre de la API (`Rouge Pass API`) y documentación. Constante única `APP_NAME` en `src/lib/brand.ts` y
+  componente `<Wordmark />`.
+- **Sin cambios internos** (compatibles con lo que ya está en producción): token de color `rouge`, QR
+  `ROUGE:ORDER:` / `ROUGE:PASS:` (entradas y tickets ya emitidos siguen andando), claves `rouge:*` del navegador y
+  email interno de las cuentas de Instagram.
+
 ### Agregado — Creador modular de eventos y módulos por evento (v1.8)
 - **Módulos por evento** (`EventFeatureFlags`, `engine/features.ts`): 13 interruptores en 4 categorías (acceso y
   puerta, social, grupos y mapa, barra y beneficios) con **dependencias** (regalar tragos exige Barra + Chat; Vaquita

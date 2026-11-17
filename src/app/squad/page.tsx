@@ -46,6 +46,7 @@ import { SquadChatPanel } from "@/components/squad/SquadChatPanel";
 import { SquadMapPanel } from "@/components/squad/SquadMapPanel";
 import { SquadAccounts } from "@/components/squad/SquadAccounts";
 import { VipSplitPanel } from "@/components/monetization/VipSplitPanel";
+import { APP_NAME } from "@/lib/brand";
 
 export default function SquadPage() {
   const me = useRequireProfile();
@@ -236,7 +237,7 @@ const meId = state.current_user_id;
 
   const shareSheet = useShare();
   const share = () =>
-    shareSheet.open({ url: link, title: `Sumate a ${squad.name}`, text: `Sumate a mi Squad "${squad.name}" en ROUGE 👯 (entrás al evento y quedás en el grupo)`, fileName: `rouge-squad-${squad.invite_code}`, accent: "squad", caption: squad.invite_code });
+    shareSheet.open({ url: link, title: `Sumate a ${squad.name}`, text: `Sumate a mi Squad "${squad.name}" en ${APP_NAME} 👯 (entrás al evento y quedás en el grupo)`, fileName: `rouge-pass-squad-${squad.invite_code}`, accent: "squad", caption: squad.invite_code });
 
   return (
     <>

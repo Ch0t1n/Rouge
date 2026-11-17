@@ -38,9 +38,10 @@ import type {
   UserPerkQR,
   VenueLayout,
 } from "@/lib/types";
+import { DEMO_PHOTOS } from "@/lib/demo/photos";
 import { pinHash } from "@/lib/engine/security";
 
-export const STATE_VERSION = 12;
+export const STATE_VERSION = 13;
 
 /**
  * Últimas 3 fechas de la organización (demo): curvas de 15' de ingresos en puerta y ventas de barra, alineadas al
@@ -272,7 +273,9 @@ export function createSeedState(now = Date.now()): RougeState {
       gender: p.gender,
       phone_normalized: p.phone,
       bio: p.bio,
-      photos: [1, 2].map((k) => ({ url: `/demo/avatars/${p.username}-${k}.svg`, width: 600, height: 800, blur_color: "#121216" })),
+      photos: DEMO_PHOTOS[p.username]
+        ? DEMO_PHOTOS[p.username].map((ph) => ({ ...ph, width: 600, height: 800 }))
+        : [1, 2].map((k) => ({ url: `/demo/avatars/${p.username}-${k}.svg`, width: 600, height: 800, blur_color: "#121216" })),
       loop_video_url: null,
       music_genres: p.genres,
       spotify_embed_url: p.spotify ?? null,

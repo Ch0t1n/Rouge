@@ -1,11 +1,11 @@
 # Guía para asistentes
 
-Cómo usar ROUGE en una fiesta, de la puerta a la vuelta a casa. Pensada para compartir con el público o usar
+Cómo usar Rouge Pass en una fiesta, de la puerta a la vuelta a casa. Pensada para compartir con el público o usar
 como base de un FAQ.
 
 ## Antes de la fiesta
 
-1. **Abrí el link o escaneá el QR** de tu entrada. No hace falta descargar nada: ROUGE se abre en el navegador y se
+1. **Abrí el link o escaneá el QR** de tu entrada. No hace falta descargar nada: Rouge Pass se abre en el navegador y se
    puede instalar como app ("Agregar a pantalla de inicio").
 2. **Entrá** con tu email (te llega un link, sin contraseña), con **Google** o con **Instagram**.
 3. **Armá tu perfil** (una sola vez, sirve para todas las fiestas):
@@ -62,9 +62,9 @@ como base de un FAQ.
 **¿Quién ve mi ubicación?** Solo a quien elegiste en cada pin, durante 15 minutos. No guardamos tu recorrido; solo
 el nombre de los sectores donde dejaste pin (para el filtro "coincidieron en tu zona").
 
-**Bloqueé a alguien, ¿se entera?** No. Simplemente dejan de verse en todo ROUGE.
+**Bloqueé a alguien, ¿se entera?** No. Simplemente dejan de verse en todo Rouge Pass.
 
 **¿Por qué no puedo conectar mi Instagram?** Instagram solo permite conectar cuentas **profesionales** (Creador o
 Empresa; cambiarla es gratis desde la app de Instagram). Si no querés, escribí tu @ a mano: aparece como "sin verificar".
 
-**¿Puedo borrar mi Instagram de ROUGE?** Sí: *Editar perfil → Instagram → Quitar*. Se borra el acceso y el @.
+**¿Puedo borrar mi Instagram de Rouge Pass?** Sí: *Editar perfil → Instagram → Quitar*. Se borra el acceso y el @.

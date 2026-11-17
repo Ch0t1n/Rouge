@@ -171,7 +171,7 @@ export function buildPreference(order: Pick<BarOrder, "id" | "items_json" | "tot
         .replace(/\s+/g, " ")
         .trim()
         .slice(0, 13)
-        .trim() || "ROUGE",
+        .trim() || "ROUGE PASS",
     marketplace_fee: marketplaceFee(order.total_amount, o.feePercent),
     notification_url: `${o.site}/api/mercadopago/webhook?brand=${encodeURIComponent(o.brandId)}`,
     back_urls: { success: back("ok"), pending: back("pendiente"), failure: back("error") },

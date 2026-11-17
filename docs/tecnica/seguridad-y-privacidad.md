@@ -1,6 +1,6 @@
 # Seguridad y privacidad
 
-ROUGE maneja datos sensibles de gente de noche: teléfono, edad, fotos, ubicación aproximada y con quién conecta.
+Rouge Pass maneja datos sensibles de gente de noche: teléfono, edad, fotos, ubicación aproximada y con quién conecta.
 Este documento resume qué se guarda, quién lo ve y cómo se protege.
 
 ## Principios

@@ -14,15 +14,15 @@ import { cn } from "@/lib/utils";
 import { ROLE_META, roleHome, staffRoleOf } from "@/lib/engine/roles";
 
 /**
- * Solo Modo Demo: "actuar como" cualquier asistente para probar ambos lados
+ * Solo Modo Demo y tras entrar por /demo: "actuar como" cualquier asistente para probar ambos lados
  * de un flujo (enviar conexión ↔ recibirla, rescate ↔ alerta). Combinado con
  * dos pestañas abiertas simula el realtime entre teléfonos.
  */
 export function PersonaSwitcher() {
-  const { state, mode, setCurrentUser, startNewPersona, resetDemo, notify } = useRouge();
+  const { state, mode, demoVisible, setCurrentUser, startNewPersona, resetDemo, notify } = useRouge();
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  if (mode !== "demo") return null;
+  if (mode !== "demo" || !demoVisible) return null;
   const me = state.profiles.find((p) => p.id === state.current_user_id);
   // Asistentes del evento + personas creadas en el demo; el equipo va aparte (entra a su panel)
   const roleFor = (id: string) => staffRoleOf(state, state.active_event_id, id);

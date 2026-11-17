@@ -39,7 +39,7 @@ export function LoopVideo({ url, poster, className }: { url: string; poster?: st
       preload="metadata"
       disablePictureInPicture
       aria-hidden
-      className={cn("object-cover", className)}
+      className={cn("bg-black object-contain", className)}
     />
   );
 }

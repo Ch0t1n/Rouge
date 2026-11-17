@@ -1,4 +1,4 @@
-# Documentación de ROUGE v1.0
+# Documentación de Rouge Pass v1.0
 
 **La noche, conectada.** PWA social y operativa para eventos, fiestas y boliches (B2B2C).
 

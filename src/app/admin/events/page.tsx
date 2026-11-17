@@ -29,6 +29,7 @@ import { VENUE_LAYOUT } from "@/lib/mock/seed";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { TextAreaField, TextField } from "@/components/ui/field";
+import { APP_NAME } from "@/lib/brand";
 
 const H = 3_600_000;
 /** ISO → valor de <input type="datetime-local"> en hora local */
@@ -322,7 +323,7 @@ function AccessPanel({ event }: { event: RougeEvent }) {
             size="icon"
             variant="glass"
             aria-label="Ver QR del link maestro"
-            onClick={() => share.open({ url: masterLink, title: `QR de ${event.name}`, text: `Entrá al lobby de ${event.name} en ROUGE 🔴`, fileName: `rouge-${event.slug}`, accent: "vip", caption: event.master_invite_code })}
+            onClick={() => share.open({ url: masterLink, title: `QR de ${event.name}`, text: `Entrá al lobby de ${event.name} en ${APP_NAME} 🔴`, fileName: `rouge-pass-${event.slug}`, accent: "vip", caption: event.master_invite_code })}
           >
             <QrCode />
           </Button>
@@ -408,7 +409,7 @@ function AccessPanel({ event }: { event: RougeEvent }) {
                         size="sm"
                         variant="ghost"
                         aria-label={`QR de ${c.code}`}
-                        onClick={() => share.open({ url: `${origin}/join/${c.code}`, title: `Entrada ${c.code}`, text: `Tu acceso a ${event.name} en ROUGE (1 uso, no lo compartas) 🎟️`, fileName: `rouge-${c.code}`, accent: "vip", caption: c.code })}
+                        onClick={() => share.open({ url: `${origin}/join/${c.code}`, title: `Entrada ${c.code}`, text: `Tu acceso a ${event.name} en ${APP_NAME} (1 uso, no lo compartas) 🎟️`, fileName: `rouge-${c.code}`, accent: "vip", caption: c.code })}
                       >
                         <QrCode />
                       </Button>

@@ -37,6 +37,8 @@ import { squadAccount } from "@/lib/engine/settle";
 import { BrandLogo } from "@/components/brand/BrandTheme";
 import { DynamicQr } from "@/components/perks/DynamicQr";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
+import { Wordmark } from "@/components/brand/Wordmark";
+import { APP_NAME } from "@/lib/brand";
 
 const PHASE_LABEL: Record<LobbyPhase, string> = {
   upcoming: "Próximamente",
@@ -53,7 +55,7 @@ export default function HomePage() {
 }
 
 function Home() {
-  const { state, mode, notify, isStaff, role } = useRouge();
+  const { state, mode, demoVisible, notify, isStaff, role } = useRouge();
   const shareSheet = useShare();
   const router = useRouter();
   const now = useNow(15_000);
@@ -94,9 +96,9 @@ function Home() {
           {theme.logo_url ? (
             <BrandLogo theme={theme} className="h-9 max-w-[150px]" />
           ) : (
-            <span className="font-display text-[26px] font-bold leading-none tracking-tight text-rouge text-glow-rouge">ROUGE</span>
+            <span className="font-display text-[26px] font-bold leading-none tracking-tight text-rouge text-glow-rouge"><Wordmark /></span>
           )}
-          <Badge tone={mode === "demo" ? "vip" : "squad"}>{mode === "demo" ? "Modo Demo" : "Supabase"}</Badge>
+          {mode === "supabase" ? <Badge tone="squad">Supabase</Badge> : demoVisible && <Badge tone="vip">Modo Demo</Badge>}
         </div>
         <div className="flex items-center gap-2 md:hidden">
           <Link href="/profile" aria-label="Mi perfil" className="glass grid size-11 place-items-center rounded-full">
@@ -129,7 +131,7 @@ function Home() {
               </span>
               <button
                 type="button"
-                onClick={() => shareSheet.open({ url: `/join/${event.slug}`, title: `Invitá a ${event.name}`, text: `Entrá al lobby de ${event.name} en ROUGE 🔴`, fileName: `rouge-${event.slug}`, accent: "rouge" })}
+                onClick={() => shareSheet.open({ url: `/join/${event.slug}`, title: `Invitá a ${event.name}`, text: `Entrá al lobby de ${event.name} en ${APP_NAME} 🔴`, fileName: `rouge-pass-${event.slug}`, accent: "rouge" })}
                 className="glass-pill inline-flex min-h-[32px] items-center gap-1 hover:bg-white/10"
                 aria-label="QR para invitar al evento"
               >

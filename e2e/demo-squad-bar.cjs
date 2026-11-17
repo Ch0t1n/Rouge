@@ -1,12 +1,13 @@
 // Demo · Squad, rescate en vivo entre pestañas, plano, Punto Base, Barra Express, perks
 const { chromium, devices } = require("playwright");
 // Ver e2e/README.md. Configuración por variables de entorno (ver e2e/env.cjs).
-const { BASE: B, OUT: SP, FIXTURE_PHOTO } = require("./env.cjs");
+const { BASE: B, OUT: SP, FIXTURE_PHOTO, unlockDemo } = require("./env.cjs");
 
 const log = (...a) => console.log(...a);
 (async () => {
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ ...devices["iPhone 14 Pro"] });
+  await unlockDemo(ctx); // personas y "Simular…" solo tras entrar por /demo
   const errors = [];
   const watch = (p, tag) => {
     p.on("pageerror", (e) => errors.push(`[${tag}] ${e.message}`));
