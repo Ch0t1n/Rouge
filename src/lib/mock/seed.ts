@@ -37,8 +37,9 @@ import type {
   UserPerkQR,
   VenueLayout,
 } from "@/lib/types";
+import { pinHash } from "@/lib/engine/security";
 
-export const STATE_VERSION = 8;
+export const STATE_VERSION = 9;
 
 // IDs estables → los links de demo (/join/..., /u/...) no cambian entre re-siembras.
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -55,7 +56,14 @@ export const DEMO_IDS = {
   squadVip: id(2002),
   brand: id(3001),
   promoter: id(994),
+  /** Puerta por invitación de la organización (asignación con ventana horaria). */
+  doorScanner: id(995),
+  /** Administración global de ROUGE (/superadmin). */
+  platformAdmin: id(998),
 } as const;
+
+/** PINs de terminal del demo (Modo Kiosco). En producción cada integrante elige el suyo. */
+export const DEMO_PINS = { bartender: "4826", security: "7391", doorScanner: "5150" } as const;
 
 export const VENUE_LAYOUT: VenueLayout = {
   aspect: 3 / 4,
@@ -184,6 +192,26 @@ export function createSeedState(now = Date.now()): RougeState {
       is_verified: true,
       created_at: t(-60 * 24 * 30),
     },
+    ...[
+      { id: DEMO_IDS.doorScanner, username: "nico.puerta", full_name: "Nicolás Vera", phone: "+5491150000995", bio: "Puerta y control de listas." },
+      { id: DEMO_IDS.platformAdmin, username: "rouge.hq", full_name: "ROUGE HQ", phone: "+5491150000998", bio: "Soporte y operaciones de ROUGE." },
+    ].map<Profile>((m) => ({
+      id: m.id,
+      username: m.username,
+      full_name: m.full_name,
+      birth_date: birth(32, 0),
+      gender: "undisclosed",
+      phone_normalized: m.phone,
+      bio: m.bio,
+      photos: [],
+      loop_video_url: null,
+      music_genres: [],
+      spotify_embed_url: null,
+      instagram_username: null,
+      instagram_verified: false,
+      is_verified: true,
+      created_at: t(-60 * 24 * 20),
+    })),
     ...STAFF.map<Profile>((m) => ({
       id: m.id,
       username: m.username,
@@ -602,5 +630,24 @@ export function createSeedState(now = Date.now()): RougeState {
     squad_expenses,
     squad_settlements: [],
     payout_aliases,
+    staff_assignments: [
+      { id: id(17001), organization_id: DEMO_IDS.organizer, user_id: DEMO_IDS.doorScanner, role: "security", scope: "all_org_events", event_ids: [], access_window: true, revoked_at: null, created_by: DEMO_IDS.organizer, created_at: t(-60 * 24 * 3) },
+    ],
+    staff_invites: [],
+    terminal_pins: (
+      [
+        [DEMO_IDS.bartender, DEMO_PINS.bartender],
+        [DEMO_IDS.security, DEMO_PINS.security],
+        [DEMO_IDS.doorScanner, DEMO_PINS.doorScanner],
+      ] as const
+    ).map(([u, pin]) => ({ organization_id: DEMO_IDS.organizer, user_id: u, pin_hash: pinHash(DEMO_IDS.organizer, u, pin), updated_at: t(-60 * 24 * 2) })),
+    audit_log: [
+      { id: id(18001), organization_id: DEMO_IDS.organizer, event_id: null, actor_id: DEMO_IDS.organizer, operator_id: null, action: "staff.invited", target: id(17001), details: { role: "security", scope: "all_org_events", events: 0 }, created_at: t(-60 * 24 * 3 - 20) },
+      { id: id(18002), organization_id: DEMO_IDS.organizer, event_id: null, actor_id: DEMO_IDS.doorScanner, operator_id: null, action: "staff.joined", target: DEMO_IDS.doorScanner, details: { role: "security", scope: "all_org_events" }, created_at: t(-60 * 24 * 3) },
+    ],
+    user_reports: [
+      { id: id(19001), event_id: event.id, reporter_id: id(4), reported_user_id: id(11), reason: "harassment", details: "Insiste por chat después de que le dije que no.", status: "open", reviewed_by: null, created_at: t(-12) },
+    ],
+    platform_admin_ids: [DEMO_IDS.platformAdmin],
   };
 }

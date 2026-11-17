@@ -9,6 +9,7 @@ import { ProfileView } from "@/components/profile/ProfileView";
 import { ConnectActions } from "@/components/lobby/ConnectActions";
 import { InviteToSquadButton } from "@/components/squad/InviteToSquadButton";
 import { Drawer } from "@/components/ui/drawer";
+import { ReportUserButton } from "@/components/profile/ReportUserButton";
 
 /** Vista previa del perfil en un panel derecho (PC): conectar, Rompehielos y Squad sin salir de la grilla. */
 export function ProfilePreview({ userId, onClose }: { userId: string | null; onClose: () => void }) {
@@ -39,6 +40,7 @@ export function ProfilePreview({ userId, onClose }: { userId: string | null; onC
             <Link href={`/u/${other!.username}`} className="inline-flex min-h-touch items-center gap-1.5 text-sm text-muted hover:text-primary">
               <ExternalLink className="size-4" /> Abrir perfil completo
             </Link>
+            <ReportUserButton target={other!} onDone={onClose} />
           </div>
         </div>
       ) : (

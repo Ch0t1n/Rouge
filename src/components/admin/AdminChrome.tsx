@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { BarChart3, CalendarCog, Gift, Lock, LogOut, Megaphone, Martini, Palette, ScanLine, Share2, ShieldCheck, UtensilsCrossed, Tv, Users } from "lucide-react";
 import { useRouge } from "@/lib/store/RougeContext";
-import { NO_PERMISSION, permissionForPath, ROLE_META, roleHome } from "@/lib/engine/roles";
+import { canAccessPath, NO_PERMISSION, permissionForPath, ROLE_META, roleHome } from "@/lib/engine/roles";
 import { getProfile } from "@/lib/engine/selectors";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
@@ -30,9 +30,11 @@ export function AdminChrome({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? "/admin";
   const { state, mode, setActiveEvent, signedIn, role, can } = useRouge();
   const perm = permissionForPath(pathname);
-  // Crear un evento nuevo está abierto a cualquiera con sesión (queda como dueño/a); el resto exige su permiso.
-  const allowed = signedIn && (!perm || can(perm) || pathname === "/admin/events");
-  const nav = ADMIN_NAV.filter((n) => can(permissionForPath(n.href)!));
+  // Aislamiento de plataformas: puerta y barra van a /ops; el asistente solo puede crear SU evento; el resto según
+  // su permiso (misma regla que canAccessPath y que has_staff_role en el servidor).
+  const access = (href: string) => canAccessPath(state, state.active_event_id, state.current_user_id, href);
+  const allowed = signedIn && access(pathname).ok;
+  const nav = ADMIN_NAV.filter((n) => can(permissionForPath(n.href)!) && access(n.href).ok);
   const me = getProfile(state, state.current_user_id);
   const meta = ROLE_META[role];
 

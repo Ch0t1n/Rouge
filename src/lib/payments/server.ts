@@ -139,19 +139,22 @@ export async function removeBrandAccount(brandId: string): Promise<void> {
   await sb.from("brands").update({ payments_enabled: false }).eq("id", brandId);
 }
 
-/** Token del vendedor (descifrado), renovándolo si está por vencer. */
-export async function sellerToken(brandId: string): Promise<string> {
+/** Token del vendedor (descifrado), renovándolo si está por vencer, y su id de cuenta (collector_id esperado). */
+export async function sellerAccount(brandId: string): Promise<{ token: string; collectorId: string | null }> {
   const key = mpConfig().tokenKey!;
   const sb = adminClient();
-  const { data } = await sb.from("brand_payment_accounts").select("access_token_enc,refresh_token_enc,expires_at,connected_by,account_label").eq("brand_id", brandId).maybeSingle();
+  const { data } = await sb.from("brand_payment_accounts").select("access_token_enc,refresh_token_enc,expires_at,connected_by,account_label,provider_user_id").eq("brand_id", brandId).maybeSingle();
   if (!data) throw new MpError("mp_not_connected", 409);
+  const collectorId = (data.provider_user_id as string | null) ?? null;
   if (tokenNeedsRefresh(data.expires_at as string | null) && data.refresh_token_enc) {
     const tok = await refresh(decryptToken(data.refresh_token_enc as string, key));
     await saveBrandAccount(brandId, data.connected_by as string, tok, data.account_label as string);
-    return tok.access_token;
+    return { token: tok.access_token, collectorId: tok.user_id || collectorId };
   }
-  return decryptToken(data.access_token_enc as string, key);
+  return { token: decryptToken(data.access_token_enc as string, key), collectorId };
 }
+
+export const sellerToken = async (brandId: string) => (await sellerAccount(brandId)).token;
 
 // ── Pedidos ──────────────────────────────────────────────────────────
 
@@ -182,8 +185,9 @@ export async function createCheckout(order: OrderWithEvent, site: string): Promi
 }
 
 /** Acredita el pedido si el pago (consultado a Mercado Pago con el token de la marca) lo cubre. */
-async function confirmIfMatches(order: OrderWithEvent, payment: MpPayment): Promise<boolean> {
-  if (!paymentMatchesOrder(payment, order, mpConfig().currency)) return false;
+async function confirmIfMatches(order: OrderWithEvent, payment: MpPayment, collectorId: string | null): Promise<boolean> {
+  // Verificación server-to-server: estado approved, monto exacto del servidor, moneda y cuenta del organizador.
+  if (!paymentMatchesOrder(payment, order, mpConfig().currency, collectorId)) return false;
   const { error } = await adminClient().rpc("confirm_order_payment", { p_order: order.id, p_payment_ref: String(payment.id), p_amount: Number(payment.transaction_amount) });
   if (error) throw new MpError("mp_confirm_failed", 500);
   return true;
@@ -191,20 +195,20 @@ async function confirmIfMatches(order: OrderWithEvent, payment: MpPayment): Prom
 
 /** Webhook: el pago `paymentId` de la cuenta de `brandId`. Nunca confía en el cuerpo: lo vuelve a pedir a la API. */
 export async function handlePaymentNotification(brandId: string, paymentId: string): Promise<"confirmed" | "ignored"> {
-  const token = await sellerToken(brandId);
+  const { token, collectorId } = await sellerAccount(brandId);
   const payment = (await mpFetch(`/v1/payments/${encodeURIComponent(paymentId)}`, { token })) as MpPayment;
   if (!payment.external_reference) return "ignored";
   const order = await loadOrder(payment.external_reference);
   // El pedido tiene que ser de un evento de ESTA marca (si no, alguien podría acreditar con pagos de otra cuenta).
   if (!order || order.events?.brand_id !== brandId) return "ignored";
-  return (await confirmIfMatches(order, payment)) ? "confirmed" : "ignored";
+  return (await confirmIfMatches(order, payment, collectorId)) ? "confirmed" : "ignored";
 }
 
 /** Conciliación a pedido (vuelta del checkout o webhook demorado): busca pagos aprobados del pedido. */
 export async function reconcileOrder(order: OrderWithEvent): Promise<BarOrder["payment_status"]> {
   if (order.payment_status !== "awaiting_payment" || !order.events?.brand_id) return order.payment_status;
-  const token = await sellerToken(order.events.brand_id);
+  const { token, collectorId } = await sellerAccount(order.events.brand_id);
   const res = (await mpFetch(`/v1/payments/search?external_reference=${encodeURIComponent(order.id)}&sort=date_created&criteria=desc`, { token })) as { results?: MpPayment[] };
-  for (const p of res.results ?? []) if (await confirmIfMatches(order, p)) return "paid";
+  for (const p of res.results ?? []) if (await confirmIfMatches(order, p, collectorId)) return "paid";
   return "awaiting_payment";
 }

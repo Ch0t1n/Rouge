@@ -168,6 +168,12 @@ function emptyState(userId: UUID = ""): RougeState {
     squad_expenses: [],
     squad_settlements: [],
     payout_aliases: [],
+    staff_assignments: [],
+    staff_invites: [],
+    terminal_pins: [],
+    audit_log: [],
+    user_reports: [],
+    platform_admin_ids: [],
   };
 }
 

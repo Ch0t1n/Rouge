@@ -92,6 +92,8 @@ export function visibleAttendees(s: RougeState, eventId: UUID, viewerId: UUID): 
   for (const a of s.event_attendees) {
     if (a.event_id !== eventId || a.user_id === viewerId || a.ghost_mode) continue;
     if (isBlockedBetween(s, viewerId, a.user_id)) continue;
+    // Privacidad (v1.7): con require_checkin_for_lobby solo aparece quien ya ingresó por la puerta.
+    if (s.events.find((e) => e.id === eventId)?.require_checkin_for_lobby && !a.checked_in_at) continue;
     const profile = getProfile(s, a.user_id);
     if (profile) out.push({ attendee: a, profile });
   }

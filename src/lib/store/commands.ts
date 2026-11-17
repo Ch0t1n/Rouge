@@ -9,7 +9,7 @@
  * En Modo Demo solo corre `local`. Las pantallas siempre llaman `exec(C.algo(...))`.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { ApiKey, BarOrder, Connection, EventAttendee, EventInviteCode, MoodTag, PerkRule, Raffle, RaffleFilter, RougeEvent, RougeState, SongRequest, Squad, StaffRole, UUID } from "@/lib/types";
+import type { ApiKey, BarOrder, Connection, EventAttendee, EventInviteCode, MoodTag, PerkRule, Raffle, RaffleFilter, ReportReason, RougeEvent, RougeState, SongRequest, Squad, StaffRole, UUID } from "@/lib/types";
 import * as A from "@/lib/engine/actions";
 import type { Result } from "@/lib/engine/actions";
 import { can, NO_PERMISSION, type Permission } from "@/lib/engine/roles";
@@ -19,6 +19,7 @@ import * as T from "@/lib/engine/settle";
 import * as E from "@/lib/engine/eventAdmin";
 import * as RP from "@/lib/engine/promoters";
 import * as D from "@/lib/engine/door";
+import * as S from "@/lib/engine/security";
 
 export interface Command<T> {
   name: string;
@@ -705,4 +706,129 @@ export const doorCheckIn = (eventId: UUID, value: string): Command<D.DoorResult>
   optimistic: false,
   local: guarded("door.scan", () => eventId, (s) => D.doorCheckIn(s, eventId, value)),
   remote: async (sb) => rpc<D.DoorResult>(sb, "door_check_in", { p_event: eventId, p_value: value }),
+});
+
+// ── Seguridad operativa (v1.7) ───────────────────────────────────────
+
+/** Token aleatorio de invitación (solo Modo Demo: en Supabase lo genera el servidor). */
+const randomToken = () => {
+  const bytes = new Uint8Array(18);
+  globalThis.crypto.getRandomValues(bytes);
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+};
+
+/** Dueño/a: invitación de 1 uso (link/QR, 2 h) a su organización. El token sale del servidor y se muestra UNA vez. */
+export const createStaffInvite = (input: S.StaffInviteInput): Command<{ invite: RougeState["staff_invites"][number]; token: string }> => ({
+  name: "createStaffInvite",
+  optimistic: false,
+  local: (s) => S.createStaffInvite(s, s.current_user_id, input, randomToken()),
+  remote: async (sb, local) => {
+    const r = await rpc<{ id: UUID; token: string }>(sb, "create_staff_invite", { p_role: input.role, p_scope: input.scope, p_event_ids: input.eventIds ?? [], p_access_window: input.accessWindow ?? null });
+    return { invite: { ...local.invite, id: r.id }, token: r.token };
+  },
+});
+
+export const acceptStaffInvite = (token: string): Command<RougeState["staff_assignments"][number]> => ({
+  name: "acceptStaffInvite",
+  optimistic: false,
+  local: (s) => S.acceptStaffInvite(s, s.current_user_id, token),
+  remote: async (sb, local) => {
+    const r = await rpc<{ id: UUID; organization_id: UUID }>(sb, "accept_staff_invite", { p_token: token });
+    return { ...local, id: r.id, organization_id: r.organization_id };
+  },
+});
+
+/** En Supabase el cliente no ve los tokens: la invitación se valida en el servidor (la regla local se saltea). */
+export const acceptStaffInviteRemoteOnly = (token: string): Command<{ ok: true }> => ({
+  name: "acceptStaffInvite",
+  optimistic: false,
+  local: (s) => ({ ok: true, state: s, data: { ok: true } }),
+  remote: async (sb) => {
+    await rpc(sb, "accept_staff_invite", { p_token: token });
+    return { ok: true };
+  },
+});
+
+export const revokeStaffInvite = (inviteId: UUID): Command<undefined> => ({
+  name: "revokeStaffInvite",
+  local: (s) => S.revokeStaffInvite(s, s.current_user_id, inviteId),
+  remote: async (sb) => void (await rpc(sb, "revoke_staff_invite", { p_invite: inviteId })),
+});
+
+/** Kill switch: baja inmediata de un integrante en toda la organización. */
+export const revokeStaffAccess = (userId: UUID): Command<{ removed: number }> => ({
+  name: "revokeStaffAccess",
+  local: (s) => S.revokeStaffAccess(s, s.current_user_id, userId),
+  remote: async (sb) => ({ removed: await rpc<number>(sb, "revoke_staff_access", { p_user: userId }) }),
+});
+
+export const setTerminalPin = (orgId: UUID, pin: string): Command<undefined> => ({
+  name: "setTerminalPin",
+  local: (s) => S.setTerminalPin(s, s.current_user_id, orgId, pin),
+  remote: async (sb) => void (await rpc(sb, "set_terminal_pin", { p_org: orgId, p_pin: pin })),
+});
+
+export type KioskResult = { operatorId: UUID; role: StaffRole } | { error: string };
+
+/**
+ * Desbloqueo del kiosco con el PIN de quien opera. Un PIN incorrecto NO es un error de `exec`: devuelve
+ * `{ error }` y deja registrado el intento (5 fallidos → terminal bloqueada 5 minutos).
+ */
+export const kioskUnlock = (eventId: UUID, pin: string): Command<KioskResult> => ({
+  name: "kioskUnlock",
+  optimistic: false,
+  local: (s) => {
+    const { state, result } = S.kioskAttempt(s, eventId, s.current_user_id, pin);
+    return { ok: true, state, data: result.ok ? result.data : { error: result.error } };
+  },
+  remote: async (sb) => {
+    const { data, error } = await sb.rpc("kiosk_unlock", { p_event: eventId, p_pin: pin });
+    if (error) {
+      if (/kiosk_bad_pin/.test(error.message)) return { error: "PIN incorrecto." };
+      throw error;
+    }
+    const r = data as { operator_id: UUID; role: StaffRole };
+    return { operatorId: r.operator_id, role: r.role };
+  },
+});
+
+/** Registra en la auditoría quién operó la terminal en una acción de puerta o barra. */
+export const kioskAudit = (eventId: UUID, operatorId: UUID, action: "door.check_in" | "door.rejected" | "bar.delivered" | "perk.redeemed", target: string): Command<undefined> => ({
+  name: "kioskAudit",
+  local: (s) => ({ ok: true, state: S.appendAudit(s, { organization_id: s.events.find((e) => e.id === eventId)?.created_by ?? null, event_id: eventId, actor_id: s.current_user_id, operator_id: operatorId, action, target }), data: undefined }),
+  remote: async (sb) => void (await rpc(sb, "kiosk_audit", { p_event: eventId, p_operator: operatorId, p_action: action, p_target: target })),
+});
+
+/** Reportar a alguien (alerta en vivo a seguridad). `block`: bloqueo mutuo inmediato en el mismo paso. */
+export const reportUser = (reportedId: UUID, eventId: UUID | null, reason: ReportReason, details: string, block: boolean): Command<RougeState["user_reports"][number]> => ({
+  name: "reportUser",
+  local: (s) => {
+    const r = S.reportUser(s, s.current_user_id, reportedId, eventId, reason, details);
+    if (!r.ok || !block) return r;
+    const b = A.blockUser(r.state, s.current_user_id, reportedId);
+    return b.ok ? { ok: true, state: b.state, data: r.data } : r;
+  },
+  remote: async (sb, local) => {
+    const id = await rpc<UUID>(sb, "report_user", { p_reported: reportedId, p_event: eventId, p_reason: reason, p_details: details, p_block: block });
+    return { ...local, id };
+  },
+});
+
+export const reviewReport = (reportId: UUID): Command<RougeState["user_reports"][number]> => ({
+  name: "reviewReport",
+  local: (s) => S.reviewReport(s, s.current_user_id, reportId),
+  remote: async (sb) => void (await rpc(sb, "review_report", { p_report: reportId })),
+});
+
+/** Borrado REAL de la cuenta: datos en la base (RPC) y usuario de Auth (servidor, /api/account). */
+export const deleteAccount = (confirmUsername: string): Command<undefined> => ({
+  name: "deleteAccount",
+  optimistic: false,
+  local: (s) => S.deleteAccount(s, s.current_user_id, confirmUsername),
+  remote: async (sb) => {
+    await rpc(sb, "delete_my_account", { p_confirm_username: confirmUsername });
+    const { data } = (await sb.auth?.getSession?.()) ?? { data: { session: null } };
+    const token = data.session?.access_token;
+    if (token && typeof fetch === "function") await fetch("/api/account", { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
+  },
 });

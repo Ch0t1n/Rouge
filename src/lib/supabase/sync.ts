@@ -8,6 +8,7 @@
 import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 import type { BarMenuItem, Profile, RougeEvent, RougeState, UUID } from "@/lib/types";
 import { lobbyPhase } from "@/lib/engine/selectors";
+import { assignmentCovers, withinAccessWindow } from "@/lib/engine/roles";
 import { BAR_MENU, STATE_VERSION } from "@/lib/mock/seed";
 
 /** Columnas legibles de `profiles` (el teléfono NO: column privileges). */
@@ -48,16 +49,24 @@ export interface RemoteSnapshot {
 
 export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferredEventId: UUID | null): Promise<RemoteSnapshot> {
   const now = Date.now();
-  const [events, mine, staffRows] = await Promise.all([
+  const [events, mine, staffRows, assignments] = await Promise.all([
     q<RougeEvent>(sb.from("events").select("*").order("starts_at", { ascending: true })),
     q<{ event_id: UUID }>(sb.from("event_attendees").select("event_id").eq("user_id", userId)),
     q<RougeState["event_staff"][number]>(sb.from("event_staff").select("*").eq("user_id", userId)),
+    // RLS: las mías (staff) y las de mi organización (dueño/a). Si la tabla no existe todavía, no rompe la carga.
+    q<RougeState["staff_assignments"][number]>(sb.from("staff_assignments").select("*")).catch(() => []),
   ]);
-  const staffIds = new Set([...staffRows.map((r) => r.event_id), ...events.filter((e) => e.created_by === userId).map((e) => e.id)]);
+  const myAssignments = assignments.filter((a) => a.user_id === userId);
+  // Rol por asignación de la organización (alcance + ventana horaria), igual que staffRoleOf y has_staff_role.
+  const assignedRole = (e: RougeEvent) => {
+    const a = myAssignments.find((x) => assignmentCovers(x, e));
+    return a && (!a.access_window || withinAccessWindow(e, now)) ? a.role : null;
+  };
+  const staffIds = new Set([...staffRows.map((r) => r.event_id), ...events.filter((e) => e.created_by === userId || assignedRole(e)).map((e) => e.id)]);
   const event = pickEvent(events, new Set(mine.map((r) => r.event_id)), staffIds, preferredEventId, now);
   const eventId = event?.id ?? "";
   const isStaff = !!event && staffIds.has(event.id);
-  const myRole = event ? (staffRows.find((r) => r.event_id === event.id)?.role ?? (event.created_by === userId ? "owner" : null)) : null;
+  const myRole = event ? (staffRows.find((r) => r.event_id === event.id)?.role ?? (event.created_by === userId ? "owner" : assignedRole(event))) : null;
   const isManager = myRole === "owner" || myRole === "manager";
 
   const byEvent = <T,>(table: string, select = "*") => (eventId ? q<T>(sb.from(table).select(select).eq("event_id", eventId)) : Promise.resolve([] as T[]));
@@ -104,6 +113,15 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
       ? (await q<NonNullable<RougeState["promoter_stats"]>[number]>(sb.rpc("promoter_stats", { p_event: eventId })).catch(() => [])).map((r) => ({ ...r, commission_per_entry: Number(r.commission_per_entry), to_pay: Number(r.to_pay) }))
       : null;
   const brands = [...new Map([...myBrands, ...eventBrands].map((b) => [b.id, b])).values()];
+  // Seguridad: invitaciones y auditoría de MI organización (dueño/a; producción ve la auditoría), PINs sin hash,
+  // reportes (RLS: los míos o los del evento para seguridad/dueño/producción) y si soy admin global.
+  const [invites, terminalPins, audit, reports, platformAdmin] = await Promise.all([
+    q<RougeState["staff_invites"][number]>(sb.from("staff_invites").select("id,organization_id,role,scope,event_ids,access_window,expires_at,used_at,used_by,revoked_at,created_by,created_at").eq("organization_id", userId)).catch(() => []),
+    q<{ organization_id: UUID; user_id: UUID; updated_at: string }>(sb.rpc("my_terminal_pins")).catch(() => []),
+    q<RougeState["audit_log"][number]>(sb.from("audit_log").select("*").order("created_at", { ascending: false }).limit(300)).catch(() => []),
+    q<RougeState["user_reports"][number]>(sb.from("user_reports").select("*").order("created_at", { ascending: false }).limit(200)).catch(() => []),
+    sb.rpc("am_platform_admin").then((r) => r.data === true, () => false),
+  ]);
   // Mis roles en todos los eventos (selector del panel) + el equipo completo del evento activo si soy staff.
   const teamRows = isStaff ? await byEvent<RougeState["event_staff"][number]>("event_staff") : [];
   const eventStaff = [...staffRows.filter((r) => r.event_id !== eventId || !isStaff), ...teamRows];
@@ -173,12 +191,18 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
     payout_aliases: aliases,
     admin_stats: adminStats,
     promoter_stats: promoterStats,
+    staff_assignments: assignments,
+    staff_invites: invites.map((i) => ({ ...i, token_hash: "" })),
+    terminal_pins: terminalPins.map((p) => ({ ...p, pin_hash: null })),
+    audit_log: audit,
+    user_reports: reports,
+    platform_admin_ids: platformAdmin ? [userId] : [],
   };
   return { state, isStaff };
 }
 
 /** Tablas publicadas en `supabase_realtime` (ver schema.sql) que disparan una re-sincronización. */
-const REALTIME_TABLES = ["messages", "map_pins", "connections", "squad_members", "squads", "blast_deliveries", "user_perks_qrs", "bar_orders", "song_requests", "raffles", "event_attendees", "brands", "squad_expenses", "squad_settlements"];
+const REALTIME_TABLES = ["user_reports", "staff_assignments", "messages", "map_pins", "connections", "squad_members", "squads", "blast_deliveries", "user_perks_qrs", "bar_orders", "song_requests", "raffles", "event_attendees", "brands", "squad_expenses", "squad_settlements"];
 
 /**
  * Escucha cambios relevantes. Realtime respeta RLS: cada usuario solo recibe

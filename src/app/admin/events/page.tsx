@@ -15,6 +15,8 @@ import { cn, formatDateTime, toCSV, uid } from "@/lib/utils";
 import { AdminHeader, downloadCSV, Panel } from "@/components/admin/AdminChrome";
 import { useShare } from "@/components/share/ShareSheet";
 import { TeamPanel } from "@/components/admin/TeamPanel";
+import { OrgStaffPanel, TerminalPinPanel } from "@/components/admin/OrgStaffPanel";
+import { AuditPanel } from "@/components/admin/AuditPanel";
 import { ApiKeysPanel } from "@/components/admin/ApiKeysPanel";
 import { EventLifecyclePanel } from "@/components/admin/EventLifecyclePanel";
 import { can } from "@/lib/engine/roles";
@@ -74,6 +76,14 @@ export default function AdminEventsPage() {
         </div>
       )}
       {event && can(state, event.id, state.current_user_id, "admin.team") && <TeamPanel event={event} />}
+      {/* Staff por organización: solo quien es dueño/a de SUS eventos (organización = su cuenta). */}
+      {event && event.created_by === state.current_user_id && (
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+          <OrgStaffPanel />
+          <TerminalPinPanel orgId={state.current_user_id} />
+        </div>
+      )}
+      {event && event.created_by && can(state, event.id, state.current_user_id, "admin.events") && <AuditPanel orgId={event.created_by} />}
       {event && (
         <EventLifecyclePanel
           key={`lifecycle-${event.id}`} // distinto del key del EventEditor (mismos hermanos)

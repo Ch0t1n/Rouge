@@ -7,8 +7,10 @@ export const dynamic = "force-dynamic";
 
 /**
  * Notificaciones de Mercado Pago (notification_url de cada preferencia: ?brand=<id>).
- * Con MP_WEBHOOK_SECRET se exige la firma x-signature. Nunca se confía en el cuerpo: el pago se vuelve a
- * consultar a la API con el token de la marca y se valida contra el pedido (estado, referencia, monto).
+ * La firma HMAC x-signature es OBLIGATORIA (sin MP_WEBHOOK_SECRET el webhook responde 503: solo se puede
+ * saltear en pruebas locales con MP_ALLOW_UNSIGNED_WEBHOOKS=1 fuera de producción). Nunca se confía en el
+ * cuerpo: el pago se vuelve a consultar a la API con el token de la marca y se valida contra el pedido
+ * (approved, referencia, monto exacto del servidor, moneda y collector_id de la cuenta del organizador).
  * Responde 200 a lo que no corresponde (Mercado Pago reintenta los errores).
  */
 export async function POST(req: NextRequest) {
@@ -17,6 +19,8 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   const paymentId = paymentIdFromNotification(q, body);
   const secret = mpConfig().webhookSecret;
+  const unsignedOk = process.env.MP_ALLOW_UNSIGNED_WEBHOOKS === "1" && process.env.NODE_ENV !== "production";
+  if (!secret && !unsignedOk) return NextResponse.json({ error: "webhook_secret_missing" }, { status: 503 });
   if (secret) {
     const dataId = q.get("data.id") ?? paymentId;
     if (!verifyWebhookSignature({ xSignature: req.headers.get("x-signature"), xRequestId: req.headers.get("x-request-id"), dataId, secret })) {

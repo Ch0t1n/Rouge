@@ -62,6 +62,8 @@ export interface Profile {
   /** true solo si coincide con la cuenta conectada por OAuth (trigger profile_instagram). */
   instagram_verified: boolean;
   is_verified: boolean;
+  /** Aceptó Términos y Privacidad y declaró ser mayor de 18 (onboarding). */
+  terms_accepted_at?: ISODate | null;
   created_at: ISODate;
 }
 
@@ -164,6 +166,8 @@ export interface RougeEvent {
   /** Colores de esta edición (si no, los de la marca; si no, los de ROUGE). */
   theme_primary: string | null;
   theme_accent: string | null;
+  /** Privacidad: solo aparece en la grilla quien ya ingresó por la puerta (checked_in_at). */
+  require_checkin_for_lobby?: boolean;
 }
 
 /** Equipo del evento (tabla `event_staff`). Quien crea el evento es "owner" aunque no tenga fila. */
@@ -173,6 +177,108 @@ export interface EventStaff {
   event_id: UUID;
   user_id: UUID;
   role: StaffRole;
+  created_at: ISODate;
+}
+
+// ── Staff por organización, terminales y auditoría ─────────────────
+
+/**
+ * Organización = la cuenta del dueño/a (quien crea los eventos y las marcas). `organization_id` es su user id:
+ * cada dueño/a gestiona SOLO su staff y sus eventos.
+ */
+export type StaffScope = "all_org_events" | "specific_events";
+
+/** Alta de staff de una organización (vía invitación de 1 uso). Complementa a `event_staff` (alta por @usuario). */
+export interface StaffAssignment {
+  id: UUID;
+  organization_id: UUID;
+  user_id: UUID;
+  role: Exclude<StaffRole, "owner">;
+  scope: StaffScope;
+  /** Solo con scope = specific_events. */
+  event_ids: UUID[];
+  /** Puerta y barra: permisos activos solo de 2 h antes del inicio a 1 h después del cierre de cada evento. */
+  access_window: boolean;
+  /** Kill switch: baja inmediata (se conserva la fila para la auditoría). */
+  revoked_at: ISODate | null;
+  created_by: UUID;
+  created_at: ISODate;
+}
+
+/** Invitación de staff de un solo uso (link / QR). Caduca a las 2 h. Solo se guarda el hash del token. */
+export interface StaffInvite {
+  id: UUID;
+  organization_id: UUID;
+  role: Exclude<StaffRole, "owner">;
+  scope: StaffScope;
+  event_ids: UUID[];
+  access_window: boolean;
+  token_hash: string;
+  expires_at: ISODate;
+  used_at: ISODate | null;
+  used_by: UUID | null;
+  revoked_at: ISODate | null;
+  created_by: UUID;
+  created_at: ISODate;
+}
+
+/**
+ * PIN personal (4-6 dígitos) para operar una terminal en Modo Kiosco (tablet fija en barra o puerta).
+ * Demo: `pin_hash` = sha256(org:user:pin). Supabase: bcrypt en el servidor, el cliente nunca lo recibe (null).
+ */
+export interface TerminalPin {
+  organization_id: UUID;
+  user_id: UUID;
+  pin_hash: string | null;
+  updated_at: ISODate;
+}
+
+export type AuditAction =
+  | "staff.invited"
+  | "staff.joined"
+  | "staff.revoked"
+  | "staff.role_changed"
+  | "staff.pin_set"
+  | "kiosk.unlocked"
+  | "kiosk.failed"
+  | "door.check_in"
+  | "door.rejected"
+  | "bar.delivered"
+  | "perk.redeemed"
+  | "courtesy.issued"
+  | "menu.price_changed"
+  | "code.revoked"
+  | "attendee.removed"
+  | "report.created"
+  | "account.deleted";
+
+/** Registro inmutable (append-only) de acciones sensibles. En SQL: sin UPDATE/DELETE, lo escriben triggers y RPCs. */
+export interface AuditEntry {
+  id: UUID;
+  organization_id: UUID | null;
+  event_id: UUID | null;
+  /** Cuenta que ejecutó la acción (en kiosco: la cuenta de la terminal). */
+  actor_id: UUID | null;
+  /** Persona que operó la terminal con su PIN (Modo Kiosco). */
+  operator_id: UUID | null;
+  action: AuditAction;
+  target: string | null;
+  details: Record<string, string | number | boolean | null>;
+  created_at: ISODate;
+}
+
+export type ReportReason = "harassment" | "fake_profile" | "underage" | "violence" | "spam" | "other";
+
+/** Reporte de un asistente: alerta en vivo al panel de seguridad del evento. */
+export interface UserReport {
+  id: UUID;
+  event_id: UUID | null;
+  reporter_id: UUID;
+  reported_user_id: UUID;
+  reason: ReportReason;
+  details: string;
+  status: "open" | "reviewed";
+  reviewed_by: UUID | null;
   created_at: ISODate;
 }
 
@@ -551,4 +657,16 @@ export interface RougeState {
   promoter_stats?: { user_id: UUID; link_id: UUID | null; code: string | null; commission_per_entry: number; entries: number; checked_in: number; billable: number; to_pay: number }[] | null;
   /** Solo staff en Modo Supabase: conteos de conexiones (que son privadas por RLS). */
   admin_stats?: AdminStats | null;
+  /** Staff de MI organización (dueño/a) o mis propias asignaciones (staff). */
+  staff_assignments: StaffAssignment[];
+  /** Invitaciones de staff de mi organización (sin el token). */
+  staff_invites: StaffInvite[];
+  /** PINs de terminal (demo: con hash; Supabase: solo si existe, pin_hash null). */
+  terminal_pins: TerminalPin[];
+  /** Auditoría de mi organización (dueño/a y producción). */
+  audit_log: AuditEntry[];
+  /** Reportes: los míos (asistente) o los del evento (seguridad, dueño/a, producción). */
+  user_reports: UserReport[];
+  /** Administradores globales de ROUGE (consola /superadmin). */
+  platform_admin_ids: UUID[];
 }

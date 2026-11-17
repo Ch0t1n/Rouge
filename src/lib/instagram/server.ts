@@ -13,6 +13,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
 import { importablePhotos, isAllowedMediaHost, parseTokenResponse, type IgMediaRaw } from "./oauth";
+import { decryptToken, encryptToken, isEncryptedToken, parseTokenKey } from "@/lib/payments/mp";
 
 export const IG_COOKIE = "rouge_ig_nonce";
 export const IG_SCOPES = "instagram_business_basic";
@@ -101,6 +102,23 @@ export async function fetchMe(token: string) {
   return { igUserId: String(me.user_id ?? me.id ?? ""), username: me.username.toLowerCase(), accountType: me.account_type ?? null };
 }
 
+/**
+ * Cifrado en reposo (AES-256-GCM) de los tokens de Instagram con TOKEN_ENCRYPTION_KEY (o MP_TOKEN_KEY).
+ * Los tokens heredados en texto plano se siguen leyendo y se re-cifran en la próxima escritura.
+ */
+const igKey = () => parseTokenKey(process.env.TOKEN_ENCRYPTION_KEY ?? process.env.MP_TOKEN_KEY);
+const sealToken = (t: string) => {
+  const key = igKey();
+  if (!key && process.env.NODE_ENV === "production") throw new IgError("ig_no_encryption_key", 500);
+  return key ? encryptToken(t, key) : t;
+};
+const openToken = (box: string) => {
+  if (!isEncryptedToken(box)) return box;
+  const key = igKey();
+  if (!key) throw new IgError("ig_no_encryption_key", 500);
+  return decryptToken(box, key);
+};
+
 /** Token guardado del usuario (lo renueva si vence en menos de 7 días). */
 export async function tokenFor(userId: string): Promise<string> {
   const db = adminClient();
@@ -108,19 +126,20 @@ export async function tokenFor(userId: string): Promise<string> {
   if (!data) throw new IgError("ig_not_connected", 404);
   const exp = data.token_expires_at ? +new Date(data.token_expires_at) : 0;
   if (exp && exp < Date.now()) throw new IgError("ig_token_invalid", 401);
+  const current = openToken(data.access_token);
   if (exp && exp - Date.now() < 7 * 86_400_000) {
     try {
       const c = igConfig();
-      const r = (await igJson(`${c.graphUrl}/refresh_access_token?grant_type=ig_refresh_token&access_token=${encodeURIComponent(data.access_token)}`)) as { access_token?: string; expires_in?: number };
+      const r = (await igJson(`${c.graphUrl}/refresh_access_token?grant_type=ig_refresh_token&access_token=${encodeURIComponent(current)}`)) as { access_token?: string; expires_in?: number };
       if (r.access_token) {
-        await db.from("instagram_accounts").update({ access_token: r.access_token, token_expires_at: new Date(Date.now() + (r.expires_in ?? 5_184_000) * 1000).toISOString(), updated_at: new Date().toISOString() }).eq("user_id", userId);
+        await db.from("instagram_accounts").update({ access_token: sealToken(r.access_token), token_expires_at: new Date(Date.now() + (r.expires_in ?? 5_184_000) * 1000).toISOString(), updated_at: new Date().toISOString() }).eq("user_id", userId);
         return r.access_token;
       }
     } catch {
       /* usa el actual mientras siga vigente */
     }
   }
-  return data.access_token;
+  return current;
 }
 
 export async function listPhotos(token: string) {
@@ -151,7 +170,7 @@ export async function saveConnection(userId: string, ig: { igUserId: string; use
   const { data: owner } = await db.from("instagram_accounts").select("user_id").eq("ig_user_id", ig.igUserId).maybeSingle();
   if (owner && owner.user_id !== userId) throw new IgError("ig_taken", 409);
   const { error } = await db.from("instagram_accounts").upsert(
-    { user_id: userId, ig_user_id: ig.igUserId, username: ig.username, account_type: ig.accountType, access_token: ig.token, token_expires_at: ig.expiresAt, updated_at: new Date().toISOString() },
+    { user_id: userId, ig_user_id: ig.igUserId, username: ig.username, account_type: ig.accountType, access_token: sealToken(ig.token), token_expires_at: ig.expiresAt, updated_at: new Date().toISOString() },
     { onConflict: "user_id" },
   );
   if (error) throw new IgError("ig_save", 500);

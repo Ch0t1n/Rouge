@@ -3,7 +3,9 @@
 import { EyeOff, ShieldCheck } from "lucide-react";
 import { useRequireProfile } from "@/lib/store/hooks";
 import { PageHeader } from "@/components/layout/PageHeader";
+import Link from "next/link";
 import { BlacklistManager } from "@/components/profile/BlacklistManager";
+import { DeleteAccount } from "@/components/profile/DeleteAccount";
 
 export default function PrivacyPage() {
   const me = useRequireProfile();
@@ -30,6 +32,12 @@ export default function PrivacyPage() {
           </div>
         </div>
         <BlacklistManager />
+        <DeleteAccount />
+        <nav aria-label="Legales" className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
+          <Link href="/legal/terminos" className="hover:text-primary">Términos y condiciones</Link>
+          <Link href="/legal/privacidad" className="hover:text-primary">Política de privacidad</Link>
+          <Link href="/legal/arrepentimiento" className="hover:text-primary">Botón de arrepentimiento</Link>
+        </nav>
       </div>
     </main>
   );

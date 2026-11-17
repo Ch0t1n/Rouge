@@ -9,6 +9,7 @@ import { useNow, useRouge } from "@/lib/store/RougeContext";
 import { cn, formatMoney, whatsappLink } from "@/lib/utils";
 import { AdminHeader, Panel } from "@/components/admin/AdminChrome";
 import { SecurityPanel } from "@/components/admin/SecurityPanel";
+import { ReportsPanel } from "@/components/admin/ReportsPanel";
 import { permissionForPath } from "@/lib/engine/roles";
 import { Badge, LiveDot } from "@/components/ui/badge";
 
@@ -76,6 +77,7 @@ export default function AdminOverviewPage() {
       />
 
       {(security || m.rescueAlerts > 0) && <SecurityPanel event={event} />}
+      <ReportsPanel event={event} />
 
       {security ? (
         <section className="grid gap-4 sm:grid-cols-3">

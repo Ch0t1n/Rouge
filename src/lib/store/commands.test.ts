@@ -209,6 +209,17 @@ describe("contrato comandos ↔ schema.sql", () => {
     ["removeAttendee", () => runRemote(C.removeAttendee(EV, id(2), true, "motivo"), st())],
     ["unbanAttendee", () => { const r = C.removeAttendee(EV, id(2), true).local(st()); const s = (r as { state: RougeState }).state; return runRemote(C.unbanAttendee(EV, id(2)), s); }],
     ["deleteEvent", () => { const r = C.duplicateEvent(EV, new Date(NOW + 7 * 86_400_000).toISOString()).local(st()); const s = (r as { state: RougeState; data: { event: { id: string } } }); return runRemote(C.deleteEvent(s.data.event.id), s.state); }],
+    // v1.7 · seguridad operativa
+    ["createStaffInvite", () => runRemote(C.createStaffInvite({ role: "bartender", scope: "specific_events", eventIds: [EV] }), st(), { create_staff_invite: { id: id(9), token: "tok_srv_ABCDEFGHIJKLMNOP" } })],
+    ["acceptStaffInviteRemoteOnly", () => runRemote(C.acceptStaffInviteRemoteOnly("tok_srv_ABCDEFGHIJKLMNOP"), s0(), { accept_staff_invite: { id: id(9) } })],
+    ["revokeStaffInvite", () => { const r = C.createStaffInvite({ role: "security", scope: "all_org_events" }).local(st()); const s = (r as { state: RougeState }).state; return runRemote(C.revokeStaffInvite(s.staff_invites[0].id), s); }],
+    ["revokeStaffAccess", () => runRemote(C.revokeStaffAccess(DEMO_IDS.doorScanner), st(), { revoke_staff_access: 1 })],
+    ["setTerminalPin", () => runRemote(C.setTerminalPin(DEMO_IDS.organizer, "4071"), { ...s0(), current_user_id: DEMO_IDS.bartender })],
+    ["kioskUnlock", () => runRemote(C.kioskUnlock(EV, "4826"), { ...s0(), current_user_id: DEMO_IDS.manager }, { kiosk_unlock: { operator_id: DEMO_IDS.bartender, role: "bartender" } })],
+    ["kioskAudit", () => runRemote(C.kioskAudit(EV, DEMO_IDS.bartender, "bar.delivered", "ABCD"), { ...s0(), current_user_id: DEMO_IDS.manager })],
+    ["reportUser", () => runRemote(C.reportUser(id(5), EV, "harassment", "insiste", true), s0(), { report_user: id(9) })],
+    ["reviewReport", () => runRemote(C.reviewReport(s0().user_reports[0].id), { ...s0(), current_user_id: DEMO_IDS.security })],
+    ["deleteAccount", () => runRemote(C.deleteAccount("@" + s0().profiles.find((p) => p.id === ME)!.username), s0())],
   ];
 
   it.each(cases)("%s respeta el esquema", async (_name, fn) => {
@@ -223,6 +234,14 @@ describe("contrato comandos ↔ schema.sql", () => {
     expect((raffle.data as { raffle: { winner_user_id: string } }).raffle.winner_user_id).toBe(id(8));
     const blast = await runRemote(C.sendBlast(EV, { title: "x", message: "y", segment: { kind: "all" } }), st(), { send_blast: 99 });
     expect((blast.data as { reach: number }).reach).toBe(99);
+  });
+
+  it("seguridad operativa: el token de invitación y el operador del kiosco salen del servidor", async () => {
+    const inv = await runRemote(C.createStaffInvite({ role: "security", scope: "all_org_events" }), st(), { create_staff_invite: { id: id(77), token: "tok_srv_ABCDEFGHIJKLMNOP" } });
+    expect(inv.data).toMatchObject({ token: "tok_srv_ABCDEFGHIJKLMNOP", invite: { id: id(77) } });
+    expect(C.createStaffInvite({ role: "security", scope: "all_org_events" }).optimistic).toBe(false);
+    const k = await runRemote(C.kioskUnlock(EV, "4826"), { ...s0(), current_user_id: DEMO_IDS.manager }, { kiosk_unlock: { operator_id: id(5), role: "security" } });
+    expect(k.data).toEqual({ operatorId: id(5), role: "security" });
   });
 
   it("puerta: seguridad, dueño/a y producción escanean; barra y RRPP no", () => {

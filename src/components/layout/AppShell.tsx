@@ -4,7 +4,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { CalendarX2 } from "lucide-react";
-import { activeEvent } from "@/lib/engine/selectors";
+import { activeEvent, getProfile } from "@/lib/engine/selectors";
+import { canAccessPath, ROLE_META } from "@/lib/engine/roles";
 import { useRouge } from "@/lib/store/RougeContext";
 import { Toaster } from "@/components/ui/toaster";
 import { BottomNav, NAV_ROUTES } from "./BottomNav";
@@ -15,7 +16,7 @@ import { eventTheme } from "@/lib/engine/branding";
 import { cn } from "@/lib/utils";
 
 /** Rutas de usuario sin sidebar (flujos de entrada): columna centrada también en PC. */
-const CHROMELESS = ["/login", "/onboarding", "/join", "/offline", "/legal"];
+const CHROMELESS = ["/login", "/onboarding", "/join", "/offline", "/legal", "/equipo"];
 /** Rutas de usuario que aprovechan todo el ancho en PC (grillas, vistas divididas, paneles laterales). */
 const WIDE = ["/app", "/lobby", "/inbox", "/chat", "/bar", "/perks", "/squad", "/map"];
 const SIDEBAR_KEY = "rouge:sidebar";
@@ -68,7 +69,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (needsLogin) router.replace(`/login?next=${encodeURIComponent(pathname)}`);
   }, [needsLogin, pathname, router]);
   // Rutas que no dependen de un evento activo (perfil, ingreso, chats 1:1, alta de eventos…)
-  const eventFree = landing || demoPage || ["/login", "/onboarding", "/join", "/profile", "/settings", "/u/", "/chat", "/inbox", "/offline", "/legal", "/admin/events", "/ops", "/superadmin"].some((p) => pathname.startsWith(p));
+  const eventFree = landing || demoPage || ["/login", "/onboarding", "/join", "/profile", "/settings", "/u/", "/chat", "/inbox", "/offline", "/legal", "/equipo", "/admin/events", "/ops", "/superadmin"].some((p) => pathname.startsWith(p));
   const missingEvent = !eventFree && !activeEvent(state);
   // Colores de la marca del evento en la app del asistente y en la Pantalla LED. La landing, la demo, el login,
   // /join (aplica el tema del evento del link) y el panel del staff quedan con los colores de ROUGE.
@@ -76,6 +77,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const theme = eventTheme(state, state.active_event_id);
   useBrandTheme(branded && theme.custom ? theme : null);
   const sidebar = !expanded && !chromeless && !needsLogin && !opsPage;
+  // Aislamiento de plataformas (app del asistente y consola global; /admin y /ops tienen su propio chrome).
+  const access = canAccessPath(state, state.active_event_id, state.current_user_id, pathname);
+  const blocked = !access.ok && access.surface !== "owner_admin" && access.surface !== "staff_ops" && !!getProfile(state, state.current_user_id) ? access : null;
   // El ancho del sidebar vive en una variable CSS de <html> para que los elementos fixed (portales incluidos) lo respeten.
   useEffect(() => {
     const root = document.documentElement;
@@ -119,8 +123,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         )}
       >
         {sidebar ? (
-          <div className={cn("mx-auto w-full", wide ? "md:max-w-7xl md:px-4 lg:px-6" : "md:max-w-3xl md:px-4")}>{needsLogin ? null : missingEvent ? <NoEvent admin={false} /> : children}</div>
-        ) : needsLogin ? null : missingEvent ? (
+          <div className={cn("mx-auto w-full", wide ? "md:max-w-7xl md:px-4 lg:px-6" : "md:max-w-3xl md:px-4")}>{needsLogin ? null : blocked ? <WrongSurface redirect={blocked.redirect} /> : missingEvent ? <NoEvent admin={false} /> : children}</div>
+        ) : needsLogin ? null : blocked ? (
+          <WrongSurface redirect={blocked.redirect} />
+        ) : missingEvent ? (
           <NoEvent admin={expanded} />
         ) : (
           children
@@ -131,6 +137,27 @@ export function AppShell({ children }: { children: ReactNode }) {
       {!expanded && <LiveNotifications />}
       <Toaster />
     </>
+  );
+}
+
+/** La ruta es de otra plataforma (ej. Puerta/Barra en turno intentando abrir el lobby). */
+function WrongSurface({ redirect }: { redirect: string }) {
+  const { role } = useRouge();
+  const router = useRouter();
+  useEffect(() => {
+    const t = setTimeout(() => router.replace(redirect), 2500);
+    return () => clearTimeout(t);
+  }, [redirect, router]);
+  return (
+    <main className="safe-top flex min-h-dvh flex-col items-center justify-center gap-3 px-8 text-center">
+      <h1 className="text-2xl">Esta pantalla no es para tu rol</h1>
+      <p className="max-w-sm text-sm text-muted">
+        Estás de turno como {ROLE_META[role].emoji} {ROLE_META[role].label}: tu pantalla es la de operación. El lobby, el CRM y las finanzas no están disponibles durante tu turno.
+      </p>
+      <Link href={redirect} className="mt-2 inline-flex min-h-touch items-center rounded-2xl bg-rouge px-5 font-display font-semibold text-white shadow-glow-rouge">
+        Ir a mi pantalla
+      </Link>
+    </main>
   );
 }
 

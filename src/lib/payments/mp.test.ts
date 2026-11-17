@@ -8,6 +8,7 @@ import {
   parseTokenKey,
   paymentIdFromNotification,
   paymentMatchesOrder,
+  isEncryptedToken,
   signConnectState,
   tokenNeedsRefresh,
   verifyConnectState,
@@ -112,5 +113,18 @@ describe("checkout", () => {
     expect(paymentMatchesOrder({ ...pay, transaction_amount: 100 }, order, "ARS")).toBe(false);
     expect(paymentMatchesOrder({ ...pay, external_reference: "otro" }, order, "ARS")).toBe(false);
     expect(paymentMatchesOrder({ ...pay, currency_id: "USD" }, order, "ARS")).toBe(false);
+  });
+
+  it("exige que el cobro lo haya recibido la cuenta del organizador (collector_id)", () => {
+    const pay = { id: 1, status: "approved", external_reference: "ord-1", transaction_amount: 16000, currency_id: "ARS", collector_id: 777 };
+    expect(paymentMatchesOrder(pay, order, "ARS", "777")).toBe(true);
+    expect(paymentMatchesOrder({ ...pay, collector_id: 999 }, order, "ARS", "777")).toBe(false);
+    expect(paymentMatchesOrder({ ...pay, collector_id: null }, order, "ARS", "777")).toBe(false);
+  });
+
+  it("detecta tokens cifrados (Instagram en reposo)", () => {
+    const key = Buffer.alloc(32, 7);
+    expect(isEncryptedToken(encryptToken("IGQV-abc", key))).toBe(true);
+    expect(isEncryptedToken("IGQVJ...plano")).toBe(false);
   });
 });

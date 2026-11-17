@@ -511,6 +511,105 @@ create index if not exists idx_orders_awaiting         on public.bar_orders (eve
 create index if not exists idx_squad_expenses_squad    on public.squad_expenses (squad_id);
 create index if not exists idx_squad_settlements_squad on public.squad_settlements (squad_id);
 
+
+-- ════════════════════════════════════════════════════════════════════════
+-- [v1.7] SEGURIDAD OPERATIVA: staff por organización, kiosco, auditoría, reportes
+--   Organización = la cuenta del dueño/a (organization_id = su user id = events.created_by).
+-- ════════════════════════════════════════════════════════════════════════
+alter table public.events   add column if not exists require_checkin_for_lobby boolean not null default false;
+alter table public.profiles add column if not exists terms_accepted_at timestamptz;
+-- Borrado de cuenta: los pedidos PAGADOS quedan anonimizados (user_id null) para la contabilidad de la barra.
+alter table public.bar_orders alter column user_id drop not null;
+
+-- Administradores globales de ROUGE (consola /superadmin). Se cargan a mano con service role.
+create table if not exists public.platform_admins (
+  user_id     uuid primary key references public.profiles(id) on delete cascade,
+  created_at  timestamptz not null default now()
+);
+
+-- Staff de la organización (alta por invitación). Alcance: todos los eventos de la organización o algunos.
+create table if not exists public.staff_assignments (
+  id               uuid primary key default gen_random_uuid(),
+  organization_id  uuid not null references public.profiles(id) on delete cascade,
+  user_id          uuid not null references public.profiles(id) on delete cascade,
+  role             staff_role_t not null check (role::text <> 'owner'),
+  scope            text not null check (scope in ('all_org_events','specific_events')),
+  event_ids        uuid[] not null default '{}',
+  access_window    boolean not null default true,
+  revoked_at       timestamptz,
+  created_by       uuid references public.profiles(id) on delete set null,
+  created_at       timestamptz not null default now(),
+  constraint staff_assignment_scope_chk check (scope = 'all_org_events' or cardinality(event_ids) > 0)
+);
+create unique index if not exists uq_staff_assignment_active on public.staff_assignments (organization_id, user_id) where revoked_at is null;
+
+-- Invitaciones de 1 uso (link/QR, 2 h). Solo el hash del token (el token vive en el link).
+create table if not exists public.staff_invites (
+  id               uuid primary key default gen_random_uuid(),
+  organization_id  uuid not null references public.profiles(id) on delete cascade,
+  role             staff_role_t not null check (role::text <> 'owner'),
+  scope            text not null check (scope in ('all_org_events','specific_events')),
+  event_ids        uuid[] not null default '{}',
+  access_window    boolean not null default true,
+  token_hash       text not null unique,
+  expires_at       timestamptz not null,
+  used_at          timestamptz,
+  used_by          uuid references public.profiles(id) on delete set null,
+  revoked_at       timestamptz,
+  created_by       uuid references public.profiles(id) on delete set null,
+  created_at       timestamptz not null default now()
+);
+
+-- PIN de terminal (Modo Kiosco): bcrypt; ningún cliente lo lee (RLS sin políticas, se verifica por RPC).
+create table if not exists public.terminal_pins (
+  organization_id  uuid not null references public.profiles(id) on delete cascade,
+  user_id          uuid not null references public.profiles(id) on delete cascade,
+  pin_hash         text not null,
+  updated_at       timestamptz not null default now(),
+  primary key (organization_id, user_id)
+);
+
+-- Auditoría inmutable: sin UPDATE/DELETE (trigger), escrita por RPCs y triggers.
+create table if not exists public.audit_log (
+  id               uuid primary key default gen_random_uuid(),
+  organization_id  uuid references public.profiles(id) on delete set null,
+  event_id         uuid references public.events(id) on delete set null,
+  actor_id         uuid references public.profiles(id) on delete set null,
+  operator_id      uuid references public.profiles(id) on delete set null,
+  action           text not null,
+  target           text,
+  details          jsonb not null default '{}'::jsonb,
+  created_at       timestamptz not null default now()
+);
+create index if not exists idx_audit_org on public.audit_log (organization_id, created_at desc);
+create index if not exists idx_audit_kiosk on public.audit_log (event_id, actor_id, created_at desc) where action = 'kiosk.failed';
+
+-- Reportes de usuarios: alerta en vivo al panel de seguridad del evento.
+create table if not exists public.user_reports (
+  id                uuid primary key default gen_random_uuid(),
+  event_id          uuid references public.events(id) on delete cascade,
+  reporter_id       uuid not null references public.profiles(id) on delete cascade,
+  reported_user_id  uuid not null references public.profiles(id) on delete cascade,
+  reason            text not null check (reason in ('harassment','fake_profile','underage','violence','spam','other')),
+  details           text not null default '' check (char_length(details) <= 280),
+  status            text not null default 'open' check (status in ('open','reviewed')),
+  reviewed_by       uuid references public.profiles(id) on delete set null,
+  created_at        timestamptz not null default now(),
+  constraint user_reports_not_self check (reporter_id <> reported_user_id)
+);
+create unique index if not exists uq_report_open on public.user_reports (reporter_id, reported_user_id, coalesce(event_id, '00000000-0000-0000-0000-000000000000'::uuid)) where status = 'open';
+create index if not exists idx_reports_event on public.user_reports (event_id, status, created_at desc);
+
+-- Botón de Arrepentimiento (Res. 424/2020): pedidos de revocación, sin cuenta. Solo los lee el servidor.
+create table if not exists public.withdrawal_requests (
+  id           uuid primary key default gen_random_uuid(),
+  tracking     text not null unique,
+  email        text not null check (char_length(email) between 5 and 160),
+  order_ref    text check (order_ref is null or char_length(order_ref) <= 80),
+  reason       text check (reason is null or char_length(reason) <= 500),
+  created_at   timestamptz not null default now()
+);
+
 -- ════════════════════════════════════════════════════════════════════════
 -- ÍNDICES
 -- ════════════════════════════════════════════════════════════════════════
@@ -573,18 +672,38 @@ returns boolean language sql stable security definer set search_path = public, e
   select exists (select 1 from public.event_attendees where event_id = p_event and user_id = p_user);
 $$;
 
+-- [v1.7] Rol por asignación de la organización (espejo de staffRoleOf): alcance + no revocada + ventana horaria
+-- (2 h antes del inicio a 1 h después del cierre) cuando access_window. El kill switch revoca en el acto.
+create or replace function public.assigned_staff_role(p_event uuid, p_user uuid default auth.uid())
+returns staff_role_t language sql stable security definer set search_path = public, extensions as $$
+  select a.role from public.staff_assignments a join public.events e on e.id = p_event
+  where a.user_id = p_user and a.revoked_at is null and a.organization_id = e.created_by
+    and (a.scope = 'all_org_events' or p_event = any(a.event_ids))
+    and (not a.access_window or now() between e.starts_at - interval '2 hours' and e.ends_at + interval '1 hour')
+  order by a.created_at desc limit 1;
+$$;
+
 create or replace function public.is_event_staff(p_event uuid, p_user uuid default auth.uid())
 returns boolean language sql stable security definer set search_path = public, extensions as $$
   -- [v1.6] El RRPP NO es staff para ver datos (pines, squads, pedidos, perks): solo tiene su link y sus números.
   select exists (select 1 from public.event_staff where event_id = p_event and user_id = p_user and role::text <> 'promoter')
-      or exists (select 1 from public.events where id = p_event and created_by = p_user);
+      or exists (select 1 from public.events where id = p_event and created_by = p_user)
+      or coalesce(public.assigned_staff_role(p_event, p_user)::text, 'promoter') <> 'promoter';
 $$;
 
 -- Permisos por rol (espejo de src/lib/engine/roles.ts). Quien creó el evento es 'owner' aunque no tenga fila.
 create or replace function public.has_staff_role(p_event uuid, p_roles staff_role_t[], p_user uuid default auth.uid())
 returns boolean language sql stable security definer set search_path = public, extensions as $$
   select exists (select 1 from public.event_staff where event_id = p_event and user_id = p_user and role = any(p_roles))
-      or ('owner' = any(p_roles) and exists (select 1 from public.events where id = p_event and created_by = p_user));
+      or ('owner' = any(p_roles) and exists (select 1 from public.events where id = p_event and created_by = p_user))
+      or (not exists (select 1 from public.event_staff where event_id = p_event and user_id = p_user)
+          and public.assigned_staff_role(p_event, p_user) = any(p_roles));
+$$;
+
+-- [v1.7] Administración global de ROUGE.
+create or replace function public.is_platform_admin(p_user uuid default auth.uid())
+returns boolean language sql stable security definer set search_path = public, extensions as $$
+  select exists (select 1 from public.platform_admins where user_id = p_user);
 $$;
 -- Dueño/a y producción: eventos, accesos, CRM, blasts, perks, sorteos y menú.
 create or replace function public.is_event_manager(p_event uuid, p_user uuid default auth.uid())
@@ -700,9 +819,9 @@ revoke all on public.profiles from anon, authenticated;
 grant select (id, username, full_name, birth_date, gender, bio, photos, loop_video_url, music_genres, spotify_embed_url, instagram_username, instagram_verified, is_verified, created_at)
   on public.profiles to authenticated;
 -- is_verified solo lo modifica el staff de ROUGE (service role); instagram_verified lo calcula el trigger
-grant insert (id, username, full_name, birth_date, gender, phone_normalized, bio, photos, loop_video_url, music_genres, spotify_embed_url, instagram_username)
+grant insert (id, username, full_name, birth_date, gender, phone_normalized, bio, photos, loop_video_url, music_genres, spotify_embed_url, instagram_username, terms_accepted_at)
   on public.profiles to authenticated;
-grant update (username, full_name, birth_date, gender, phone_normalized, bio, photos, loop_video_url, music_genres, spotify_embed_url, instagram_username)
+grant update (username, full_name, birth_date, gender, phone_normalized, bio, photos, loop_video_url, music_genres, spotify_embed_url, instagram_username, terms_accepted_at)
   on public.profiles to authenticated;
 
 -- Instagram verificado ⇔ el @ del perfil es el de la cuenta conectada (espejo de upsertProfile en el motor).
@@ -811,6 +930,10 @@ create policy attendees_select on public.event_attendees for select to authentic
     public.is_event_attendee(event_id)
     and not public.is_blocked(auth.uid(), user_id)
     and (not ghost_mode or public.are_squadmates(event_id, auth.uid(), user_id) or public.is_match(event_id, auth.uid(), user_id))
+    -- [v1.7] Privacidad: con require_checkin_for_lobby, solo quien ya ingresó por la puerta (o tu Squad/matches).
+    and (checked_in_at is not null
+         or not exists (select 1 from public.events e where e.id = event_id and e.require_checkin_for_lobby)
+         or public.are_squadmates(event_id, auth.uid(), user_id) or public.is_match(event_id, auth.uid(), user_id))
   )
 );
 drop policy if exists attendees_update_self on public.event_attendees;
@@ -1990,6 +2113,264 @@ begin
     'label', v_c.label, 'checked_in_at', v_at);
 end $$;
 
+-- ════════════════════════════════════════════════════════════════════════
+-- [v1.7] SEGURIDAD OPERATIVA — RLS y RPCs (espejo de src/lib/engine/security.ts)
+-- ════════════════════════════════════════════════════════════════════════
+alter table public.platform_admins     enable row level security;
+alter table public.staff_assignments   enable row level security;
+alter table public.staff_invites       enable row level security;
+alter table public.terminal_pins       enable row level security;   -- sin políticas: solo RPCs
+alter table public.audit_log           enable row level security;
+alter table public.user_reports        enable row level security;
+alter table public.withdrawal_requests enable row level security;   -- sin políticas: solo el servidor
+
+drop policy if exists staff_assignments_select on public.staff_assignments;
+create policy staff_assignments_select on public.staff_assignments for select to authenticated
+  using (user_id = auth.uid() or organization_id = auth.uid() or public.is_platform_admin());
+drop policy if exists staff_invites_select on public.staff_invites;
+create policy staff_invites_select on public.staff_invites for select to authenticated using (organization_id = auth.uid());
+revoke all on public.staff_invites from anon, authenticated;
+grant select (id, organization_id, role, scope, event_ids, access_window, expires_at, used_at, used_by, revoked_at, created_by, created_at)
+  on public.staff_invites to authenticated;
+
+-- Auditoría: el dueño/a ve la de su organización; producción, la de los eventos que produce; ROUGE, todo.
+drop policy if exists audit_select on public.audit_log;
+create policy audit_select on public.audit_log for select to authenticated
+  using (organization_id = auth.uid() or (event_id is not null and public.is_event_manager(event_id)) or public.is_platform_admin());
+revoke insert, update, delete on public.audit_log from anon, authenticated;
+create or replace function public.audit_log_immutable() returns trigger language plpgsql as $$
+begin raise exception 'audit_log_is_append_only'; end $$;
+drop trigger if exists audit_log_no_update on public.audit_log;
+create trigger audit_log_no_update before update or delete on public.audit_log for each row execute function public.audit_log_immutable();
+
+create or replace function public.write_audit(p_org uuid, p_event uuid, p_action text, p_target text, p_details jsonb default '{}'::jsonb, p_operator uuid default null)
+returns void language sql security definer set search_path = public, extensions as $$
+  insert into public.audit_log (organization_id, event_id, actor_id, operator_id, action, target, details)
+  values (p_org, p_event, auth.uid(), p_operator, p_action, p_target, coalesce(p_details, '{}'::jsonb));
+$$;
+
+-- Reportes: quien reporta ve los suyos; seguridad, dueño/a y producción, los del evento.
+drop policy if exists reports_select on public.user_reports;
+create policy reports_select on public.user_reports for select to authenticated
+  using (reporter_id = auth.uid() or (event_id is not null and public.has_staff_role(event_id, array['owner','manager','security']::staff_role_t[])) or public.is_platform_admin());
+
+drop policy if exists platform_admins_select on public.platform_admins;
+create policy platform_admins_select on public.platform_admins for select to authenticated using (user_id = auth.uid());
+
+create or replace function public.am_platform_admin() returns boolean language sql stable security definer set search_path = public, extensions as $$
+  select public.is_platform_admin(auth.uid());
+$$;
+
+-- Invitación de staff (dueño/a). Devuelve el token UNA vez; se guarda su hash (mismo formato que inviteTokenHash).
+create or replace function public.create_staff_invite(p_role staff_role_t, p_scope text, p_event_ids uuid[] default '{}', p_access_window boolean default null)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare v_token text := translate(encode(gen_random_bytes(18), 'base64'), '+/=', '-_'); v_id uuid; v_ids uuid[] := coalesce(p_event_ids, '{}');
+begin
+  if auth.uid() is null then raise exception 'not_authenticated'; end if;
+  if p_role::text = 'owner' then raise exception 'invalid_role'; end if;
+  if p_scope not in ('all_org_events','specific_events') then raise exception 'invalid_scope'; end if;
+  if not exists (select 1 from public.events where created_by = auth.uid()) then raise exception 'no_org_events'; end if;
+  if p_scope = 'specific_events' and (cardinality(v_ids) = 0 or exists (select 1 from unnest(v_ids) x where not exists (select 1 from public.events e where e.id = x and e.created_by = auth.uid()))) then
+    raise exception 'event_not_in_org';
+  end if;
+  insert into public.staff_invites (organization_id, role, scope, event_ids, access_window, token_hash, expires_at, created_by)
+  values (auth.uid(), p_role, p_scope, case when p_scope = 'specific_events' then v_ids else '{}' end,
+          coalesce(p_access_window, p_role::text in ('security','bartender','waiter')),
+          encode(digest('rouge-staff-invite:' || v_token, 'sha256'), 'hex'), now() + interval '2 hours', auth.uid())
+  returning id into v_id;
+  perform public.write_audit(auth.uid(), null, 'staff.invited', v_id::text, jsonb_build_object('role', p_role, 'scope', p_scope, 'events', cardinality(v_ids)));
+  return jsonb_build_object('id', v_id, 'token', v_token);
+end $$;
+
+-- Aceptar (quien abre el link, con sesión y perfil). Atómico: el FOR UPDATE evita que dos personas usen el mismo link.
+create or replace function public.accept_staff_invite(p_token text)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare v_inv public.staff_invites; v_id uuid;
+begin
+  if not exists (select 1 from public.profiles where id = auth.uid()) then raise exception 'profile_required'; end if;
+  select * into v_inv from public.staff_invites where token_hash = encode(digest('rouge-staff-invite:' || coalesce(p_token, ''), 'sha256'), 'hex') for update;
+  if v_inv.id is null then raise exception 'invite_missing'; end if;
+  if v_inv.revoked_at is not null then raise exception 'invite_revoked'; end if;
+  if v_inv.used_at is not null then raise exception 'invite_used'; end if;
+  if v_inv.expires_at <= now() then raise exception 'invite_expired'; end if;
+  if v_inv.organization_id = auth.uid() then raise exception 'invite_self'; end if;
+  update public.staff_assignments set revoked_at = now() where organization_id = v_inv.organization_id and user_id = auth.uid() and revoked_at is null;
+  insert into public.staff_assignments (organization_id, user_id, role, scope, event_ids, access_window, created_by)
+  values (v_inv.organization_id, auth.uid(), v_inv.role, v_inv.scope, v_inv.event_ids, v_inv.access_window, v_inv.created_by)
+  returning id into v_id;
+  update public.staff_invites set used_at = now(), used_by = auth.uid() where id = v_inv.id;
+  perform public.write_audit(v_inv.organization_id, null, 'staff.joined', auth.uid()::text, jsonb_build_object('role', v_inv.role, 'scope', v_inv.scope));
+  return jsonb_build_object('id', v_id, 'organization_id', v_inv.organization_id, 'role', v_inv.role);
+end $$;
+
+create or replace function public.revoke_staff_invite(p_invite uuid)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  update public.staff_invites set revoked_at = now() where id = p_invite and organization_id = auth.uid() and used_at is null and revoked_at is null;
+  if not found then raise exception 'forbidden'; end if;
+end $$;
+
+-- Kill switch: baja inmediata en toda la organización (asignaciones + equipo de cada evento + PIN).
+create or replace function public.revoke_staff_access(p_user uuid)
+returns int language plpgsql security definer set search_path = public, extensions as $$
+declare v_a int; v_s int;
+begin
+  if p_user = auth.uid() then raise exception 'staff_is_creator'; end if;
+  update public.staff_assignments set revoked_at = now() where organization_id = auth.uid() and user_id = p_user and revoked_at is null;
+  get diagnostics v_a = row_count;
+  delete from public.event_staff es using public.events e where e.id = es.event_id and e.created_by = auth.uid() and es.user_id = p_user;
+  get diagnostics v_s = row_count;
+  delete from public.terminal_pins where organization_id = auth.uid() and user_id = p_user;
+  if v_a + v_s = 0 then raise exception 'not_staff'; end if;
+  perform public.write_audit(auth.uid(), null, 'staff.revoked', p_user::text, jsonb_build_object('removed', v_a + v_s));
+  return v_a + v_s;
+end $$;
+
+-- PIN de terminal (4-6 dígitos, no trivial): bcrypt. Solo staff de esa organización.
+create or replace function public.set_terminal_pin(p_org uuid, p_pin text)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if p_pin !~ '^[0-9]{4,6}$' then raise exception 'pin_format'; end if;
+  if p_pin ~ '^(.)\1+$' or position(p_pin in '01234567890123456789') > 0 or position(p_pin in '98765432109876543210') > 0 then raise exception 'pin_weak'; end if;
+  if not (p_org = auth.uid()
+          or exists (select 1 from public.staff_assignments where organization_id = p_org and user_id = auth.uid() and revoked_at is null)
+          or exists (select 1 from public.event_staff es join public.events e on e.id = es.event_id where e.created_by = p_org and es.user_id = auth.uid())) then
+    raise exception 'not_staff';
+  end if;
+  insert into public.terminal_pins (organization_id, user_id, pin_hash) values (p_org, auth.uid(), crypt(p_pin, gen_salt('bf', 8)))
+  on conflict (organization_id, user_id) do update set pin_hash = excluded.pin_hash, updated_at = now();
+  perform public.write_audit(p_org, null, 'staff.pin_set', auth.uid()::text);
+end $$;
+
+create or replace function public.my_terminal_pins()
+returns table (organization_id uuid, user_id uuid, updated_at timestamptz) language sql stable security definer set search_path = public, extensions as $$
+  select organization_id, user_id, updated_at from public.terminal_pins where user_id = auth.uid() or organization_id = auth.uid();
+$$;
+
+-- Modo Kiosco: la terminal (cuenta del dueño/a o producción) desbloquea con el PIN de quien opera.
+-- 5 errores en 5 minutos bloquean la terminal. Devuelve quién opera (para la auditoría de cada acción).
+create or replace function public.kiosk_unlock(p_event uuid, p_pin text)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare v_org uuid; v_user uuid; v_role staff_role_t;
+begin
+  if not public.is_event_manager(p_event) then raise exception 'forbidden'; end if;
+  select created_by into v_org from public.events where id = p_event;
+  if (select count(*) from public.audit_log where event_id = p_event and actor_id = auth.uid() and action = 'kiosk.failed' and created_at > now() - interval '5 minutes') >= 5 then
+    raise exception 'kiosk_locked';
+  end if;
+  select tp.user_id into v_user from public.terminal_pins tp
+   where tp.organization_id = v_org and coalesce(p_pin, '') ~ '^[0-9]{4,6}$' and tp.pin_hash = crypt(p_pin, tp.pin_hash) limit 1;
+  if v_user is not null then
+    v_role := coalesce((select role from public.event_staff where event_id = p_event and user_id = v_user),
+                       case when v_user = v_org then 'owner'::staff_role_t end, public.assigned_staff_role(p_event, v_user));
+  end if;
+  if v_user is null or v_role is null then
+    perform public.write_audit(v_org, p_event, 'kiosk.failed', null);
+    raise exception 'kiosk_bad_pin';
+  end if;
+  perform public.write_audit(v_org, p_event, 'kiosk.unlocked', v_user::text, '{}'::jsonb, v_user);
+  return jsonb_build_object('operator_id', v_user, 'role', v_role);
+end $$;
+
+-- Acción hecha en kiosco: deja en la auditoría quién operó (la terminal es la cuenta del dueño/a o producción).
+create or replace function public.kiosk_audit(p_event uuid, p_operator uuid, p_action text, p_target text)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if not public.is_event_manager(p_event) then raise exception 'forbidden'; end if;
+  if p_action not in ('door.check_in','door.rejected','bar.delivered','perk.redeemed') then raise exception 'invalid_action'; end if;
+  if not exists (select 1 from public.audit_log where event_id = p_event and actor_id = auth.uid() and operator_id = p_operator and action = 'kiosk.unlocked' and created_at > now() - interval '12 hours') then
+    raise exception 'kiosk_not_unlocked';
+  end if;
+  perform public.write_audit((select created_by from public.events where id = p_event), p_event, p_action, p_target, '{}'::jsonb, p_operator);
+end $$;
+
+-- Reportar (con bloqueo opcional en el mismo paso: invisibilidad mutua inmediata).
+create or replace function public.report_user(p_reported uuid, p_event uuid, p_reason text, p_details text default '', p_block boolean default false)
+returns uuid language plpgsql security definer set search_path = public, extensions as $$
+declare v_id uuid;
+begin
+  if p_reported = auth.uid() then raise exception 'report_self'; end if;
+  insert into public.user_reports (event_id, reporter_id, reported_user_id, reason, details)
+  values (p_event, auth.uid(), p_reported, p_reason, left(coalesce(trim(p_details), ''), 280)) returning id into v_id;
+  if p_block then
+    insert into public.user_blocks (blocker_id, blocked_user_id) select auth.uid(), p_reported
+    where not exists (select 1 from public.user_blocks where blocker_id = auth.uid() and blocked_user_id = p_reported);
+  end if;
+  perform public.write_audit((select created_by from public.events where id = p_event), p_event, 'report.created', v_id::text, jsonb_build_object('reason', p_reason));
+  return v_id;
+exception when unique_violation then raise exception 'report_duplicate';
+end $$;
+
+create or replace function public.review_report(p_report uuid)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+declare v_event uuid;
+begin
+  select event_id into v_event from public.user_reports where id = p_report;
+  if v_event is null or not public.has_staff_role(v_event, array['owner','manager','security']::staff_role_t[]) then raise exception 'forbidden'; end if;
+  update public.user_reports set status = 'reviewed', reviewed_by = auth.uid() where id = p_report;
+end $$;
+
+-- Borrado REAL de la cuenta (derecho de supresión). Los pedidos pagados quedan anonimizados (contabilidad).
+-- El usuario de Auth lo borra el servidor (/api/account) con service role después de esta RPC.
+create or replace function public.delete_my_account(p_confirm_username text)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+declare v_me public.profiles;
+begin
+  select * into v_me from public.profiles where id = auth.uid();
+  if v_me.id is null then raise exception 'profile_missing'; end if;
+  if lower(ltrim(trim(p_confirm_username), '@')) <> v_me.username then raise exception 'confirm_mismatch'; end if;
+  if exists (select 1 from public.events e join public.event_attendees a on a.event_id = e.id where e.created_by = auth.uid()) then raise exception 'owns_live_events'; end if;
+  update public.bar_orders set user_id = null where user_id = auth.uid() and payment_status = 'paid';
+  delete from public.instagram_accounts where user_id = auth.uid();
+  delete from public.profiles where id = auth.uid();   -- on delete cascade: asistencias, conexiones, mensajes, pines, squads…
+  perform public.write_audit(null, null, 'account.deleted', null);
+end $$;
+
+-- Botón de Arrepentimiento: alta anónima, devuelve el código de seguimiento.
+create or replace function public.request_withdrawal(p_email text, p_order_ref text default null, p_reason text default null)
+returns text language plpgsql security definer set search_path = public, extensions as $$
+declare v_code text := 'ARR-' || upper(encode(gen_random_bytes(4), 'hex'));
+begin
+  if coalesce(p_email, '') !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then raise exception 'invalid_email'; end if;
+  insert into public.withdrawal_requests (tracking, email, order_ref, reason) values (v_code, lower(trim(p_email)), nullif(trim(p_order_ref), ''), nullif(trim(p_reason), ''));
+  return v_code;
+end $$;
+
+-- Auditoría automática (no se puede saltear desde el cliente): cambios de precio y anulaciones de entradas.
+create or replace function public.audit_menu_price() returns trigger language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if new.price is distinct from old.price then
+    insert into public.audit_log (organization_id, event_id, actor_id, action, target, details)
+    values ((select created_by from public.events where id = new.event_id), new.event_id, auth.uid(), 'menu.price_changed', new.id,
+            jsonb_build_object('from', old.price, 'to', new.price));
+  end if;
+  return new;
+end $$;
+drop trigger if exists bar_menu_price_audit on public.bar_menu_items;
+create trigger bar_menu_price_audit after update on public.bar_menu_items for each row execute function public.audit_menu_price();
+
+create or replace function public.audit_code_revoked() returns trigger language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if new.revoked_at is not null and old.revoked_at is null then
+    insert into public.audit_log (organization_id, event_id, actor_id, action, target)
+    values ((select created_by from public.events where id = new.event_id), new.event_id, auth.uid(), 'code.revoked', new.code);
+  end if;
+  return new;
+end $$;
+drop trigger if exists invite_code_revoked_audit on public.event_invite_codes;
+create trigger invite_code_revoked_audit after update on public.event_invite_codes for each row execute function public.audit_code_revoked();
+
+create or replace function public.audit_staff_change() returns trigger language plpgsql security definer set search_path = public, extensions as $$
+begin
+  insert into public.audit_log (organization_id, event_id, actor_id, action, target, details)
+  values ((select created_by from public.events where id = coalesce(new.event_id, old.event_id)), coalesce(new.event_id, old.event_id), auth.uid(),
+          case when tg_op = 'DELETE' then 'staff.revoked' else 'staff.role_changed' end, coalesce(new.user_id, old.user_id)::text,
+          jsonb_build_object('role', coalesce(new.role::text, old.role::text)));
+  return coalesce(new, old);
+end $$;
+drop trigger if exists event_staff_audit on public.event_staff;
+create trigger event_staff_audit after insert or update or delete on public.event_staff for each row execute function public.audit_staff_change();
+
 -- Permisos de ejecución
 revoke execute on all functions in schema public from anon;
 grant execute on all functions in schema public to authenticated;
@@ -1998,6 +2379,8 @@ revoke execute on function public.purge_expired_pins() from public, anon, authen
 revoke execute on function public.apply_squad_perk_rules(uuid) from public, anon, authenticated;
 revoke execute on function public.apply_order_spend(public.bar_orders) from public, anon, authenticated;
 grant execute on function public.resolve_access_code(text) to anon;
+grant execute on function public.request_withdrawal(text, text, text) to anon;
+revoke execute on function public.write_audit(uuid, uuid, text, text, jsonb, uuid) from public, anon, authenticated;
 -- API v1: solo el servidor (route handlers con service role) usa estas funciones.
 do $$ declare f text; begin
   foreach f in array array['public.api_authorize(uuid, uuid, text)', 'public.api_key_events(uuid)',
@@ -2016,7 +2399,7 @@ declare t text;
 begin
   foreach t in array array['messages','map_pins','connections','squad_members','squads','blast_deliveries',
                            'user_perks_qrs','bar_orders','song_requests','raffles','event_attendees',
-                           'brands','squad_expenses','squad_settlements'] loop
+                           'brands','squad_expenses','squad_settlements','user_reports','staff_assignments'] loop
     begin
       execute format('alter publication supabase_realtime add table public.%I', t);
     exception when duplicate_object then null; when undefined_object then null;
