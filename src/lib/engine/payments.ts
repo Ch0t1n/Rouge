@@ -41,6 +41,9 @@ export function addSpend(state: RougeState, eventId: UUID, shares: [UUID, number
   };
 }
 
+/** Efectos posteriores al pago (los registra engine/monetization para evitar una dependencia circular). */
+export const paymentHooks: { after?: (s: RougeState, o: BarOrder, now: number) => RougeState } = {};
+
 /**
  * Acredita el pago de un pedido. Espejo de confirm_order_payment (que solo ejecuta el servidor con la
  * respuesta de Mercado Pago). En el Modo Demo lo dispara el checkout simulado.
@@ -55,7 +58,8 @@ export function confirmOrderPayment(state: RougeState, orderId: UUID, ref: strin
   const iso = new Date(now).toISOString();
   const paid: BarOrder = { ...o, payment_status: "paid", payment_ref: ref, paid_at: iso, updated_at: iso };
   const next = addSpend({ ...state, bar_orders: state.bar_orders.map((x) => (x.id === orderId ? paid : x)) }, o.event_id, spendShares(o));
-  return { ok: true, state: next, data: paid };
+  // Regalo desde el chat y Mesa VIP dividida: el QR se emite recién con el pago acreditado.
+  return { ok: true, state: paymentHooks.after ? paymentHooks.after(next, paid, now) : next, data: paid };
 }
 
 /** Quien pidió puede cancelar un pedido que todavía no pagó (espejo de cancel_unpaid_order). */

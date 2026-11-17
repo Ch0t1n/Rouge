@@ -9,7 +9,9 @@
  * En Modo Demo solo corre `local`. Las pantallas siempre llaman `exec(C.algo(...))`.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { ApiKey, BarOrder, Connection, EventAttendee, EventInviteCode, MoodTag, PerkRule, Raffle, RaffleFilter, RougeEvent, RougeState, SongRequest, Squad, StaffRole, UUID } from "@/lib/types";
+import type { Campaign, CampaignContact, OrganizationSettings, VipReservation } from "@/lib/types";
+import type { EventFeatureFlags } from "@/lib/engine/features";
+import type { ApiKey, BarOrder, Connection, EventAttendee, EventInviteCode, LatePaymentMethod, MoodTag, PerkRule, Raffle, RaffleFilter, ReportReason, RougeEvent, RougeState, SongRequest, Squad, StaffRole, UUID } from "@/lib/types";
 import * as A from "@/lib/engine/actions";
 import type { Result } from "@/lib/engine/actions";
 import { can, NO_PERMISSION, type Permission } from "@/lib/engine/roles";
@@ -19,6 +21,16 @@ import * as T from "@/lib/engine/settle";
 import * as E from "@/lib/engine/eventAdmin";
 import * as RP from "@/lib/engine/promoters";
 import * as D from "@/lib/engine/door";
+import * as S from "@/lib/engine/security";
+import * as SC from "@/lib/engine/scan";
+import * as DO from "@/lib/engine/doorOffline";
+import * as CP from "@/lib/engine/campaigns";
+import * as SA from "@/lib/engine/superadmin";
+// Registra los efectos post-pago (regalo del chat y QR grupal de la Mesa VIP) en confirmOrderPayment.
+import * as MO from "@/lib/engine/monetization";
+import * as PV from "@/lib/engine/privacy";
+import * as MT from "@/lib/engine/meetings";
+import { BAR_MENU, CORPORATE_MENU } from "@/lib/mock/seed";
 
 export interface Command<T> {
   name: string;
@@ -70,6 +82,7 @@ export const upsertProfile = (userId: UUID, input: A.ProfileInput): Command<Roug
       music_genres: p.music_genres,
       spotify_embed_url: p.spotify_embed_url,
       instagram_username: p.instagram_username,
+      ...(p.terms_accepted_at ? { terms_accepted_at: p.terms_accepted_at } : {}),
     };
     const existed = before.profiles.some((x) => x.id === p.id);
     if (existed) must(await sb.from("profiles").update(fields).eq("id", p.id));
@@ -125,17 +138,137 @@ export const unblock = (blockerId: UUID, blockId: UUID): Command<undefined> => (
  * `serverEventId`: el código lo resolvió el servidor (resolve_access_code) porque el cliente no puede
  * verlo por RLS (códigos de 1 uso, squads ajenos). Si la regla local no lo encuentra, decide el servidor.
  */
-export const joinEvent = (userId: UUID, code: string, mood: MoodTag, serverEventId?: UUID): Command<{ eventId: UUID; squadId?: UUID }> => ({
+export const joinEvent = (userId: UUID, code: string, mood: MoodTag, serverEventId?: UUID, personaId: UUID | null = null): Command<{ eventId: UUID; squadId?: UUID }> => ({
   name: "joinEvent",
   optimistic: false,
   local: (s) => {
-    const r = A.joinEvent(s, userId, code, mood);
+    const r = A.joinEvent(s, userId, code, mood, Date.now(), personaId);
     if (!r.ok && serverEventId && !A.resolveAccessCode(s, code)) return { ok: true, state: s, data: { eventId: serverEventId } };
     return r;
   },
   remote: async (sb, local) => {
-    const eventId = await rpc<UUID>(sb, "join_event", { p_code: code, p_mood: mood });
+    const eventId = await rpc<UUID | null>(sb, "join_event", { p_code: code, p_mood: mood, p_persona: personaId });
+    // El servidor devuelve null (en vez de un error) ante un código inexistente para poder registrar el intento.
+    if (!eventId) throw new Error("invalid_code");
     return { ...local, eventId };
+  },
+});
+
+// ── Perfiles adicionales (una cuenta, varias caras) ──────────────────
+
+/** Crea o edita un perfil adicional. Mismo id en el insert que en el optimista (no se duplica). */
+export const upsertPersona = (userId: UUID, input: A.PersonaInput): Command<RougeState["profile_personas"][number]> => ({
+  name: "upsertPersona",
+  local: (s) => A.upsertPersona(s, userId, input),
+  remote: async (sb, p, before) => {
+    const fields = {
+      label: p.label,
+      display_name: p.display_name,
+      bio: p.bio,
+      photos: p.photos,
+      music_genres: p.music_genres,
+      spotify_embed_url: p.spotify_embed_url,
+      job_title: p.job_title,
+      company: p.company,
+      industry: p.industry,
+      looking_for: p.looking_for,
+      offering: p.offering,
+      linkedin_url: p.linkedin_url,
+    };
+    const existed = before.profile_personas.some((x) => x.id === p.id);
+    if (existed) must(await sb.from("profile_personas").update(fields).eq("id", p.id).eq("user_id", userId));
+    else must(await sb.from("profile_personas").insert({ id: p.id, user_id: userId, kind: p.kind, ...fields }));
+  },
+});
+
+// ── Privacidad (v1.8) ────────────────────────────────────────────────
+
+/** Ajustes de privacidad de la cuenta: incógnito por defecto, pin solo Squad, datos profesionales tras reunión. */
+export const updatePrivacySettings = (userId: UUID, patch: PV.PrivacyPatch): Command<RougeState["privacy_settings"][number]> => ({
+  name: "updatePrivacySettings",
+  local: (s) => PV.updatePrivacySettings(s, userId, patch),
+  remote: async (sb, p) => {
+    must(
+      await sb.from("privacy_settings").upsert(
+        { user_id: userId, incognito_default: p.incognito_default, pin_share_matches: p.pin_share_matches, pro_details_after_meeting: p.pro_details_after_meeting, updated_at: p.updated_at },
+        { onConflict: "user_id" },
+      ),
+    );
+  },
+});
+
+// ── Reuniones y puntos de encuentro (v1.8) ───────────────────────────
+
+const locationArgs = (loc: MT.MeetingLocation) => ({
+  p_location_kind: loc.kind,
+  p_spot: loc.kind === "spot" ? loc.spotId : null,
+  p_x: loc.kind === "pin" ? loc.x : null,
+  p_y: loc.kind === "pin" ? loc.y : null,
+  p_label: loc.kind === "pin" ? (loc.label ?? null) : null,
+});
+
+/** Pedir una reunión. El id lo genera el servidor (no optimista). */
+export const requestMeeting = (eventId: UUID, requesterId: UUID, inviteeId: UUID, input: MT.MeetingInput): Command<RougeState["meetings"][number]> => ({
+  name: "requestMeeting",
+  optimistic: false,
+  local: (s) => MT.requestMeeting(s, eventId, requesterId, inviteeId, input),
+  remote: async (sb) =>
+    rpc<RougeState["meetings"][number]>(sb, "request_meeting", {
+      p_event: eventId,
+      p_invitee: inviteeId,
+      p_topic: input.topic.trim(),
+      p_starts_at: input.startsAt,
+      p_duration: input.duration,
+      ...locationArgs(input.location),
+    }),
+});
+
+/** Aceptar (abre el chat) o rechazar. Si el lugar estaba "a definir", `location` lo fija. */
+export const respondMeeting = (meetingId: UUID, userId: UUID, accept: boolean, location?: MT.MeetingLocation): Command<RougeState["meetings"][number]> => ({
+  name: "respondMeeting",
+  optimistic: false, // al aceptar, el servidor crea la conexión (chat) con su id
+  local: (s) => MT.respondMeeting(s, meetingId, userId, accept, location),
+  remote: async (sb) =>
+    rpc<RougeState["meetings"][number]>(sb, "respond_meeting", { p_meeting: meetingId, p_accept: accept, ...(location ? locationArgs(location) : {}) }),
+});
+
+export const rescheduleMeeting = (meetingId: UUID, userId: UUID, input: Omit<MT.MeetingInput, "topic">): Command<RougeState["meetings"][number]> => ({
+  name: "rescheduleMeeting",
+  local: (s) => MT.rescheduleMeeting(s, meetingId, userId, input),
+  remote: async (sb) =>
+    rpc<RougeState["meetings"][number]>(sb, "reschedule_meeting", { p_meeting: meetingId, p_starts_at: input.startsAt, p_duration: input.duration, ...locationArgs(input.location) }),
+});
+
+export const cancelMeeting = (meetingId: UUID, userId: UUID): Command<RougeState["meetings"][number]> => ({
+  name: "cancelMeeting",
+  local: (s) => MT.cancelMeeting(s, meetingId, userId),
+  remote: async (sb) => rpc<RougeState["meetings"][number]>(sb, "cancel_meeting", { p_meeting: meetingId }),
+});
+
+/** Sala / mesa / punto de encuentro del evento (dueño/a o producción). Mismo id en el insert que en el optimista. */
+export const upsertVenueSpot = (eventId: UUID, input: MT.VenueSpotInput): Command<RougeState["venue_spots"][number]> => ({
+  name: "upsertVenueSpot",
+  local: guarded("admin.events", () => eventId, (s) => MT.upsertVenueSpot(s, eventId, input)),
+  remote: async (sb, x, before) => {
+    const fields = { name: x.name, kind: x.kind, capacity: x.capacity, coord_x: x.coord_x, coord_y: x.coord_y, is_active: x.is_active };
+    if (before.venue_spots.some((v) => v.id === x.id)) must(await sb.from("venue_spots").update(fields).eq("id", x.id).eq("event_id", eventId));
+    else must(await sb.from("venue_spots").insert({ id: x.id, event_id: eventId, ...fields }));
+  },
+});
+
+export const deleteVenueSpot = (eventId: UUID, spotId: UUID): Command<undefined> => ({
+  name: "deleteVenueSpot",
+  local: guarded("admin.events", () => eventId, (s) => MT.deleteVenueSpot(s, spotId)),
+  remote: async (sb) => {
+    must(await sb.from("venue_spots").delete().eq("id", spotId).eq("event_id", eventId));
+  },
+});
+
+export const deletePersona = (userId: UUID, personaId: UUID): Command<undefined> => ({
+  name: "deletePersona",
+  local: (s) => A.deletePersona(s, userId, personaId),
+  remote: async (sb) => {
+    await rpc(sb, "delete_persona", { p_persona: personaId });
   },
 });
 
@@ -447,14 +580,23 @@ export const sendBlast = (eventId: UUID, input: A.BlastInput): Command<{ blast: 
 
 // ── Eventos (staff) ──────────────────────────────────────────────────
 
+export const CREATE_EVENT_LOCKED = "La creación de eventos la gestiona ROUGE. Pedí que activen la autogestión de tu organización.";
+
 export const upsertEvent = (input: Parameters<typeof A.upsertEvent>[1]): Command<RougeEvent> => ({
   name: "upsertEvent",
-  // Cualquiera con sesión crea un evento (queda como owner); editar uno existente exige admin.events.
-  local: (s) => (input.id && s.events.some((e) => e.id === input.id) && !can(s, input.id, s.current_user_id, "admin.events") ? { ok: false, error: NO_PERMISSION } : A.upsertEvent(s, input)),
+  // v1.8: crear un evento nuevo es de ROUGE HQ (o del dueño/a con autogestión, ver el creador modular);
+  // editar los datos de uno existente exige admin.events.
+  local: (s) => {
+    const exists = !!input.id && s.events.some((e) => e.id === input.id);
+    if (exists && !can(s, input.id!, s.current_user_id, "admin.events")) return { ok: false, error: NO_PERMISSION };
+    if (!exists && !E.canManageModules(s, s.current_user_id, s.current_user_id)) return { ok: false, error: CREATE_EVENT_LOCKED };
+    return A.upsertEvent(s, input);
+  },
   remote: async (sb, e, before) => {
     const isNew = !before.events.some((x) => x.id === e.id);
     const row = {
       id: e.id,
+      kind: e.kind,
       slug: e.slug,
       name: e.name,
       description: e.description,
@@ -472,12 +614,16 @@ export const upsertEvent = (input: Parameters<typeof A.upsertEvent>[1]): Command
       logo_url: e.logo_url,
       theme_primary: e.theme_primary,
       theme_accent: e.theme_accent,
+      require_checkin_for_lobby: e.require_checkin_for_lobby ?? false,
+      networking_checkin_only: e.networking_checkin_only,
       ...(isNew ? { master_invite_code: e.master_invite_code, created_by: e.created_by } : {}),
     };
     if (isNew) {
       must(await sb.from("events").insert(row));
-      // Menú base de Barra Express para el evento nuevo (el staff lo puede editar después).
-      must(await sb.from("bar_menu_items").insert(before.bar_menu.map((i) => ({ id: i.id, event_id: e.id, name: i.name, category: i.category, price: i.price, emoji: i.emoji }))));
+      // Menú base para el evento nuevo según su vertical (el staff lo puede editar después).
+      const sameKind = before.events.find((x) => x.id === before.active_event_id)?.kind === e.kind;
+      const menu = sameKind && before.bar_menu.length ? before.bar_menu : e.kind === "corporate" ? CORPORATE_MENU : BAR_MENU;
+      must(await sb.from("bar_menu_items").insert(menu.map((i) => ({ id: i.id, event_id: e.id, name: i.name, category: i.category, price: i.price, emoji: i.emoji }))));
     } else {
       must(await sb.from("events").update(row).eq("id", e.id));
     }
@@ -489,6 +635,23 @@ export const generateInviteCodes = (eventId: UUID, count: number): Command<Event
   optimistic: false,
   local: guarded("admin.events", () => eventId, (s) => A.generateInviteCodes(s, eventId, count)),
   remote: async (sb) => rpc<EventInviteCode[]>(sb, "generate_invite_codes", { p_event: eventId, p_count: count }),
+});
+
+/** Lista free con horario límite y precio de conversión tardía (dueño/a o producción). */
+export const upsertTicketList = (eventId: UUID, input: E.TicketListInput): Command<RougeState["ticket_lists"][number]> => ({
+  name: "upsertTicketList",
+  local: guarded("admin.events", () => eventId, (s) => E.upsertTicketList(s, eventId, input)),
+  remote: async (sb, l) => {
+    must(await sb.from("ticket_lists").upsert({ id: l.id, event_id: l.event_id, name: l.name, free_until: l.free_until, late_price: l.late_price }));
+  },
+});
+
+export const assignCodesToList = (eventId: UUID, codeIds: UUID[], listId: UUID | null): Command<number> => ({
+  name: "assignCodesToList",
+  local: guarded("admin.events", () => eventId, (s) => E.assignCodesToList(s, eventId, codeIds, listId)),
+  remote: async (sb) => {
+    must(await sb.from("event_invite_codes").update({ list_id: listId }).eq("event_id", eventId).in("id", codeIds));
+  },
 });
 
 // ── Equipo del evento (solo dueño/a) ─────────────────────────────────
@@ -646,10 +809,11 @@ export const duplicateEvent = (eventId: UUID, startsAt: string): Command<{ event
   remote: async (sb, { event: e, rules }, before) => {
     must(
       await sb.from("events").insert({
-        id: e.id, slug: e.slug, name: e.name, description: e.description, venue_name: e.venue_name, venue_map_url: e.venue_map_url,
+        id: e.id, kind: e.kind, slug: e.slug, name: e.name, description: e.description, venue_name: e.venue_name, venue_map_url: e.venue_map_url,
         venue_layout_json: e.venue_layout_json, lineup_json: e.lineup_json, cover_url: e.cover_url, starts_at: e.starts_at, ends_at: e.ends_at,
         lobby_opens_at: e.lobby_opens_at, lobby_expires_at: e.lobby_expires_at, max_capacity: e.max_capacity, master_invite_code: e.master_invite_code,
         created_by: e.created_by, brand_id: e.brand_id, logo_url: e.logo_url, theme_primary: e.theme_primary, theme_accent: e.theme_accent,
+        networking_checkin_only: e.networking_checkin_only,
       }),
     );
     must(await sb.from("bar_menu_items").insert(before.bar_menu.map((i) => ({ id: i.id, event_id: e.id, name: i.name, category: i.category, price: i.price, emoji: i.emoji, is_available: i.is_available }))));
@@ -700,9 +864,311 @@ export const setPromoterCommission = (linkId: UUID, amount: number): Command<Rou
 });
 
 /** Escaneo en la puerta: el servidor decide (código anulado, ya entró, expulsado…) y devuelve quién es. */
-export const doorCheckIn = (eventId: UUID, value: string): Command<D.DoorResult> => ({
+/**
+ * Escaneo en la puerta. `terminal`: nombre del dispositivo (si otra terminal ya lo hizo entrar, se ve cuál).
+ * Atómico en el servidor (door_scan con FOR UPDATE): con dos escaneos simultáneos, solo el primero entra.
+ */
+/** Esquema escalonado del RRPP: tramos por cantidad + % sobre la barra (dueño/a o producción). */
+export const setPromoterScheme = (linkId: UUID, input: RP.PromoterSchemeInput): Command<RougeState["promoter_links"][number]> => ({
+  name: "setPromoterScheme",
+  local: (s) => RP.setPromoterScheme(s, linkId, input, s.current_user_id),
+  remote: async (sb) => void (await rpc(sb, "set_promoter_scheme", { p_link: linkId, p_ticket_price: input.ticket_price, p_tiers: input.tiers, p_bar_percent: input.bar_percent })),
+});
+
+export const doorCheckIn = (eventId: UUID, value: string, terminal: string | null = null): Command<D.DoorResult> => ({
   name: "doorCheckIn",
   optimistic: false,
-  local: guarded("door.scan", () => eventId, (s) => D.doorCheckIn(s, eventId, value)),
-  remote: async (sb) => rpc<D.DoorResult>(sb, "door_check_in", { p_event: eventId, p_value: value }),
+  local: guarded("door.scan", () => eventId, (s) => D.doorCheckIn(s, eventId, value, Date.now(), { terminal })),
+  remote: async (sb) => rpc<D.DoorResult>(sb, "door_scan", { p_event: eventId, p_value: value, p_terminal: terminal }),
+});
+
+/** Sube los ingresos registrados sin conexión; devuelve cuántos se aplicaron y los conflictos (doble uso). */
+export const doorReconcile = (eventId: UUID, items: DO.OfflineCheckIn[]): Command<DO.ReconcileResult> => ({
+  name: "doorReconcile",
+  optimistic: false,
+  local: guarded("door.scan", () => eventId, (s) => DO.reconcileOffline(s, eventId, items)),
+  remote: async (sb) => rpc<DO.ReconcileResult>(sb, "door_reconcile", { p_event: eventId, p_items: items }),
+});
+
+/** Lista free fuera de horario: cobra el diferencial (efectivo, Mercado Pago o transferencia) y deja pasar. */
+export const doorSettleLate = (eventId: UUID, codeId: UUID, method: LatePaymentMethod, terminal: string | null = null): Command<D.DoorResult> => ({
+  name: "doorSettleLate",
+  optimistic: false,
+  local: guarded("door.scan", () => eventId, (s) => D.doorSettleLate(s, eventId, codeId, method, Date.now(), { terminal })),
+  remote: async (sb) => rpc<D.DoorResult>(sb, "door_settle_late", { p_event: eventId, p_code: codeId, p_method: method, p_terminal: terminal }),
+});
+
+/** Canje en la barra con QR dinámico (perk o voucher de pedido). Un QR vencido o estático se rechaza. */
+export const redeemDynamicQr = (eventId: UUID, value: string): Command<SC.DynamicRedeem> => ({
+  name: "redeemDynamicQr",
+  optimistic: false,
+  local: guarded("bar.operate", () => eventId, (s) => {
+    const r = SC.redeemDynamicQr(s, eventId, value);
+    // Un perk lo canjea quien tenga perks.redeem (barra, gestores); mozo/a solo entrega pedidos.
+    if (r.ok && r.data.kind === "PERK" && !can(s, eventId, s.current_user_id, "perks.redeem")) return { ok: false, error: NO_PERMISSION };
+    return r;
+  }),
+  remote: async (sb, local) => {
+    await rpc(sb, "redeem_dynamic_qr", { p_event: eventId, p_value: value });
+    return local;
+  },
+});
+
+// ── Seguridad operativa (v1.7) ───────────────────────────────────────
+
+/** Token aleatorio de invitación (solo Modo Demo: en Supabase lo genera el servidor). */
+const randomToken = () => {
+  const bytes = new Uint8Array(18);
+  globalThis.crypto.getRandomValues(bytes);
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+};
+
+/** Dueño/a: invitación de 1 uso (link/QR, 2 h) a su organización. El token sale del servidor y se muestra UNA vez. */
+export const createStaffInvite = (input: S.StaffInviteInput): Command<{ invite: RougeState["staff_invites"][number]; token: string }> => ({
+  name: "createStaffInvite",
+  optimistic: false,
+  local: (s) => S.createStaffInvite(s, s.current_user_id, input, randomToken()),
+  remote: async (sb, local) => {
+    const r = await rpc<{ id: UUID; token: string }>(sb, "create_staff_invite", { p_role: input.role, p_scope: input.scope, p_event_ids: input.eventIds ?? [], p_access_window: input.accessWindow ?? null });
+    return { invite: { ...local.invite, id: r.id }, token: r.token };
+  },
+});
+
+export const acceptStaffInvite = (token: string): Command<RougeState["staff_assignments"][number]> => ({
+  name: "acceptStaffInvite",
+  optimistic: false,
+  local: (s) => S.acceptStaffInvite(s, s.current_user_id, token),
+  remote: async (sb, local) => {
+    const r = await rpc<{ id: UUID; organization_id: UUID }>(sb, "accept_staff_invite", { p_token: token });
+    return { ...local, id: r.id, organization_id: r.organization_id };
+  },
+});
+
+/** En Supabase el cliente no ve los tokens: la invitación se valida en el servidor (la regla local se saltea). */
+export const acceptStaffInviteRemoteOnly = (token: string): Command<{ ok: true }> => ({
+  name: "acceptStaffInvite",
+  optimistic: false,
+  local: (s) => ({ ok: true, state: s, data: { ok: true } }),
+  remote: async (sb) => {
+    await rpc(sb, "accept_staff_invite", { p_token: token });
+    return { ok: true };
+  },
+});
+
+export const revokeStaffInvite = (inviteId: UUID): Command<undefined> => ({
+  name: "revokeStaffInvite",
+  local: (s) => S.revokeStaffInvite(s, s.current_user_id, inviteId),
+  remote: async (sb) => void (await rpc(sb, "revoke_staff_invite", { p_invite: inviteId })),
+});
+
+/** Kill switch: baja inmediata de un integrante en toda la organización. */
+export const revokeStaffAccess = (userId: UUID): Command<{ removed: number }> => ({
+  name: "revokeStaffAccess",
+  local: (s) => S.revokeStaffAccess(s, s.current_user_id, userId),
+  remote: async (sb) => ({ removed: await rpc<number>(sb, "revoke_staff_access", { p_user: userId }) }),
+});
+
+export const setTerminalPin = (orgId: UUID, pin: string): Command<undefined> => ({
+  name: "setTerminalPin",
+  local: (s) => S.setTerminalPin(s, s.current_user_id, orgId, pin),
+  remote: async (sb) => void (await rpc(sb, "set_terminal_pin", { p_org: orgId, p_pin: pin })),
+});
+
+export type KioskResult = { operatorId: UUID; role: StaffRole } | { error: string };
+
+/**
+ * Desbloqueo del kiosco con el PIN de quien opera. Un PIN incorrecto NO es un error de `exec`: devuelve
+ * `{ error }` y deja registrado el intento (5 fallidos → terminal bloqueada 5 minutos).
+ */
+export const kioskUnlock = (eventId: UUID, pin: string): Command<KioskResult> => ({
+  name: "kioskUnlock",
+  optimistic: false,
+  local: (s) => {
+    const { state, result } = S.kioskAttempt(s, eventId, s.current_user_id, pin);
+    return { ok: true, state, data: result.ok ? result.data : { error: result.error } };
+  },
+  remote: async (sb) => {
+    const { data, error } = await sb.rpc("kiosk_unlock", { p_event: eventId, p_pin: pin });
+    if (error) {
+      if (/kiosk_bad_pin/.test(error.message)) return { error: "PIN incorrecto." };
+      throw error;
+    }
+    const r = data as { operator_id: UUID; role: StaffRole };
+    return { operatorId: r.operator_id, role: r.role };
+  },
+});
+
+/** Registra en la auditoría quién operó la terminal en una acción de puerta o barra. */
+export const kioskAudit = (eventId: UUID, operatorId: UUID, action: "door.check_in" | "door.rejected" | "bar.delivered" | "perk.redeemed", target: string): Command<undefined> => ({
+  name: "kioskAudit",
+  local: (s) => ({ ok: true, state: S.appendAudit(s, { organization_id: s.events.find((e) => e.id === eventId)?.created_by ?? null, event_id: eventId, actor_id: s.current_user_id, operator_id: operatorId, action, target }), data: undefined }),
+  remote: async (sb) => void (await rpc(sb, "kiosk_audit", { p_event: eventId, p_operator: operatorId, p_action: action, p_target: target })),
+});
+
+/** Reportar a alguien (alerta en vivo a seguridad). `block`: bloqueo mutuo inmediato en el mismo paso. */
+export const reportUser = (reportedId: UUID, eventId: UUID | null, reason: ReportReason, details: string, block: boolean): Command<RougeState["user_reports"][number]> => ({
+  name: "reportUser",
+  local: (s) => {
+    const r = S.reportUser(s, s.current_user_id, reportedId, eventId, reason, details);
+    if (!r.ok || !block) return r;
+    const b = A.blockUser(r.state, s.current_user_id, reportedId);
+    return b.ok ? { ok: true, state: b.state, data: r.data } : r;
+  },
+  remote: async (sb, local) => {
+    const id = await rpc<UUID>(sb, "report_user", { p_reported: reportedId, p_event: eventId, p_reason: reason, p_details: details, p_block: block });
+    return { ...local, id };
+  },
+});
+
+export const reviewReport = (reportId: UUID): Command<RougeState["user_reports"][number]> => ({
+  name: "reviewReport",
+  local: (s) => S.reviewReport(s, s.current_user_id, reportId),
+  remote: async (sb) => void (await rpc(sb, "review_report", { p_report: reportId })),
+});
+
+/** Borrado REAL de la cuenta: datos en la base (RPC) y usuario de Auth (servidor, /api/account). */
+export const deleteAccount = (confirmUsername: string): Command<undefined> => ({
+  name: "deleteAccount",
+  optimistic: false,
+  local: (s) => S.deleteAccount(s, s.current_user_id, confirmUsername),
+  remote: async (sb) => {
+    await rpc(sb, "delete_my_account", { p_confirm_username: confirmUsername });
+    const { data } = (await sb.auth?.getSession?.()) ?? { data: { session: null } };
+    const token = data.session?.access_token;
+    if (token && typeof fetch === "function") await fetch("/api/account", { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
+  },
+});
+
+// ── Campañas por WhatsApp (v1.7) ─────────────────────────────────────
+
+export const createCampaign = (eventId: UUID, input: Parameters<typeof CP.createCampaign>[2]): Command<Campaign> => ({
+  name: "createCampaign",
+  local: (s) => CP.createCampaign(s, eventId, input),
+  remote: async (sb, c) => {
+    must(await sb.from("campaigns").insert({ id: c.id, organization_id: c.organization_id, event_id: c.event_id, name: c.name, segment: c.segment, promoter_id: c.promoter_id, template: c.template, benefit: c.benefit, created_by: c.created_by }));
+  },
+});
+
+/** Marca a alguien como contactado (después de abrir su chat de WhatsApp con el mensaje). */
+export const markContacted = (campaignId: UUID, userId: UUID, contacted: boolean): Command<CampaignContact | null> => ({
+  name: "markContacted",
+  local: (s) => CP.markContacted(s, campaignId, userId, contacted),
+  remote: async (sb, row) => {
+    if (row) must(await sb.from("campaign_contacts").upsert({ campaign_id: row.campaign_id, user_id: row.user_id, contacted_at: row.contacted_at, contacted_by: row.contacted_by }));
+    else must(await sb.from("campaign_contacts").delete().eq("campaign_id", campaignId).eq("user_id", userId));
+  },
+});
+
+// ── Consola global (solo administradores de ROUGE) ───────────────────
+
+export const saCheckIn = (eventId: UUID, userId: UUID): Command<undefined> => ({
+  name: "saCheckIn",
+  local: (s) => SA.saCheckIn(s, s.current_user_id, eventId, userId),
+  remote: async (sb) => void (await rpc(sb, "sa_check_in", { p_event: eventId, p_user: userId })),
+});
+
+export const saHideFromLobby = (eventId: UUID, userId: UUID): Command<undefined> => ({
+  name: "saHideFromLobby",
+  local: (s) => SA.saHideFromLobby(s, s.current_user_id, eventId, userId),
+  remote: async (sb) => void (await rpc(sb, "sa_hide_from_lobby", { p_event: eventId, p_user: userId })),
+});
+
+export const saRemoveAttendee = (eventId: UUID, userId: UUID, ban: boolean): Command<{ banned: boolean }> => ({
+  name: "saRemoveAttendee",
+  local: (s) => SA.saRemoveAttendee(s, s.current_user_id, eventId, userId, ban),
+  remote: async (sb, d) => {
+    await rpc(sb, "sa_remove_attendee", { p_event: eventId, p_user: userId, p_ban: ban });
+    return d;
+  },
+});
+
+export const saRevokeCode = (codeId: UUID): Command<undefined> => ({
+  name: "saRevokeCode",
+  local: (s) => SA.saRevokeCode(s, s.current_user_id, codeId),
+  remote: async (sb) => void (await rpc(sb, "sa_revoke_code", { p_code: codeId })),
+});
+
+export const saRevokeStaff = (orgId: UUID, userId: UUID): Command<{ removed: number }> => ({
+  name: "saRevokeStaff",
+  local: (s) => SA.saRevokeStaff(s, s.current_user_id, orgId, userId),
+  remote: async (sb) => ({ removed: await rpc<number>(sb, "sa_revoke_staff", { p_org: orgId, p_user: userId }) }),
+});
+
+// ── Monetización (v1.7) ──────────────────────────────────────────────
+
+/** Invitar un trago desde el chat 1:1 (el QR le llega a la otra persona; con cobro online, al acreditarse el pago). */
+export const giftDrink = (connectionId: UUID, itemId: string): Command<{ order: BarOrder; perk: RougeState["user_perks_qrs"][number] | null }> => ({
+  name: "giftDrink",
+  optimistic: false,
+  local: (s) => MO.giftDrinkInChat(s, s.current_user_id, connectionId, itemId),
+  remote: async (sb, local) => {
+    const r = await rpc<{ order_id: UUID }>(sb, "gift_drink", { p_connection: connectionId, p_item: itemId });
+    return { ...local, order: { ...local.order, id: r.order_id } };
+  },
+});
+
+/** Mesa VIP dividida entre el Squad: una cuota por integrante; al 100 % pagado se libera el QR grupal. */
+export const createVipReservation = (squadId: UUID, itemId: string): Command<VipReservation> => ({
+  name: "createVipReservation",
+  optimistic: false,
+  local: (s) => MO.createVipReservation(s, squadId, s.current_user_id, itemId),
+  remote: async (sb, local) => ({ ...local, id: await rpc<UUID>(sb, "create_vip_reservation", { p_squad: squadId, p_item: itemId }) }),
+});
+
+// ── Creador modular de eventos y módulos (v1.8) ──────────────────────
+
+/**
+ * Crea o edita un evento desde el creador (ROUGE HQ, o el dueño/a con autogestión). No optimista: el id y el código
+ * maestro de un evento nuevo los genera el servidor.
+ */
+export const saveEventFromBuilder = (input: E.EventBuilderInput): Command<{ event: RougeEvent; lists: RougeState["ticket_lists"] }> => ({
+  name: "saveEventFromBuilder",
+  optimistic: false,
+  local: (s) => E.saveEventFromBuilder(s, s.current_user_id, input),
+  remote: async (sb, local, before) => {
+    const e = local.event;
+    const isNew = !before.events.some((x) => x.id === e.id);
+    const id = await rpc<UUID>(sb, "builder_save_event", {
+      p_event: {
+        id: isNew ? null : e.id,
+        organization_id: input.organization_id,
+        slug: e.slug,
+        name: e.name,
+        description: e.description,
+        venue_name: e.venue_name,
+        starts_at: e.starts_at,
+        ends_at: e.ends_at,
+        lobby_opens_at: e.lobby_opens_at,
+        lobby_expires_at: e.lobby_expires_at,
+        max_capacity: e.max_capacity,
+        lineup_json: e.lineup_json,
+        brand_id: e.brand_id,
+        logo_url: e.logo_url,
+        theme_primary: e.theme_primary,
+        theme_accent: e.theme_accent,
+        features: e.features,
+        lifecycle_status: e.lifecycle_status,
+      },
+      p_lists: local.lists.map((l) => ({ id: l.id, name: l.name, free_until: l.free_until, late_price: l.late_price })),
+      p_menu: isNew ? before.bar_menu.map((i) => ({ id: i.id, name: i.name, category: i.category, price: i.price, emoji: i.emoji })) : [],
+    });
+    return { ...local, event: { ...e, id } };
+  },
+});
+
+/** Prende / apaga módulos de un evento (dependencias resueltas en el motor y en SQL). */
+export const setEventFeatures = (eventId: UUID, flags: Partial<EventFeatureFlags>): Command<EventFeatureFlags> => ({
+  name: "setEventFeatures",
+  local: (s) => E.setEventFeatures(s, s.current_user_id, eventId, flags),
+  remote: async (sb, f) => {
+    await rpc(sb, "set_event_features", { p_event: eventId, p_features: f });
+    return f;
+  },
+});
+
+/** ROUGE HQ: habilitar que el dueño/a use el creador por su cuenta (/admin/events). */
+export const setOwnerSelfService = (orgId: UUID, allow: boolean): Command<OrganizationSettings> => ({
+  name: "setOwnerSelfService",
+  local: (s) => E.setOwnerSelfService(s, s.current_user_id, orgId, allow),
+  remote: async (sb) => void (await rpc(sb, "sa_set_owner_self_service", { p_org: orgId, p_allow: allow })),
 });

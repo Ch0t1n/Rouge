@@ -19,7 +19,14 @@ const assert = (c, m) => { if (!c) throw new Error("✘ " + m); log("✔ " + m);
 
   // Landing pública
   await p.goto(`${B}/`, { waitUntil: "networkidle" });
-  assert((await p.getAttribute("h1", "aria-label")) === "No vayas a ciegas. Domina la noche.", "landing: hero");
+  assert((await p.textContent("h1"))?.trim() === "App para fiestas y boliches", "landing: H1 con la palabra clave");
+  assert((await p.getAttribute('[role="heading"][aria-level="2"]', "aria-label")) === "No vayas a ciegas. Dominá la noche.", "landing: eslogan del hero");
+  // SEO: el HTML del servidor (lo que leen buscadores y bots de IA, sin JavaScript) trae el contenido real.
+  const html = await (await p.request.get(`${B}/`)).text();
+  assert(/<h1[^>]*>App para fiestas y boliches<\/h1>/.test(html) && html.includes("¿Qué es ROUGE?") && !html.includes(">Cargando<"), "landing: contenido en el HTML del servidor");
+  assert(html.includes('"@type":"FAQPage"') && html.includes('"@type":"WebApplication"'), "landing: JSON-LD (FAQPage + WebApplication)");
+  assert(/<link rel="canonical"/.test(html) && /<meta name="description" content="Entrá al lobby privado/.test(html), "landing: canonical y meta description");
+  assert(/Disallow: \/admin/.test(await (await p.request.get(`${B}/robots.txt`)).text()), "robots.txt deja el panel fuera del rastreo");
   assert((await p.locator("[data-stage]").count()) >= 6, "landing: secciones coreografiadas de la escena 3D");
   assert(await p.isVisible("#ventajas") && (await p.isVisible("#preguntas")), "landing pública: ventajas y preguntas para el asistente");
   // El público no ve nada de la operación: ni demo, ni CRM, ni ventas, ni planes, ni el sitio de organizadores
@@ -30,16 +37,23 @@ const assert = (c, m) => { if (!c) throw new Error("✘ " + m); log("✔ " + m);
   // Sitio de organizadores: oculto (noindex) pero completo
   const org = await ctx.newPage(); watch(org, "organizadores");
   await org.goto(`${B}/organizadores`, { waitUntil: "networkidle" });
-  assert((await org.getAttribute("h1", "aria-label")) === "Llená la pista. Medí la noche.", "organizadores: hero propio");
+  assert((await org.getAttribute('[role="heading"][aria-level="2"]', "aria-label")) === "Llená la pista. Medí la noche.", "organizadores: hero propio");
   assert(/noindex/.test((await org.getAttribute('meta[name="robots"]', "content")) ?? ""), "organizadores: no se indexa");
   assert((await org.isVisible("#organizadores")) && (await org.isVisible("#planes")), "organizadores: panel/CRM y planes");
   assert(await org.locator('header a:has-text("Ver la demo")').count(), "organizadores: acceso a la demo");
   await org.close();
-  await p.click("header >> text=Entrar a un Evento");
+  await p.click("header >> text=Entrar a la fiesta");
   await p.waitForURL("**/join");
-  await p.goto(`${B}/login`);
+  // Sitio principal: el login no muestra la demo (personas ni roles) hasta entrar por /demo
+  await p.goto(`${B}/login`, { waitUntil: "networkidle" });
+  assert(await p.isVisible("text=Continuar con Instagram") && await p.isVisible('input[type="email"]'), "login del sitio principal: Instagram, Google y email");
+  assert(!(await p.isVisible("text=Sofía")) && !/modo demo|persona del demo/i.test(await p.evaluate(() => document.body.innerText)), "login del sitio principal sin personas ni menciones a la demo");
+  await p.goto(`${B}/login?as=staff`, { waitUntil: "networkidle" });
+  assert(!(await p.isVisible("text=Daniela Ortiz")), "login de equipo del sitio principal sin roles del demo");
+  await p.goto(`${B}/demo`, { waitUntil: "networkidle" });
+  await p.goto(`${B}/login`, { waitUntil: "networkidle" });
 
-  // Login como asistente → /app
+  // Login como asistente → /app (tras pasar por /demo)
   await p.click("text=Sofía");
   await p.waitForURL("**/app");
   await p.waitForSelector("text=Hola, Sofía");
@@ -118,6 +132,8 @@ const assert = (c, m) => { if (!c) throw new Error("✘ " + m); log("✔ " + m);
   await p.screenshot({ path: `${SP}/roles-team.png`, fullPage: true });
   await p.click("text=Imprimir QRs");
   await p.waitForURL("**/admin/print-codes**");
+  // Las páginas se renderizan por request (CSP con nonce): esperar a que la hoja pinte antes de contar.
+  await p.waitForSelector("main ul > li svg", { timeout: 15000 }).catch(() => {});
   const cards = await p.locator("main ul > li svg").count();
   assert(cards >= 12, `hoja imprimible con ${cards} QRs`);
   await p.screenshot({ path: `${SP}/print-codes.png` });
@@ -151,16 +167,22 @@ const assert = (c, m) => { if (!c) throw new Error("✘ " + m); log("✔ " + m);
   await ig.click("text=/Importar de Instagram/");
   await ig.click('[aria-label="Foto de Instagram demo-2"]');
   await ig.click("text=Agregar 1 foto");
+  await ig.click('[role="dialog"] button:has-text("Usar foto")');
   await ig.waitForSelector('img[alt="Foto 1"]', { timeout: 20000 });
   assert(true, "demo: foto importada del feed de Instagram");
   await ig.click("text=Continuar");
   await ig.click('button[aria-pressed]:has-text("House")');
   await ig.click("text=Continuar");
-  await ig.click("text=Entrar a ROUGE");
+  await ig.click("text=Entrar a Rouge Pass");
   await ig.waitForURL("**/app");
   await ig.goto(`${B}/profile`, { waitUntil: "networkidle" });
   assert(await ig.isVisible(`text=@${sug}`) && await ig.isVisible("text=Cuenta conectada"), "demo: el perfil muestra el Instagram verificado");
   await ig.screenshot({ path: `${SP}/ig-demo-profile.png` });
+  // [v1.8] Los perfiles ajenos solo se ven compartiendo un evento: primero entra a la fiesta.
+  await ig.goto(`${B}/join/BRESH26`, { waitUntil: "networkidle" });
+  await ig.click('button[role="radio"]:has-text("Voy con amigos")');
+  await ig.click("text=Entrar a la fiesta");
+  await ig.waitForURL("**/lobby");
   // Perfil de otra persona con Instagram conectado y una con el @ escrito a mano
   await ig.goto(`${B}/u/cami.beats`, { waitUntil: "networkidle" });
   assert(await ig.isVisible("text=@cami.beats"), "demo: el Instagram aparece en el perfil de los demás");

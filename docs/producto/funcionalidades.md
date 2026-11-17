@@ -1,10 +1,10 @@
-# ROUGE v1.0 — Catálogo de funcionalidades
+# Rouge Pass v1.0 — Catálogo de funcionalidades
 
-ROUGE es una **PWA social y operativa para eventos, fiestas y boliches**. El asistente entra al lobby privado
+Rouge Pass es una **PWA social y operativa para eventos, fiestas y boliches**. El asistente entra al lobby privado
 del evento, conecta con gente afín, arma su Squad, no pierde a su grupo y pide en la barra sin hacer fila. El
 organizador opera toda la noche desde un panel y paga por evento, por asistente activo o con comisión de barra/VIP.
 
-> **Tesis de producto:** ROUGE gana cuando la gente conecta rápido, no pierde a su grupo, consume sin filas y
+> **Tesis de producto:** Rouge Pass gana cuando la gente conecta rápido, no pierde a su grupo, consume sin filas y
 > vuelve a comprar entrada. Ninguna función retiene a usuarios frustrados.
 
 Cada función existe en los dos modos de la app:
@@ -23,7 +23,10 @@ Cada función existe en los dos modos de la app:
 [18. Demo en vivo](#18-demo-en-vivo-para-anfitriones) · [19. Marca y personalización](#19-marca-y-personalización) ·
 [20. Cobros con Mercado Pago](#20-cobros-con-mercado-pago) · [21. Cuentas de la mesa](#21-cuentas-de-la-mesa) ·
 [22. Gestión del evento](#22-gestión-del-evento) · [23. Ticket de comanda](#23-ticket-de-comanda) ·
-[24. RRPP](#24-rrpp) · [25. Puerta](#25-puerta) · [26. Sitio público y de organizadores](#26-sitio-público-y-de-organizadores)
+[24. RRPP](#24-rrpp) · [25. Puerta](#25-puerta) · [26. Sitio público y de organizadores](#26-sitio-público-y-de-organizadores) ·
+[27. Noche y corporativo (ROUGE Pro) · perfiles múltiples](#27-noche-y-corporativo-rouge-pro--perfiles-múltiples) ·
+[28. Privacidad por contexto](#28-privacidad-por-contexto) · [29. Reuniones y puntos de encuentro](#29-reuniones-y-puntos-de-encuentro) ·
+[30. Página para empresas](#30-página-para-empresas)
 
 ---
 
@@ -36,7 +39,7 @@ Cada función existe en los dos modos de la app:
 | **Continuar con Google** | Proveedor nativo de Supabase. El onboarding toma el nombre de la cuenta de Google. |
 | **Continuar con Instagram** | Crea la cuenta o entra a la existente. Sugiere el @username desde Instagram. Requiere cuenta profesional (Creador o Empresa). |
 | **Destino según el rol** | Asistente → `/app` · Dueño/a, Producción y Seguridad → `/admin` · Barra y Mozo/a → `/admin/bar-pos`. Respeta el link al que la persona quería ir si su rol puede verlo. |
-| **Cambiar de cuenta / rol** | Desde el panel ("Cambiar de cuenta") o el login. En demo se elige persona o rol sin email. |
+| **Cambiar de cuenta / rol** | Desde el panel ("Cambiar de cuenta") o el login. En demo, después de entrar por `/demo`, se elige persona o rol sin email. |
 
 ## 2. Perfil
 
@@ -44,10 +47,12 @@ Un solo perfil que sirve para **todas las fiestas**.
 
 - **Onboarding en 4 pasos** que guarda en cada paso: (1) nombre, @username, fecha de nacimiento (+18), género y
   teléfono; (2) hasta 4 fotos y un loop de 5 s; (3) géneros musicales y Spotify; (4) lista negra por teléfono.
-- **Fotos:** hasta 4, formato 3:4, comprimidas en el teléfono a WebP antes de subir (avisa el ahorro: "2,1 MB → 240 KB").
-  Se elige la principal y se reordenan.
+- **Fotos:** hasta 4, **siempre verticales 3:4**. Al subir cada una (del teléfono o importada de Instagram) se abre el
+  **encuadre**: la persona arrastra y acerca para elegir qué se ve; la app nunca recorta sola. Después se comprime en el
+  teléfono a WebP (avisa el ahorro: "2,1 MB → 240 KB"). Se ven enteras en la grilla, el perfil, los avatares (también
+  verticales 3:4) y la puerta. Se elige la principal y se reordenan.
 - **Importar de Instagram:** con Instagram conectado se eligen fotos del feed; se descargan, se comprimen y se suben
-  al almacenamiento de ROUGE (los links de Instagram vencen, nunca se guardan).
+  al almacenamiento de Rouge Pass (los links de Instagram vencen, nunca se guardan).
 - **Loop de 5 s:** video tipo GIF, recodificado en el teléfono **sin audio**.
 - **Música:** hasta 5 géneros (Techno, House, Reggaetón, Cachengue, Pop, RKT, Indie, Urbano, Electrónica) y un
   tema/playlist de Spotify (se pega el link; el reproductor solo carga al tocar "Escuchar").
@@ -177,8 +182,8 @@ invitación al Squad, perfil e invitación al evento desde el inicio. `/admin/pr
 procedural de fondo que cambia con cada sección (núcleo de cromo → anillos de conexiones → grilla holográfica del
 plano con pines → cierre dorado/carmesí). Secciones:
 
-1. **Hero** "No vayas a ciegas. Domina la noche." con CTAs *Tengo una entrada* (`/join`, o tu pantalla si ya entraste)
-   y *Soy Organizador / Dueño de Club* (login de equipo → panel).
+1. **Hero**: H1 "App para fiestas y boliches" (la frase que se busca) y el eslogan gigante "No vayas a ciegas. Dominá
+   la noche." con CTAs *Tengo una entrada* (`/join`, o tu pantalla si ya entraste) y *¿Cómo funciona?*.
 2. **Marquesina** doble que acelera y cambia de sentido con el scroll.
 3. **Los 4 pilares** (lobby previo, Squads y seguridad, Pin-Drop 15 min, caducidad y privacidad) con un iPhone fijo
    que cambia de pantalla al bajar (en mobile, cada bloque trae su pantalla).
@@ -194,6 +199,15 @@ plano con pines → cierre dorado/carmesí). Secciones:
 La pantalla principal es para el público real: **no tiene nada de la demo** (ni atajos para entrar como un rol ni la
 fiesta de ejemplo); eso vive en [`/demo`](#18-demo-en-vivo-para-anfitriones). En desktop hay cursor propio magnético; respeta
 "reducir movimiento" (sin Lenis ni animaciones pesadas) y, si el dispositivo no tiene WebGL, queda el fondo CSS.
+
+**SEO.** La landing llega renderizada desde el servidor (el texto completo está en el HTML que leen Google, Bing y
+los bots de IA, sin depender de JavaScript). Título, descripción, canonical, Open Graph e imagen para compartir
+(`/opengraph-image`, 1200×630) salen de `src/components/landing/content.ts` y `src/app/page.tsx`, junto con los datos
+estructurados (schema.org: `Organization`, `WebSite`, `WebApplication` gratuita y `FAQPage` con las preguntas
+frecuentes). `robots.txt` deja fuera del rastreo la app privada, el panel y la API; `sitemap.xml` lista solo `/`.
+`/organizadores`, `/demo`, `/join` y `/login` llevan `noindex` (los links de ingreso nunca aparecen en buscadores).
+El dominio sale de `NEXT_PUBLIC_APP_URL`. Palabras clave: app para fiestas / boliches, conocer gente en una fiesta,
+no perder a tus amigos en el boliche, pedir tragos sin fila, dividir la cuenta.
 
 ## 15. PWA y mala señal
 
@@ -228,7 +242,7 @@ Para clientes empresariales que venden entradas con su propio sistema. Guía com
 
 ## 18. Demo en vivo para anfitriones
 
-Página separada para mostrarle ROUGE a dueños de boliches y productoras: **`/demo`** (se comparte por link o QR; no se
+Página separada para mostrarle Rouge Pass a dueños de boliches y productoras: **`/demo`** (se comparte por link o QR; no se
 indexa en buscadores). Funciona en el sitio de demostración (Modo Demo); en el sitio con datos reales muestra un aviso
 con link a `NEXT_PUBLIC_DEMO_URL`.
 
@@ -240,6 +254,11 @@ con link a `NEXT_PUBLIC_DEMO_URL`.
   sola pantalla**, sincronizados en vivo (ej. el rescate tocado en el teléfono aparece al instante en Seguridad).
   Pasos con ←/→, cambio de rol del panel, Pantalla LED y **Reiniciar** la fiesta al estado inicial.
 - Pensado para notebook (y TV por HDMI). La sincronización es entre pestañas del mismo navegador.
+- **La demo solo se ve entrando por `/demo`.** En el resto del sitio (login, inicio, lobby, barra, perks, panel) no
+  aparecen las personas del demo, el cambio de persona, los links de prueba, los botones "Simular…" ni el badge "Modo
+  Demo": el login muestra Instagram, Google y email, y entrar abre una cuenta nueva (onboarding). Al pasar por `/demo`
+  (o `/demo/abrir`, `/demo/presentador`) ese navegador queda habilitado y el login vuelve a mostrar personas y roles
+  (botón **Elegir persona** en el encabezado de `/demo`).
 
 ## 19. Marca y personalización
 
@@ -254,16 +273,16 @@ ve con ella. Pensado para hacerse en dos minutos:
 - **Seguridad sin marca:** el botón de **Rescate 🚨 siempre es rojo** y los pines del Squad siempre cian.
 - **Por edición:** cada evento usa la marca de quien lo creó o personaliza su logo y colores solo para esa noche.
 - **Dónde se ve:** inicio y toda la app del asistente, la invitación `/join` (también sin cuenta), la Pantalla LED y la
-  hoja de QRs impresos. El panel del equipo mantiene los colores de ROUGE.
+  hoja de QRs impresos. El panel del equipo mantiene los colores de Rouge Pass.
 - Una persona puede tener varias marcas (por ejemplo, dos fiestas distintas).
 
 ## 20. Cobros con Mercado Pago
 
-- La marca conecta **su** cuenta de Mercado Pago (autorización en Mercado Pago; ROUGE nunca ve la clave y los tokens
+- La marca conecta **su** cuenta de Mercado Pago (autorización en Mercado Pago; Rouge Pass nunca ve la clave y los tokens
   se guardan cifrados). Se desconecta cuando quiera.
 - Con la cuenta conectada, cada pedido de la Barra Express se **paga desde la app** (billetera de Mercado Pago, dinero
   en cuenta o tarjeta) y la plata entra directo a la cuenta de la marca.
-- **Comisión de ROUGE automática:** Mercado Pago la separa en cada cobro (`marketplace_fee`), sin facturarla aparte.
+- **Comisión de Rouge Pass automática:** Mercado Pago la separa en cada cobro (`marketplace_fee`), sin facturarla aparte.
 - **La barra solo prepara lo que está pago:** los pedidos que esperan pago no aparecen en comandas; el panel muestra
   cuántos hay y cuánto se cobró por Mercado Pago. Cada comanda dice "Pagado con Mercado Pago" o "Cobrar al entregar".
 - El pago lo confirma el servidor consultando a Mercado Pago (aviso firmado + verificación de monto y pedido), nunca
@@ -339,3 +358,120 @@ cliente y para la barra. Es un comprobante interno: la factura la emite cada com
 - **`/organizadores`** — para dueños de boliches y productoras: barra y cobros, panel, CRM, Text Blasts, LED, RRPP,
   puerta, planes y preguntas de negocio. **Oculto:** no aparece en buscadores ni se enlaza desde `/`; se comparte por
   link junto con la [demo](#18-demo-en-vivo-para-anfitriones).
+
+## 27. Experiencia en PC, notebook y tablet
+
+- Móvil (< 768px): la app de siempre, una mano, barra inferior y hojas inferiores.
+- Tablet (≥ 768px): sidebar de íconos con los mismos indicadores en vivo. PC (≥ 1024px): sidebar expandible
+  (Ctrl/⌘ + B), selector de evento y acceso al perfil; los modales pasan a diálogos centrados.
+- Lobby con 3–5 columnas, buscador y vista previa del perfil en panel derecho; bandeja y chat en vista dividida;
+  barra con el pedido fijo a la derecha; perks con QR y avisos al costado; Squad en tres columnas (plano, integrantes,
+  chat/cuentas); plano grande con la lista de pines visibles.
+- Panel del organizador con cabeceras y encabezados de tabla fijos y atajos de teclado (Alt + 1…9, /, ?).
+
+## 28. Plataformas separadas y staff seguro
+
+- Cuatro superficies: app del asistente, operación (`/ops/door`, `/ops/bar`), panel del organizador (`/admin`) y
+  consola global (`/superadmin`). Puerta y Barra en turno solo ven `/ops`.
+- El dueño/a invita staff con un link o QR de 1 uso (2 h), elige rol, alcance (todos sus eventos o algunos) y ventana
+  horaria automática (2 h antes → 1 h después). Revoca a cualquiera al instante (kill switch).
+- Modo Kiosco: una tablet fija en la barra o la puerta; cada integrante opera con su PIN y la auditoría registra quién
+  entregó o escaneó qué. Auditoría inmutable exportable a CSV.
+- Asistentes: "Reportar" con bloqueo opcional (llega en vivo a seguridad), borrado real de la cuenta, +18 y términos al
+  registrarse, Botón de arrepentimiento. Opción de lobby solo para quienes ya ingresaron por la puerta.
+
+## 29. QR anti-fraude y puerta a prueba de cortes
+
+- Pase, perks y vouchers con QR que cambia cada 20 s (anillo "EN VIVO"): una captura de pantalla no sirve.
+- Doble escaneo simultáneo: entra el primero; el segundo ve en rojo la hora y la terminal que ya lo usó.
+- Listas Free con hora límite: después de esa hora la puerta muestra el diferencial y lo cobra en el momento.
+- Sin Wi-Fi: la puerta sigue validando con un padrón cifrado en el dispositivo y sincroniza al volver la red.
+  Búsqueda manual por nombre, DNI o email.
+
+## 30. Consola global y herramientas B2B
+
+- `/superadmin` (equipo de ROUGE): todos los boliches en vivo, búsqueda de asistentes con acciones rápidas y la matriz
+  de staff de cada organización con baja remota.
+- RRPP con comisión escalonada por tramos y % sobre la barra de sus invitados; liquidación exportable.
+- Tablero minuto a minuto: ingresos y ventas cada 15' contra el promedio de las fechas anteriores.
+- Campañas por WhatsApp sin API paga: segmento + plantilla → bandeja con un botón por persona y estado Contactado.
+
+## 31. Monetización y post-fiesta
+
+- Invitar un trago desde el chat o al hacer match (QR en vivo para retirar).
+- Mesa VIP dividida entre el Squad: cada uno paga su parte; al 100 % se libera el QR de la mesa.
+- Cola virtual de la barra con aviso cuando el pedido está listo.
+- Rouge Wrapped: la noche en una tarjeta 9:16 para Stories.
+
+## 32. Creador modular de eventos y módulos
+
+- ROUGE HQ crea cada evento con un asistente de 5 pasos (datos, fechas/aforo/listas, line-up y estética, módulos,
+  revisión) y lo asigna a la organización dueña. Presets: Fiesta Completa, Solo Ticketera + Puerta, Solo Barra + QR
+  Drops, Bar / Previa Social, Evento Privado / Corporativo.
+- Cada módulo se prende o apaga en vivo; la app del asistente, el panel y la operación se adaptan al instante.
+- Autogestión: si ROUGE la habilita, el dueño/a usa el mismo creador desde /admin/events.
+
+## 27. Noche y corporativo (ROUGE Pro) · perfiles múltiples
+
+Un mismo ROUGE para fiestas y boliches y para eventos de empresas, pymes y networking. Estrategia y plan de validación:
+[estrategia corporativa](estrategia-corporativa.md).
+
+- **Tipo de evento** (*Eventos y accesos → Tipo de evento*): 🌙 Noche · ROUGE o 💼 Corporativo · ROUGE Pro. No cambia
+  una vez que entró alguien. En el selector del panel cada evento muestra su tipo.
+- **Una cuenta, varios perfiles** (*Mi perfil → Mis perfiles*, `/profile/personas`): el Perfil principal (noche) y hasta
+  5 perfiles más. Un perfil **profesional** tiene foto propia, cargo, empresa, rubro, hasta 3 cosas que busca y 3 que
+  ofrece, LinkedIn y una frase. Uno **de noche** tiene fotos, géneros y Spotify propios.
+- **Al entrar** a un evento se elige con qué perfil mostrarse (en corporativo, solo los profesionales: si no hay
+  ninguno, se crea en el momento) y después el mood de esa vertical. En el lobby, "Te ven con…" permite cambiarlo.
+- **Cada evento muestra solo la cara elegida:** grilla, perfil, bandeja, chats, plano, Equipo, CRM y LED. En
+  corporativo nunca aparece el perfil de la noche, ni siquiera si el profesional se borró (queda una cara neutra).
+  Los contactos se ven con la cara del evento donde se conocieron.
+- **Networking corporativo:** la grilla ordena por **afinidad de negocio** (lo que buscás cruzado con lo que ofrecen,
+  más el rubro: "% 🤝") y filtra por lo que ofrecen. Moods: networking, busco clientes / proveedores / socios /
+  inversión, contratando, aprender, coffee break.
+- **Vocabulario corporativo:** Networking, Contacto, Presentación (1 por evento), Equipo, Agenda, Barra y catering,
+  Modo Solo Contactos.
+- **Se apaga en corporativo:** trago de regalo, pedir temas, sorteo por género, RRPP, y edad, Instagram y loop en la
+  cara pública. Lo demás (plano, Equipo con Rescate, barra, perks, sorteos, avisos, LED, puerta, API) funciona igual.
+- **CRM corporativo:** empresa, cargo, rubro, busca / ofrece y LinkedIn, también en el CSV.
+- **Demo:** el *Encuentro Pyme Conecta* (`/join/PYME26`) está en vivo junto a la fiesta, con 10 perfiles profesionales.
+
+## 28. Privacidad por contexto
+
+- **Nadie lee el perfil de otra persona "por la base":** solo tarjetas saneadas según lo que comparten. Con su Perfil
+  principal en una fiesta en común se ve el perfil de la noche con la **edad** (nunca la fecha de nacimiento); si solo
+  comparten un evento corporativo, un equipo o un contacto, solo el nombre. Sin contexto o con bloqueo, nada ("no disponible").
+- **Nunca se muestran** a otros asistentes: teléfono, email, fecha de nacimiento, historial de eventos, gasto, cómo entró,
+  hora de ingreso ni los sectores donde estuvo (solo las zonas en común para "Coincidieron en tu zona").
+- **Ajustes** (*Mi perfil → Privacidad*): entrar siempre en **modo incógnito** (fuera de la grilla, con entrada, barra y
+  Squad funcionando), **ubicación solo para mi Squad** y **empresa y cargo solo después de una reunión** (el LinkedIn
+  siempre queda oculto hasta una reunión o contacto aceptado). Incógnito también por evento.
+- **El equipo del evento** ve solo las alertas de rescate en el plano (no los pines de la gente) y conteos agregados.
+- **Networking solo para acreditados** (*Eventos y accesos*): la grilla, Conectar, Rompehielos y reuniones solo entre
+  quienes ya pasaron por la puerta.
+
+## 29. Reuniones y puntos de encuentro
+
+- **Solicitar reunión** (corporativo, a cualquiera visible) o **Punto de encuentro** (noche, solo con matches) desde el
+  perfil: motivo (140), duración 15 o 30 min, horario en franjas dentro del evento ("Ahora" si está en curso) y lugar:
+  **sala / mesa / punto** del organizador (con disponibilidad), **pin en el plano** o **a definir al aceptar**.
+- **Mis reuniones** (`/meetings`): Para responder, Próximas, Enviadas e Historial. Estados: Pendiente, Aceptada,
+  Reprogramada, Rechazada, Cancelada y Completada (aceptada y terminada). Aceptar, rechazar, **proponer otro horario**
+  (responde la otra persona) o cancelar.
+- **Al aceptar** se abre el chat (contacto aceptado) con la reunión fijada arriba, y el lugar aparece en el plano
+  (`/map?meeting=<id>`). El modal avisa antes de enviar si el horario choca con tu agenda.
+- **Salas con cupo:** el organizador carga salas, mesas y puntos (*Eventos y accesos → Salas, mesas y puntos de
+  encuentro*), con cupo y ubicación en el plano. El servidor no deja reservar la misma sala dos veces ni superponer la
+  agenda de nadie. Un lugar con reuniones se desactiva en vez de borrarse.
+- Avisos en vivo: pedido nuevo, propuesta de cambio, confirmación, rechazo y cancelación. Máx. 10 pedidos sin respuesta.
+
+## 30. Página para empresas
+
+- **`/empresas`** (pública e indexable; `/` no la enlaza, `/organizadores` sí): propuesta de valor, problemas que
+  resuelve, diferenciales (acreditación con QR, networking y reuniones con sala, privacidad, CRM y analítica), casos de
+  uso en pestañas (congresos y expos, eventos internos, coworks, lanzamientos), **estimador** de plan según asistentes y
+  eventos por año (Starter Event, Corporate Pro, Enterprise; precio a medida), preguntas frecuentes y **formulario**.
+- El formulario valida en vivo y envía a **`POST /api/leads`**: misma validación en el servidor, honeypot y límite por
+  IP, guarda en `b2b_leads` y avisa al instante al equipo comercial por `LEADS_WEBHOOK_URL` (Slack, Make, Zapier…).
+  "Ver Modo Corporativo en vivo" abre la demo como asistente del encuentro pyme.
+

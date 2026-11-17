@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { Bell, Clock3, EyeOff, Flag, Heart, House, Lock, MapPin, Music2, ShieldAlert, Sparkles, Users, Wine } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { demoAvatar } from "@/lib/demo/photos";
 
 /** Marco de iPhone en modo oscuro (CSS puro: nítido en cualquier resolución). */
 export function PhoneFrame({ children, className, glow = "rouge" }: { children: ReactNode; className?: string; glow?: "rouge" | "squad" | "vip" }) {
@@ -30,7 +31,7 @@ export function PhoneFrame({ children, className, glow = "rouge" }: { children: 
   );
 }
 
-const AV = (u: string) => `/demo/avatars/${u}-1.svg`;
+const AV = demoAvatar;
 
 function Card({ user, name, pct, mood }: { user: string; name: string; pct: number; mood: string }) {
   return (

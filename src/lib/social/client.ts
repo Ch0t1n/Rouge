@@ -21,7 +21,7 @@ export const IG_ERRORS: Record<string, string> = {
   ig_oauth: "Instagram no pudo completar el ingreso. Probá de nuevo.",
   ig_token_exchange: "Instagram no pudo completar el ingreso. Probá de nuevo.",
   ig_profile: "No pudimos leer tu perfil de Instagram.",
-  ig_taken: "Esa cuenta de Instagram ya está conectada a otro perfil de ROUGE.",
+  ig_taken: "Esa cuenta de Instagram ya está conectada a otro perfil de Rouge Pass.",
   ig_session: "No pudimos abrir tu sesión. Probá de nuevo.",
   ig_save: "No pudimos guardar la conexión. Probá de nuevo.",
   ig_not_configured: "El ingreso con Instagram todavía no está habilitado.",
@@ -29,6 +29,7 @@ export const IG_ERRORS: Record<string, string> = {
   ig_token_invalid: "Tu conexión con Instagram venció. Volvé a conectarla.",
   ig_api_error: "Instagram no respondió. Probá en un rato.",
   ig_bad_media: "No pudimos traer esa foto.",
+  rate_limited: "Demasiados intentos seguidos. Esperá un minuto y probá de nuevo.",
   not_authenticated: "Tu sesión expiró. Volvé a ingresar.",
 };
 

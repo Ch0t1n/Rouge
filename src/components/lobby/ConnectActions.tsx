@@ -8,6 +8,7 @@ import { icebreakerEligibility } from "@/lib/engine/actions";
 import { connectionBetween, connectionStateFor, getAttendee, isLobbyInteractive, getEvent } from "@/lib/engine/selectors";
 import { useRouge } from "@/lib/store/RougeContext";
 import { Button } from "@/components/ui/button";
+import { verticalOf } from "@/lib/engine/verticals";
 import { IcebreakerComposer } from "./IcebreakerComposer";
 import { useMatchCelebration } from "./MatchCelebration";
 import { useConnect } from "./useConnect";
@@ -26,12 +27,13 @@ export function ConnectActions({ target }: { target: Profile }) {
   const theirs = getAttendee(state, eventId, target.id);
   const status = connectionStateFor(state, eventId, me, target.id);
   const match = connectionBetween(state, eventId, me, target.id).find((c) => c.status === "accepted");
+  const v = verticalOf(state, eventId);
 
   if (status === "matched" && match) {
     return (
       <>
         <Button block size="lg" onClick={() => router.push(`/chat/${match.id}`)}>
-          <MessageCircle /> Chatear · ya son Match
+          <MessageCircle /> Chatear · ya son {v.copy.match}
         </Button>
         {celebration.element}
       </>
@@ -52,7 +54,7 @@ export function ConnectActions({ target }: { target: Profile }) {
             </>
           ) : status === "received" ? (
             <>
-              <Heart className="fill-current" /> Aceptar · es Match
+              <Heart className="fill-current" /> Aceptar · es {v.copy.match}
             </>
           ) : (
             <>
@@ -60,18 +62,18 @@ export function ConnectActions({ target }: { target: Profile }) {
             </>
           )}
         </Button>
-        <Button size="lg" variant="outline" className="border-rouge/50 text-rouge" disabled={!!ice} onClick={() => setComposer(true)} aria-label="Enviar Rompehielos" title={ice ?? "Enviar Rompehielos"}>
-          <Zap className="fill-current" /> Rompehielos
+        <Button size="lg" variant="outline" className="border-rouge/50 text-rouge" disabled={!!ice} onClick={() => setComposer(true)} aria-label={`Enviar ${v.copy.icebreaker}`} title={ice ?? `Enviar ${v.copy.icebreaker}`}>
+          <Zap className="fill-current" /> {v.copy.icebreaker}
         </Button>
       </div>
       {mine.ghost_mode ? (
-        <p className="text-center text-xs text-muted">Estás en Modo Solo Amigos: desactivalo en el lobby para conectar.</p>
+        <p className="text-center text-xs text-muted">Estás en {v.copy.ghost}: desactivalo en el lobby para conectar.</p>
       ) : status === "received" ? (
         <p className="text-center text-xs text-rouge">{target.full_name.split(" ")[0]} ya te conectó 👀</p>
       ) : ice && !/Solo Amigos/.test(ice) ? (
         <p className="text-center text-xs text-muted">{ice}</p>
       ) : (
-        <p className="text-center text-xs text-muted">⚡ Te queda 1 Rompehielos esta noche</p>
+        <p className="text-center text-xs text-muted">⚡ Te queda 1 {v.copy.icebreaker} {v.kind === "corporate" ? "en este evento" : "esta noche"}</p>
       )}
       <IcebreakerComposer open={composer} onClose={() => setComposer(false)} target={target} eventId={eventId} />
       {celebration.element}

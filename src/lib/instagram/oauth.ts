@@ -5,7 +5,8 @@
  *
  * Solo servidor (usa node:crypto). Ver src/lib/instagram/server.ts.
  */
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+export { safeInternalPath } from "@/lib/security/paths";
 
 export type InstagramMode = "login" | "link";
 
@@ -110,5 +111,37 @@ export function isAllowedMediaHost(url: string, hosts: string[]): boolean {
   }
 }
 
-/** Ruta interna segura para volver después del OAuth. */
-export const safeInternalPath = (n: string | null | undefined): string | null => (n && n.startsWith("/") && !n.startsWith("//") ? n : null);
+/**
+ * Cifrado de los tokens de Instagram en la base (AES-256-GCM, clave = SHA-256 de INSTAGRAM_TOKEN_KEY).
+ * Si alguien obtiene un volcado de `instagram_accounts`, los tokens no sirven sin la clave del servidor.
+ * Formato: "v1:<iv>.<tag>.<cifrado>" (base64url). Sin clave configurada se guarda en claro (compatibilidad).
+ */
+const TOKEN_PREFIX = "v1:";
+const tokenKey = (secret: string) => createHash("sha256").update(secret, "utf8").digest();
+
+export function sealToken(token: string, secret: string | undefined): string {
+  if (!secret) return token;
+  const iv = randomBytes(12);
+  const c = createCipheriv("aes-256-gcm", tokenKey(secret), iv);
+  const enc = Buffer.concat([c.update(token, "utf8"), c.final()]);
+  return `${TOKEN_PREFIX}${b64url(iv)}.${b64url(c.getAuthTag())}.${b64url(enc)}`;
+}
+
+/** Devuelve el token en claro, o null si está cifrado y la clave no coincide (hay que reconectar). */
+export function openToken(stored: string, secret: string | undefined): string | null {
+  if (!stored.startsWith(TOKEN_PREFIX)) return stored; // token viejo guardado en claro
+  if (!secret) return null;
+  const [iv, tag, enc] = stored.slice(TOKEN_PREFIX.length).split(".");
+  if (!iv || !tag || !enc) return null;
+  try {
+    const d = createDecipheriv("aes-256-gcm", tokenKey(secret), Buffer.from(iv, "base64url"));
+    d.setAuthTag(Buffer.from(tag, "base64url"));
+    return Buffer.concat([d.update(Buffer.from(enc, "base64url")), d.final()]).toString("utf8");
+  } catch {
+    return null;
+  }
+}
+
+/** Tipos de imagen que aceptamos de los CDNs de Meta (nunca SVG ni HTML). */
+export const IMPORTABLE_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
+export const isImportableImageType = (ct: string | null | undefined) => !!ct && IMPORTABLE_IMAGE_TYPES.includes(ct.split(";")[0].trim().toLowerCase());

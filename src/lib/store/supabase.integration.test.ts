@@ -10,7 +10,7 @@
  */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { beforeAll, describe, expect, it } from "vitest";
-import type { RougeState, UUID } from "@/lib/types";
+import type { RougeEvent, RougeState, UUID } from "@/lib/types";
 import { fetchRemoteState } from "@/lib/supabase/sync";
 import * as C from "./commands";
 import type { Command } from "./commands";
@@ -498,6 +498,82 @@ describe.skipIf(!URL || !ANON || !SERVICE)("Supabase real: flujo completo con RL
     // Con escáner en uso, se liquida por ingreso confirmado
     const stats = (await snap(mateo, ev.id)).promoter_stats!;
     expect(stats.find((r) => r.user_id === sofi.id)).toMatchObject({ entries: 1, checked_in: 1, billable: 1, to_pay: 1000 });
+  });
+
+  it("verticales: evento corporativo con perfil profesional obligatorio y caras que no se cruzan", async () => {
+    const start = new Date(Date.now() + 2 * 3_600_000).toISOString();
+    const ev = await act(staff, C.upsertEvent({ kind: "corporate", name: `Pyme ${RUN}`, starts_at: start, ends_at: new Date(Date.now() + 8 * 3_600_000).toISOString() }));
+    expect(ev.kind).toBe("corporate");
+    const code = ev.master_invite_code;
+    // Sin perfil profesional el servidor rechaza (la regla local se saltea para probar join_event).
+    const before = await snap(cami, ev.id);
+    expect((await rejects(cami, C.joinEvent(cami.id, code, "pro_buying", ev.id, null), { eventId: ev.id }, before))?.message).toMatch(/persona_required/);
+    // Mood de la noche en un evento corporativo: invalid_mood.
+    const sofiPro = await act(sofi, C.upsertPersona(sofi.id, { kind: "corporate", label: "Trabajo", job_title: "Diseñadora", company: `Estudio ${RUN}`, looking_for: ["clients"], offering: ["software"] }), ev.id);
+    const s0 = await snap(sofi, ev.id);
+    expect((await rejects(sofi, C.joinEvent(sofi.id, code, "after_hunt", ev.id, sofiPro.id), { eventId: ev.id }, s0))?.message).toMatch(/invalid_mood/);
+    await act(sofi, C.joinEvent(sofi.id, code, "pro_selling", ev.id, sofiPro.id), ev.id);
+    // Mateo no está en el evento: no ve el perfil profesional de Sofía.
+    expect((await snap(mateo, ev.id)).profile_personas.some((p) => p.id === sofiPro.id)).toBe(false);
+    // Cami entra con su perfil profesional y ve a Sofía con su cara profesional (sin géneros de la noche).
+    const camiPro = await act(cami, C.upsertPersona(cami.id, { kind: "corporate", label: "Pyme", company: `Textil ${RUN}`, looking_for: ["software"], offering: ["suppliers"] }), ev.id);
+    await act(cami, C.joinEvent(cami.id, code, "pro_buying", ev.id, camiPro.id), ev.id);
+    const camiState = await snap(cami, ev.id);
+    const { faceOf } = await import("@/lib/engine/verticals");
+    const face = faceOf(camiState, sofi.id, ev.id)!;
+    expect(face.persona?.company).toBe(`Estudio ${RUN}`);
+    expect(face.music_genres).toEqual([]);
+    // El tipo de evento ya no se puede cambiar; el perfil en uso no se borra.
+    const st = await snap(staff, ev.id);
+    const asNight: RougeEvent = { ...ev, kind: "nightlife" };
+    expect((await rejects(staff, C.upsertEvent(asNight), asNight, st))?.message).toMatch(/kind_locked/);
+    expect((await rejects(sofi, C.deletePersona(sofi.id, sofiPro.id), undefined, s0))?.message).toMatch(/persona_in_use/);
+  });
+
+  it("privacidad v1.8: perfiles ajenos solo como tarjeta saneada y asistencia sin columnas privadas", async () => {
+    // Por tabla, nadie lee perfiles ajenos (ni siquiera de su evento).
+    const { data: others } = await cami.sb.from("profiles").select("id").neq("id", cami.id);
+    expect(others ?? []).toEqual([]);
+    // Tarjeta: Sofía y Cami comparten la fiesta con su Perfil principal → edad, nunca fecha ni teléfono.
+    const { data: cards, error } = await cami.sb.rpc("profile_cards", { p_ids: [sofi.id] });
+    expect(error).toBeNull();
+    const card = (cards as Record<string, unknown>[])[0];
+    expect(card).toBeTruthy();
+    expect(card).not.toHaveProperty("birth_date");
+    expect(card).not.toHaveProperty("phone_normalized");
+    expect(typeof card.age).toBe("number");
+    // Columnas privadas de la asistencia: cerradas por tabla.
+    const priv = await cami.sb.from("event_attendees").select("total_spent").eq("event_id", EV);
+    expect(priv.error).not.toBeNull();
+    const own = await cami.sb.rpc("my_attendances");
+    expect(own.error).toBeNull();
+    // Ajustes de privacidad: solo los propios.
+    await act(cami, C.updatePrivacySettings(cami.id, { pin_share_matches: false }));
+    const { data: mineSettings } = await cami.sb.from("privacy_settings").select("*");
+    expect((mineSettings as { user_id: string }[]).every((r) => r.user_id === cami.id)).toBe(true);
+  });
+
+  it("reuniones v1.8: pedir con sala, aceptar abre el chat y la sala queda ocupada", async () => {
+    const start = new Date(Date.now() + 30 * 60_000).toISOString();
+    const ev = await act(staff, C.upsertEvent({ kind: "corporate", name: `Ronda ${RUN}`, starts_at: start, ends_at: new Date(Date.now() + 6 * 3_600_000).toISOString() }));
+    const room = await act(staff, C.upsertVenueSpot(ev.id, { name: "Sala 1", kind: "room", capacity: 1, coord_x: 70, coord_y: 60 }), ev.id);
+    for (const a of [sofi, mateo]) {
+      const persona = await act(a, C.upsertPersona(a.id, { kind: "corporate", label: "Trabajo", company: `${a.name} SA`, looking_for: ["clients"], offering: ["software"] }), ev.id);
+      await act(a, C.joinEvent(a.id, ev.master_invite_code, "pro_networking", ev.id, persona.id), ev.id);
+    }
+    const at = new Date(Math.ceil((Date.now() + 60 * 60_000) / 900_000) * 900_000).toISOString();
+    const req = await act(sofi, C.requestMeeting(ev.id, sofi.id, mateo.id, { topic: "Integración", startsAt: at, duration: 30, location: { kind: "spot", spotId: room.id } }), ev.id);
+    expect(req.status).toBe("pending");
+    // Cami no está en la reunión: no la ve.
+    const { data: seen } = await cami.sb.from("meetings").select("id").eq("id", req.id);
+    expect(seen ?? []).toEqual([]);
+    const accepted = await act(mateo, C.respondMeeting(req.id, mateo.id, true), ev.id);
+    expect(accepted.status).toBe("accepted");
+    expect(accepted.connection_id).toBeTruthy();
+    // Otra pareja no puede reservar la misma sala en ese horario.
+    const st = await snap(staff, ev.id);
+    const err = await rejects(staff, C.requestMeeting(ev.id, staff.id, mateo.id, { topic: "x", startsAt: at, duration: 15, location: { kind: "spot", spotId: room.id } }), accepted, st);
+    expect(err?.message).toBeTruthy();
   });
 
   it("storage: subo a mi carpeta, no a la de otra persona", async () => {

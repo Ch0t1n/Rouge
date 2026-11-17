@@ -4,6 +4,7 @@ import * as C from "@/lib/store/commands";
 import { useMemo, useState } from "react";
 import { ArrowRight, Camera, Clock, PackageCheck, Printer, ScanLine } from "lucide-react";
 import { QrScanner } from "@/components/scan/QrScanner";
+import { isDynamicQr, isStaticAppQr, QR_REJECT_MESSAGES } from "@/lib/engine/qr";
 import type { BarOrder, BarOrderStatus } from "@/lib/types";
 import { nextOrderStatus, redeemPickupCode, setOrderStatus } from "@/lib/engine/actions";
 import { DELIVERY_META, STATUS_META } from "@/lib/engine/bar";
@@ -14,6 +15,7 @@ import { AdminHeader } from "@/components/admin/AdminChrome";
 import { VenueMap } from "@/components/venue/VenueMap";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { faceOf } from "@/lib/engine/verticals";
 
 const COLUMNS: { id: string; title: string; statuses: BarOrderStatus[]; tone: string }[] = [
   { id: "new", title: "Nuevos pedidos", statuses: ["pending"], tone: "border-white/20" },
@@ -47,10 +49,19 @@ export default function AdminBarPosPage() {
   const deliver = async (value: string) => {
     const raw = value.trim();
     if (!raw) return;
+    if (isDynamicQr(raw)) {
+      const d = await exec(C.redeemDynamicQr(event.id, raw));
+      if (d.ok) {
+        notify(d.data.kind === "PERK" ? { tone: "vip", title: `🎁 ${d.data.perk.title} canjeado`, description: `Para ${getProfile(state, d.data.perk.user_id)?.full_name ?? "el asistente"}.` } : { tone: "squad", title: `✅ Pedido ${d.data.order.pickup_code} entregado`, description: d.data.order.items_json.map((i) => `${i.qty}× ${i.name}`).join(", ") });
+        setCode("");
+      }
+      return;
+    }
+    if (isStaticAppQr(raw)) return notify({ tone: "rouge", title: "QR estático", description: QR_REJECT_MESSAGES.static });
     if (/^ROUGE:/.test(raw) && !/^ROUGE:ORDER:/.test(raw) && can("perks.redeem")) {
       const p = await exec(C.redeemPerk(raw));
       if (p.ok) {
-        notify({ tone: "vip", title: `🎁 ${p.data.title} canjeado`, description: `Para ${getProfile(state, p.data.user_id)?.full_name ?? "el asistente"}.` });
+        notify({ tone: "vip", title: `🎁 ${p.data.title} canjeado`, description: `Para ${faceOf(state, p.data.user_id)?.full_name ?? "el asistente"}.` });
         setCode("");
       }
       return;
@@ -66,7 +77,7 @@ export default function AdminBarPosPage() {
     const next = nextOrderStatus(o);
     if (!next) return;
     const r = await exec(C.advanceOrder(o));
-    if (r.ok && next === "ready_qr") notify({ tone: "squad", title: `🔔 Avisamos a ${getProfile(state, o.user_id)?.full_name.split(" ")[0]}`, description: `Código ${o.pickup_code} listo para retirar.`, duration: 2500 });
+    if (r.ok && next === "ready_qr") notify({ tone: "squad", title: `🔔 Avisamos a ${faceOf(state, o.user_id)?.full_name.split(" ")[0]}`, description: `Código ${o.pickup_code} listo para retirar.`, duration: 2500 });
   };
 
   return (
@@ -140,7 +151,7 @@ export default function AdminBarPosPage() {
 
 function OrderTicket({ order: o, now, onAdvance }: { order: BarOrder; now: number; onAdvance: () => void }) {
   const { state } = useRouge();
-  const customer = getProfile(state, o.user_id);
+  const customer = faceOf(state, o.user_id);
   const event = activeEvent(state)!;
   const next = nextOrderStatus(o);
   const waited = Math.max(0, Math.round((now - +new Date(o.created_at)) / 60_000));

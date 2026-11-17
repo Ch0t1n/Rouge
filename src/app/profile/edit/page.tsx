@@ -36,7 +36,7 @@ function EditForm() {
 
   const [fullName, setFullName] = useState(me.full_name);
   const [username, setUsername] = useState(me.username);
-  const [birthDate, setBirthDate] = useState(me.birth_date);
+  const [birthDate, setBirthDate] = useState(me.birth_date ?? "");
   const [gender, setGender] = useState<Gender>(me.gender);
   const [phone, setPhone] = useState(me.phone_normalized ? formatPhone(me.phone_normalized) : "");
   const [photos, setPhotos] = useState<ProfilePhoto[]>(me.photos);
@@ -56,7 +56,7 @@ function EditForm() {
     () =>
       fullName !== me.full_name ||
       username !== me.username ||
-      birthDate !== me.birth_date ||
+      birthDate !== (me.birth_date ?? "") ||
       gender !== me.gender ||
       phoneNorm !== me.phone_normalized ||
       JSON.stringify(photos) !== JSON.stringify(me.photos) ||
@@ -140,7 +140,7 @@ function EditForm() {
         </section>
       </div>
 
-      <div className="fixed inset-x-0 bottom-0 z-30 mx-auto max-w-md border-t border-white/10 bg-background/90 px-5 pb-[max(1rem,var(--safe-bottom))] pt-3 backdrop-blur-xl">
+      <div className="fixed inset-x-0 bottom-0 z-30 mx-auto max-w-md md:fixed-app-x md:max-w-none md:[&>*]:mx-auto md:[&>*]:max-w-md border-t border-white/10 bg-background/90 px-5 pb-[max(1rem,var(--safe-bottom))] pt-3 backdrop-blur-xl">
         <Button block size="lg" onClick={save} disabled={!dirty || !valid}>
           <Save /> {dirty ? "Guardar cambios" : "Sin cambios"}
         </Button>

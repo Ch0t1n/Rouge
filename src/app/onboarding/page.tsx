@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import * as C from "@/lib/store/commands";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -21,8 +22,9 @@ import { SpotifyField } from "@/components/profile/SpotifyField";
 import { BlacklistManager } from "@/components/profile/BlacklistManager";
 import { useInstagramReturn } from "@/components/social/InstagramField";
 import { getSupabase } from "@/lib/supabase/client";
+import { APP_NAME } from "@/lib/brand";
 
-/** @ de Instagram → @username válido de ROUGE ([a-z0-9._]{3,20}); vacío si no sirve. */
+/** @ de Instagram → @username válido de Rouge Pass ([a-z0-9._]{3,20}); vacío si no sirve. */
 function suggestUsername(ig: string | null | undefined): string {
   const u = (ig ?? "").toLowerCase().replace(/[^a-z0-9._]/g, "").slice(0, 20);
   return u.length >= 3 ? u : "";
@@ -72,6 +74,7 @@ function Onboarding() {
   const [birthDate, setBirthDate] = useState(existing?.birth_date ?? "");
   const [gender, setGender] = useState<Gender>(existing?.gender ?? "undisclosed");
   const [phone, setPhone] = useState("");
+  const [accepted, setAccepted] = useState(false);
   const [photos, setPhotos] = useState<ProfilePhoto[]>(existing?.photos ?? []);
   const [loop, setLoop] = useState<string | null>(existing?.loop_video_url ?? null);
   const [bio, setBio] = useState(existing?.bio ?? "");
@@ -101,7 +104,7 @@ function Onboarding() {
   const phoneOk = !!normalizePhone(phone) || !!existing?.phone_normalized;
 
   const stepValid = [
-    fullName.trim().length > 0 && usernameCheck?.ok === true && !!birthDate && !birthError && phoneOk,
+    fullName.trim().length > 0 && usernameCheck?.ok === true && !!birthDate && !birthError && phoneOk && (accepted || !!existing?.terms_accepted_at),
     photos.length >= 1 && bio.length <= BIO_MAX,
     genres.length >= 1,
     true,
@@ -112,7 +115,7 @@ function Onboarding() {
     if (!stepValid) return false;
     const input =
       step === 0
-        ? { full_name: fullName, username, birth_date: birthDate, gender, ...(phone ? { phone } : {}) }
+        ? { full_name: fullName, username, birth_date: birthDate, gender, ...(phone ? { phone } : {}), ...(existing?.terms_accepted_at ? {} : { terms_accepted_at: new Date().toISOString() }) }
         : step === 1
           ? { photos, loop_video_url: loop, bio }
           : step === 2
@@ -159,7 +162,7 @@ function Onboarding() {
 
       <div className="flex-1 space-y-6 px-5 pb-32 pt-2">
         <div>
-          {step === 0 && <p className="font-display text-sm font-bold tracking-tight text-rouge text-glow-rouge">BIENVENIDO A ROUGE</p>}
+          {step === 0 && <p className="font-display text-sm font-bold tracking-tight text-rouge text-glow-rouge">BIENVENIDO A ROUGE PASS</p>}
           <h1 className="mt-1 text-[30px] leading-[1.05]">{STEPS[step].title}</h1>
           <p className="mt-2 text-sm text-muted">{STEPS[step].subtitle}</p>
         </div>
@@ -184,6 +187,17 @@ function Onboarding() {
             <Segmented label="Género" options={GENDER_OPTIONS} value={gender} onChange={setGender} />
             <PhoneField value={phone} onChange={setPhone} required />
             {touched && !phoneOk && <p className="-mt-3 text-xs text-rouge">Necesitamos tu teléfono para que los bloqueos funcionen.</p>}
+            {!existing?.terms_accepted_at && (
+              <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-sm">
+                <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} className="mt-0.5 size-5 shrink-0 accent-rouge" />
+                <span>
+                  Declaro que soy <b>mayor de 18 años</b> y acepto los{" "}
+                  <Link href="/legal/terminos" target="_blank" className="text-rouge underline underline-offset-2">Términos</Link> y la{" "}
+                  <Link href="/legal/privacidad" target="_blank" className="text-rouge underline underline-offset-2">Política de privacidad</Link>.
+                </span>
+              </label>
+            )}
+            {touched && !accepted && !existing?.terms_accepted_at && <p className="-mt-3 text-xs text-rouge">Tenés que ser +18 y aceptar los términos para usar ROUGE.</p>}
           </div>
         )}
 
@@ -221,11 +235,11 @@ function Onboarding() {
         )}
       </div>
 
-      <div className="fixed inset-x-0 bottom-0 z-30 mx-auto max-w-md border-t border-white/10 bg-background/90 px-5 pb-[max(1rem,var(--safe-bottom))] pt-3 backdrop-blur-xl">
+      <div className="fixed inset-x-0 bottom-0 z-30 mx-auto max-w-md md:fixed-app-x md:max-w-none md:[&>*]:mx-auto md:[&>*]:max-w-md border-t border-white/10 bg-background/90 px-5 pb-[max(1rem,var(--safe-bottom))] pt-3 backdrop-blur-xl">
         <Button block size="lg" onClick={advance} variant={stepValid ? "rouge" : "glass"}>
           {step === STEPS.length - 1 ? (
             <>
-              <PartyPopper /> Entrar a ROUGE
+              <PartyPopper /> Entrar a {APP_NAME}
             </>
           ) : (
             <>

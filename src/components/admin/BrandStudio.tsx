@@ -56,7 +56,7 @@ export function BrandStudio() {
   }, [params, notify, router]);
 
   return (
-    <main className="mx-auto max-w-7xl space-y-6 px-5 py-6 lg:px-10 lg:py-10">
+    <main className="mx-auto max-w-7xl 2xl:max-w-[1600px] space-y-6 px-5 py-6 lg:px-10 lg:py-10">
       <AdminHeader
         title="Marca y cobros"
         subtitle="Tu logo y tus colores en la app de tus fiestas, y la cuenta de Mercado Pago donde entra la plata de la barra."
@@ -150,7 +150,7 @@ function BrandEditor({ brand, onSaved }: { brand: Brand | null; onSaved: (id: st
                 setAccent(ROUGE_ACCENT);
               }}
             >
-              <RotateCcw /> Colores de ROUGE
+              <RotateCcw /> Colores de Rouge Pass
             </Button>
           </div>
         </div>
@@ -331,7 +331,7 @@ function PaymentsPanel({ brand }: { brand: Brand }) {
           </p>
           <ul className="space-y-1.5">
             <li>✓ La barra solo prepara pedidos ya pagos: cero fiado, cero fila para cobrar.</li>
-            <li>✓ La comisión de ROUGE la separa Mercado Pago en cada cobro: no hay que facturarla aparte.</li>
+            <li>✓ La comisión de Rouge Pass la separa Mercado Pago en cada cobro: no hay que facturarla aparte.</li>
             <li>✓ Nunca vemos tu clave: la autorización se hace en Mercado Pago y se puede revocar cuando quieras.</li>
           </ul>
         </div>
@@ -409,7 +409,7 @@ function EventBrandingPanel({ event }: { event: RougeEvent }) {
               onChange={(e) => setBrandId(e.target.value || null)}
               className="min-h-touch w-full rounded-xl border border-white/10 bg-white/[0.05] px-3 text-sm font-semibold text-primary focus:outline-none focus:ring-2 focus:ring-vip/50"
             >
-              <option value="" className="bg-surface">Sin marca (colores de ROUGE)</option>
+              <option value="" className="bg-surface">Sin marca (colores de Rouge Pass)</option>
               {creatorBrands.map((b) => (
                 <option key={b.id} value={b.id} className="bg-surface">
                   {b.name}

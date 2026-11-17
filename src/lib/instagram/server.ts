@@ -5,6 +5,7 @@
  *   INSTAGRAM_APP_ID / INSTAGRAM_APP_SECRET   app de Meta (producto "Instagram" → API with Instagram Login)
  *   SUPABASE_SERVICE_ROLE_KEY                 para guardar tokens y crear la sesión (nunca NEXT_PUBLIC)
  *   NEXT_PUBLIC_APP_URL                       dominio público (redirect_uri = <app>/api/instagram/callback)
+ *   INSTAGRAM_TOKEN_KEY                       secreto largo para cifrar los tokens en la base (AES-256-GCM)
  * Opcionales (tests / mocks): INSTAGRAM_OAUTH_URL, INSTAGRAM_TOKEN_URL, INSTAGRAM_GRAPH_URL, INSTAGRAM_MEDIA_HOSTS,
  *   INSTAGRAM_PLACEHOLDER_EMAIL_DOMAIN.
  *
@@ -12,7 +13,8 @@
  */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
-import { importablePhotos, isAllowedMediaHost, parseTokenResponse, type IgMediaRaw } from "./oauth";
+import { publicOrigin } from "@/lib/security/api";
+import { importablePhotos, isAllowedMediaHost, isImportableImageType, openToken, parseTokenResponse, sealToken, type IgMediaRaw } from "./oauth";
 
 export const IG_COOKIE = "rouge_ig_nonce";
 export const IG_SCOPES = "instagram_business_basic";
@@ -28,17 +30,27 @@ export function igConfig() {
     graphUrl: (process.env.INSTAGRAM_GRAPH_URL ?? "https://graph.instagram.com").replace(/\/$/, ""),
     mediaHosts: (process.env.INSTAGRAM_MEDIA_HOSTS ?? "cdninstagram.com,fbcdn.net").split(",").map((h) => h.trim()).filter(Boolean),
     emailDomain: process.env.INSTAGRAM_PLACEHOLDER_EMAIL_DOMAIN ?? "instagram.rouge.invalid",
+    tokenKey: process.env.INSTAGRAM_TOKEN_KEY || process.env.TOKEN_ENCRYPTION_KEY || undefined,
+    appUrl: process.env.NEXT_PUBLIC_APP_URL ?? "",
   };
 }
 
+const isProd = () => process.env.NODE_ENV === "production";
+
+/** En producción exige además NEXT_PUBLIC_APP_URL: el origen nunca se arma con el header Host del request. */
 export const igConfigured = () => {
   const c = igConfig();
-  return !!(c.appId && c.appSecret && c.supabaseUrl && c.serviceKey);
+  return !!(c.appId && c.appSecret && c.supabaseUrl && c.serviceKey && (c.appUrl || !isProd()));
 };
 
-/** Origen público: NEXT_PUBLIC_APP_URL o el del request (detrás de un proxy, mejor fijarlo). */
+/**
+ * Origen público para redirect_uri y redirecciones. En producción es SIEMPRE NEXT_PUBLIC_APP_URL
+ * (el Host del request lo controla quien manda el pedido: no sirve para armar links con tokens).
+ */
 export function siteOrigin(req: NextRequest): string {
-  return (process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin).replace(/\/$/, "");
+  const origin = publicOrigin(req);
+  if (!origin) throw new IgError("ig_not_configured", 503);
+  return origin;
 }
 
 export const redirectUri = (req: NextRequest) => `${siteOrigin(req)}/api/instagram/callback`;
@@ -68,8 +80,11 @@ export class IgError extends Error {
   }
 }
 
+/** Tiempo máximo de cada llamada a Meta: una API lenta no deja colgada la función. */
+const META_TIMEOUT_MS = 10_000;
+
 async function igJson(url: string, init?: RequestInit): Promise<unknown> {
-  const res = await fetch(url, { ...init, cache: "no-store" });
+  const res = await fetch(url, { ...init, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(META_TIMEOUT_MS) });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     const code = (json as { error?: { code?: number; type?: string } }).error;
@@ -106,21 +121,23 @@ export async function tokenFor(userId: string): Promise<string> {
   const db = adminClient();
   const { data } = await db.from("instagram_accounts").select("access_token, token_expires_at").eq("user_id", userId).maybeSingle();
   if (!data) throw new IgError("ig_not_connected", 404);
+  const c = igConfig();
+  const token = openToken(data.access_token, c.tokenKey);
+  if (!token) throw new IgError("ig_token_invalid", 401); // cifrado con otra clave: hay que reconectar
   const exp = data.token_expires_at ? +new Date(data.token_expires_at) : 0;
   if (exp && exp < Date.now()) throw new IgError("ig_token_invalid", 401);
   if (exp && exp - Date.now() < 7 * 86_400_000) {
     try {
-      const c = igConfig();
-      const r = (await igJson(`${c.graphUrl}/refresh_access_token?grant_type=ig_refresh_token&access_token=${encodeURIComponent(data.access_token)}`)) as { access_token?: string; expires_in?: number };
+      const r = (await igJson(`${c.graphUrl}/refresh_access_token?grant_type=ig_refresh_token&access_token=${encodeURIComponent(token)}`)) as { access_token?: string; expires_in?: number };
       if (r.access_token) {
-        await db.from("instagram_accounts").update({ access_token: r.access_token, token_expires_at: new Date(Date.now() + (r.expires_in ?? 5_184_000) * 1000).toISOString(), updated_at: new Date().toISOString() }).eq("user_id", userId);
+        await db.from("instagram_accounts").update({ access_token: sealToken(r.access_token, c.tokenKey), token_expires_at: new Date(Date.now() + (r.expires_in ?? 5_184_000) * 1000).toISOString(), updated_at: new Date().toISOString() }).eq("user_id", userId);
         return r.access_token;
       }
     } catch {
       /* usa el actual mientras siga vigente */
     }
   }
-  return data.access_token;
+  return token;
 }
 
 export async function listPhotos(token: string) {
@@ -130,18 +147,33 @@ export async function listPhotos(token: string) {
   return importablePhotos(res.data ?? []).slice(0, 30);
 }
 
-/** Bytes de una foto propia (por id de media) para recomprimirla y subirla a nuestro Storage. */
+const MAX_PHOTO_BYTES = 15 * 1024 * 1024;
+
+/**
+ * Bytes de una foto propia (por id de media) para recomprimirla y subirla a nuestro Storage.
+ * Anti-SSRF: solo hosts de Meta, también en cada redirección; solo tipos de imagen conocidos; tamaño acotado.
+ */
 export async function downloadPhoto(token: string, mediaId: string): Promise<{ bytes: ArrayBuffer; type: string }> {
-  if (!/^[0-9A-Za-z_]+$/.test(mediaId)) throw new IgError("ig_bad_media");
+  if (!/^[0-9A-Za-z_]{1,64}$/.test(mediaId)) throw new IgError("ig_bad_media");
   const c = igConfig();
   const m = (await igJson(`${c.graphUrl}/${mediaId}?fields=${encodeURIComponent("id,media_type,media_url,children{media_type,media_url}")}&access_token=${encodeURIComponent(token)}`)) as IgMediaRaw;
   const photo = importablePhotos([m])[0];
-  if (!photo || !isAllowedMediaHost(photo.url, c.mediaHosts)) throw new IgError("ig_bad_media");
-  const res = await fetch(photo.url, { cache: "no-store" });
-  const type = res.headers.get("content-type") ?? "image/jpeg";
-  if (!res.ok || !type.startsWith("image/")) throw new IgError("ig_bad_media", 502);
+  let url = photo?.url;
+  let res: Response | null = null;
+  for (let hop = 0; hop < 3 && url; hop++) {
+    if (!isAllowedMediaHost(url, c.mediaHosts)) throw new IgError("ig_bad_media");
+    res = await fetch(url, { cache: "no-store", redirect: "manual", signal: AbortSignal.timeout(META_TIMEOUT_MS) });
+    const loc = res.status >= 300 && res.status < 400 ? res.headers.get("location") : null;
+    if (!loc) break;
+    url = new URL(loc, url).toString();
+    res = null;
+  }
+  if (!res || !res.ok) throw new IgError("ig_bad_media", 502);
+  const type = (res.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+  if (!isImportableImageType(type)) throw new IgError("ig_bad_media", 502);
+  if (Number(res.headers.get("content-length") ?? 0) > MAX_PHOTO_BYTES) throw new IgError("ig_bad_media", 413);
   const bytes = await res.arrayBuffer();
-  if (bytes.byteLength > 15 * 1024 * 1024) throw new IgError("ig_bad_media", 413);
+  if (bytes.byteLength > MAX_PHOTO_BYTES) throw new IgError("ig_bad_media", 413);
   return { bytes, type };
 }
 
@@ -151,7 +183,7 @@ export async function saveConnection(userId: string, ig: { igUserId: string; use
   const { data: owner } = await db.from("instagram_accounts").select("user_id").eq("ig_user_id", ig.igUserId).maybeSingle();
   if (owner && owner.user_id !== userId) throw new IgError("ig_taken", 409);
   const { error } = await db.from("instagram_accounts").upsert(
-    { user_id: userId, ig_user_id: ig.igUserId, username: ig.username, account_type: ig.accountType, access_token: ig.token, token_expires_at: ig.expiresAt, updated_at: new Date().toISOString() },
+    { user_id: userId, ig_user_id: ig.igUserId, username: ig.username, account_type: ig.accountType, access_token: sealToken(ig.token, igConfig().tokenKey), token_expires_at: ig.expiresAt, updated_at: new Date().toISOString() },
     { onConflict: "user_id" },
   );
   if (error) throw new IgError("ig_save", 500);

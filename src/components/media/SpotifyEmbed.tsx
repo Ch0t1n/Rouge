@@ -41,6 +41,9 @@ export function SpotifyEmbed({ url, autoLoad = false, className }: { url: string
       width="100%"
       height={ref.height}
       loading="lazy"
+      // Aislado: el embed corre sus scripts pero no puede navegar la app ni abrir diálogos.
+      sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+      referrerPolicy="strict-origin-when-cross-origin"
       allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
       className={cn("rounded-2xl border-0 bg-surface-raised", className)}
     />

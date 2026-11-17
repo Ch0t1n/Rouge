@@ -11,6 +11,8 @@ import { eventTheme } from "@/lib/engine/branding";
 import { getProfile } from "@/lib/engine/selectors";
 import { formatMoney } from "@/lib/utils";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { APP_NAME, APP_WORDMARK } from "@/lib/brand";
+import { faceOf } from "@/lib/engine/verticals";
 
 /** Número corto y legible del pedido para el ticket (los últimos 6 del id). */
 export const orderNumber = (id: string) => id.replace(/-/g, "").slice(-6).toUpperCase();
@@ -45,7 +47,7 @@ export function PrintTicket() {
   }
 
   const theme = eventTheme(state, event.id);
-  const customer = getProfile(state, order.user_id);
+  const customer = faceOf(state, order.user_id);
   const copy = params.get("copia") === "cliente" ? "cliente" : "barra";
   const when = new Date(order.created_at).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
   const paid = order.payment_status === "paid";
@@ -68,7 +70,7 @@ export function PrintTicket() {
 
       <article className="mx-auto w-[80mm] max-w-full bg-white px-[5mm] py-[4mm] font-mono text-[12px] leading-snug text-black shadow-xl print:shadow-none" data-testid="ticket">
         <header className="text-center">
-          <p className="font-display text-base font-bold uppercase tracking-tight">{theme.brand_name ?? "ROUGE"}</p>
+          <p className="font-display text-base font-bold uppercase tracking-tight">{theme.brand_name ?? APP_WORDMARK}</p>
           <p className="text-[11px]">{event.name}</p>
           {event.venue_name && <p className="text-[11px]">{event.venue_name}</p>}
         </header>
@@ -111,7 +113,7 @@ export function PrintTicket() {
         )}
         {sep}
         <p className="text-center text-[10px]">{copy === "cliente" ? "¡Gracias! Mostrá el código en la ventanilla." : "Entregar contra código o QR."}</p>
-        <p className="text-center text-[10px]">Comprobante no válido como factura · ROUGE</p>
+        <p className="text-center text-[10px]">Comprobante no válido como factura · {APP_NAME}</p>
       </article>
     </main>
   );

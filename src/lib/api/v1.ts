@@ -8,6 +8,7 @@
 import { createHash } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
+import { allowRequest, publicOrigin, readJsonBody } from "@/lib/security/api";
 import type { ApiScope } from "@/lib/types";
 
 export const API_VERSION = "1.0.0";
@@ -29,6 +30,7 @@ export type ApiErrorCode =
   | "code_already_used"
   | "validation_error"
   | "not_configured"
+  | "rate_limited"
   | "internal_error";
 
 const STATUS: Record<ApiErrorCode, number> = {
@@ -41,6 +43,7 @@ const STATUS: Record<ApiErrorCode, number> = {
   code_already_used: 409,
   validation_error: 422,
   not_configured: 503,
+  rate_limited: 429,
   internal_error: 500,
 };
 
@@ -54,6 +57,7 @@ const MESSAGES: Record<ApiErrorCode, string> = {
   code_already_used: "El código ya se usó para entrar: no se puede anular.",
   validation_error: "El pedido no es válido.",
   not_configured: "La API no está configurada en este servidor.",
+  rate_limited: "Demasiados pedidos. Esperá un minuto (ver header Retry-After).",
   internal_error: "Error interno. Probá de nuevo.",
 };
 
@@ -75,6 +79,7 @@ export function errorResponse(e: unknown): NextResponse {
   const body = { error: { code: err.code, message: err.message, ...(err.details ? { details: err.details } : {}) } };
   const headers: Record<string, string> = { "Cache-Control": "no-store" };
   if (err.status === 401) headers["WWW-Authenticate"] = 'Bearer realm="rouge-api"';
+  if (err.status === 429) headers["Retry-After"] = "60";
   return NextResponse.json(body, { status: err.status, headers });
 }
 
@@ -175,12 +180,15 @@ export function serializeCode(r: CodeRow, base: string) {
   };
 }
 
+/** Timestamp ISO 8601 estricto (como lo devuelve Postgres): el cursor va dentro de un filtro de PostgREST. */
+const ISO_TS_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}:\d{2})$/;
+
 export const encodeCursor = (r: { created_at: string; id: string }) => Buffer.from(JSON.stringify([r.created_at, r.id])).toString("base64url");
 export function decodeCursor(c: string | null): { created_at: string; id: string } | null {
   if (!c) return null;
   try {
     const [created_at, id] = JSON.parse(Buffer.from(c, "base64url").toString("utf8")) as [string, string];
-    if (!UUID_RE.test(id) || Number.isNaN(Date.parse(created_at))) throw new Error();
+    if (typeof id !== "string" || typeof created_at !== "string" || !UUID_RE.test(id) || !ISO_TS_RE.test(created_at) || Number.isNaN(Date.parse(created_at))) throw new Error();
     return { created_at, id };
   } catch {
     throw new ApiError("validation_error", "cursor inválido.");
@@ -200,8 +208,18 @@ export function apiAdmin(): SupabaseClient {
   return admin;
 }
 
+/** Origen de los links y QRs que devuelve la API (en producción, siempre NEXT_PUBLIC_APP_URL). */
 export function publicBase(req: NextRequest): string {
-  return (process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin).replace(/\/$/, "");
+  const origin = publicOrigin(req);
+  if (!origin) throw new ApiError("not_configured");
+  return origin;
+}
+
+/** Body JSON acotado (1000 entradas × ~200 bytes entran holgadas en 512 KB). */
+export async function readApiBody(req: NextRequest): Promise<unknown> {
+  const body = await readJsonBody<unknown>(req, 512 * 1024);
+  if (body === null) throw new ApiError("validation_error", "El body tiene que ser JSON válido (máx. 512 KB).");
+  return body;
 }
 
 export interface ApiKeyRow {
@@ -221,6 +239,7 @@ export async function authenticate(db: SupabaseClient, req: NextRequest): Promis
   const { data } = await db.from("api_keys").select("id,name,prefix,event_id,scopes,last_used_at").eq("key_hash", hashApiKey(raw)).is("revoked_at", null).maybeSingle();
   if (!data) throw new ApiError("invalid_api_key");
   const key = data as ApiKeyRow;
+  if (!allowRequest(req, "apiV1Key", key.id)) throw new ApiError("rate_limited");
   if (!key.last_used_at || Date.now() - Date.parse(key.last_used_at) > 60_000) {
     await db.from("api_keys").update({ last_used_at: new Date().toISOString() }).eq("id", key.id);
   }
@@ -337,6 +356,7 @@ export async function revokeCode(db: SupabaseClient, key: ApiKeyRow, eventId: st
 export function handler<C>(fn: (req: NextRequest, ctx: C) => Promise<NextResponse>) {
   return async (req: NextRequest, ctx: C) => {
     try {
+      if (!allowRequest(req, "apiV1Ip")) throw new ApiError("rate_limited");
       return await fn(req, ctx);
     } catch (e) {
       if (!(e instanceof ApiError)) console.error("[api/v1]", e);

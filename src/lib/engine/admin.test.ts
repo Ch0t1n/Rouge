@@ -71,3 +71,25 @@ describe("live wall", () => {
     expect(crmRows(s, EV).length).toBe(13);
   });
 });
+
+describe("tablero minuto a minuto", () => {
+  it("agrupa ingresos y ventas en intervalos de 15' y compara con el promedio de fechas anteriores", async () => {
+    const { createSeedState: seed, DEMO_IDS: IDS } = await import("@/lib/mock/seed");
+    const { eventCurve, historyAverage, liveComparison } = await import("./analytics");
+    const NOW2 = Date.parse("2026-11-14T03:00:00.000Z");
+    const s = seed(NOW2);
+    const curve = eventCurve(s, IDS.event, NOW2);
+    expect(curve[0].m).toBe(-60);
+    expect(curve.every((p, i) => !i || p.m - curve[i - 1].m === 15)).toBe(true);
+    const totalSales = s.bar_orders.filter((o) => o.event_id === IDS.event && o.payment_status !== "awaiting_payment" && +new Date(o.paid_at ?? o.created_at) <= NOW2).reduce((a, o) => a + o.total_amount, 0);
+    expect(curve.reduce((a, p) => a + p.sales, 0)).toBe(totalSales);
+    const avg = historyAverage([
+      { event_id: "a", name: "a", starts_at: "", points: [{ m: 0, entries: 10, sales: 100 }] },
+      { event_id: "b", name: "b", starts_at: "", points: [{ m: 0, entries: 20, sales: 300 }] },
+    ]);
+    expect(avg).toEqual([{ m: 0, entries: 15, sales: 200 }]);
+    const cmp = liveComparison(s, IDS.event, NOW2);
+    expect(cmp.historyCount).toBe(3);
+    expect(cmp.avgTicket).toBeGreaterThan(0);
+  });
+});

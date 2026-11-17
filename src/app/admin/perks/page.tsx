@@ -14,10 +14,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
+import { faceOf, hasFeature } from "@/lib/engine/verticals";
 
 const FILTERS: { id: RaffleFilter; label: string }[] = [
   { id: "active_pin", label: "Con pin activo en el plano ahora" },
-  { id: "in_squad", label: "Que estén en un Squad" },
+  { id: "in_squad", label: "Que estén en un Squad / Equipo" },
   { id: "female", label: "Público femenino" },
   { id: "all", label: "Todos los asistentes" },
 ];
@@ -35,7 +36,7 @@ export default function AdminPerksPage() {
   const { state } = useRouge();
   const event = activeEvent(state)!;
   return (
-    <main className="mx-auto max-w-7xl space-y-6 px-5 py-6 lg:px-10 lg:py-10">
+    <main className="mx-auto max-w-7xl 2xl:max-w-[1600px] space-y-6 px-5 py-6 lg:px-10 lg:py-10">
       <AdminHeader title="Perks, QR Drops y sorteos" subtitle="Recompensas automáticas para atraer grupos y público femenino, y sorteos en vivo." />
       <div className="grid gap-6 xl:grid-cols-2">
         <RafflePanel eventId={event.id} />
@@ -147,7 +148,7 @@ function RafflePanel({ eventId }: { eventId: UUID }) {
     const tick = () => {
       setSpinning({ raffleId: raffle.id, pool: wheel, index: i % wheel.length });
       if (i >= steps) {
-        notify({ tone: "vip", title: `🏆 Ganó ${getProfile(state, winnerId)?.full_name ?? "un asistente"}`, description: "El QR del premio ya está en su billetera." });
+        notify({ tone: "vip", title: `🏆 Ganó ${faceOf(state, winnerId)?.full_name ?? "un asistente"}`, description: "El QR del premio ya está en su billetera." });
         timer.current = setTimeout(() => setSpinning(null), 2500);
         return;
       }
@@ -157,7 +158,7 @@ function RafflePanel({ eventId }: { eventId: UUID }) {
     tick();
   };
 
-  const current = spinning ? getProfile(state, spinning.pool[spinning.index]) : null;
+  const current = spinning ? faceOf(state, spinning.pool[spinning.index]) : null;
 
   return (
     <Panel title={<span className="flex items-center gap-2"><Dices className="size-5 text-vip" /> Sorteo en vivo</span>}>
@@ -192,7 +193,7 @@ function RafflePanel({ eventId }: { eventId: UUID }) {
         <p className="font-display text-sm font-semibold">Nuevo sorteo</p>
         <TextField label="Premio" value={prize} maxLength={60} onChange={(e) => setPrize(e.target.value)} />
         <div className="flex flex-wrap gap-2">
-          {FILTERS.map((f) => (
+          {FILTERS.filter((f) => f.id !== "female" || hasFeature(state, eventId, "genderRaffle")).map((f) => (
             <button key={f.id} type="button" onClick={() => setFilter(f.id)} className={cn("min-h-[40px] rounded-full px-3 text-xs font-semibold", filter === f.id ? "bg-vip text-background" : "bg-white/[0.05] text-muted")}>
               {f.label} · {raffleEligible(state, eventId, f.id).length}
             </button>
@@ -206,7 +207,7 @@ function RafflePanel({ eventId }: { eventId: UUID }) {
       {done.length > 0 && (
         <ul className="mt-5 space-y-2 border-t border-white/10 pt-4">
           {done.map((r) => {
-            const w = getProfile(state, r.winner_user_id);
+            const w = faceOf(state, r.winner_user_id);
             const perk = state.user_perks_qrs.find((p) => p.id === r.winner_perk_id);
             return (
               <li key={r.id} className="flex items-center gap-3 text-sm">
@@ -227,7 +228,7 @@ function RafflePanel({ eventId }: { eventId: UUID }) {
 
 function WinnerCard({ raffle }: { raffle: Raffle }) {
   const { state } = useRouge();
-  const w = getProfile(state, raffle.winner_user_id);
+  const w = faceOf(state, raffle.winner_user_id);
   if (!w) return null;
   return (
     <div className="flex flex-col items-center gap-2">
@@ -251,7 +252,7 @@ function RedeemPanel() {
           e.preventDefault();
           const r = await exec(C.redeemPerk(code.trim()));
           if (r.ok) {
-            const owner = getProfile(state, r.data.user_id);
+            const owner = faceOf(state, r.data.user_id);
             notify({ tone: "squad", title: `✅ Canjeado: ${r.data.title}`, description: owner ? `De ${owner.full_name}` : undefined });
             setCode("");
           }

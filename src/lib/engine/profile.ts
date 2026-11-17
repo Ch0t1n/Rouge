@@ -46,7 +46,7 @@ export function checkUsername(state: RougeState, raw: string, selfId: UUID): Use
 export function checkBirthDate(birthDate: string, now = new Date()): string | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate) || Number.isNaN(Date.parse(birthDate))) return "Fecha de nacimiento inválida.";
   const age = ageFrom(birthDate, now);
-  if (age < MIN_AGE) return `ROUGE es solo para mayores de ${MIN_AGE} años.`;
+  if (age < MIN_AGE) return `Rouge Pass es solo para mayores de ${MIN_AGE} años.`;
   if (age > 99) return "Revisá la fecha de nacimiento.";
   return null;
 }

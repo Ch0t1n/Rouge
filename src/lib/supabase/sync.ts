@@ -6,12 +6,19 @@
  * comparten exactamente la misma forma (`RougeState`).
  */
 import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
-import type { BarMenuItem, Profile, RougeEvent, RougeState, UUID } from "@/lib/types";
+import type { BarMenuItem, Profile, ProfilePersona, RougeEvent, RougeState, UUID } from "@/lib/types";
 import { lobbyPhase } from "@/lib/engine/selectors";
+import { assignmentCovers, PLATFORM_ROLE, withinAccessWindow } from "@/lib/engine/roles";
 import { BAR_MENU, STATE_VERSION } from "@/lib/mock/seed";
 
-/** Columnas legibles de `profiles` (el teléfono NO: column privileges). */
-const PROFILE_COLUMNS = "id,username,full_name,birth_date,gender,bio,photos,loop_video_url,music_genres,spotify_embed_url,instagram_username,instagram_verified,is_verified,created_at";
+/**
+ * [v1.8] Columnas PÚBLICAS de `event_attendees` (column privileges): sin gasto, origen, RRPP, hora de ingreso ni
+ * sectores visitados. Lo privado llega por my_attendances() (lo mío), event_attendance() (equipo) y shared_zones().
+ */
+export const ATTENDEE_COLUMNS = "id,event_id,user_id,mood_tag,persona_id,ghost_mode,only_liked_can_icebreak,icebreaker_used,last_active_at,joined_at,is_checked_in";
+
+/** Tarjeta pública de otra persona (profile_cards): edad en vez de fecha de nacimiento; sin teléfono. */
+type ProfileCard = Omit<Profile, "birth_date" | "phone_normalized" | "username"> & { username: string | null; age: number | null };
 
 type Row = Record<string, unknown>;
 
@@ -48,22 +55,30 @@ export interface RemoteSnapshot {
 
 export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferredEventId: UUID | null): Promise<RemoteSnapshot> {
   const now = Date.now();
-  const [events, mine, staffRows] = await Promise.all([
+  const [events, mine, staffRows, assignments] = await Promise.all([
     q<RougeEvent>(sb.from("events").select("*").order("starts_at", { ascending: true })),
     q<{ event_id: UUID }>(sb.from("event_attendees").select("event_id").eq("user_id", userId)),
     q<RougeState["event_staff"][number]>(sb.from("event_staff").select("*").eq("user_id", userId)),
+    // RLS: las mías (staff) y las de mi organización (dueño/a). Si la tabla no existe todavía, no rompe la carga.
+    q<RougeState["staff_assignments"][number]>(sb.from("staff_assignments").select("*")).catch(() => []),
   ]);
-  const staffIds = new Set([...staffRows.map((r) => r.event_id), ...events.filter((e) => e.created_by === userId).map((e) => e.id)]);
+  const myAssignments = assignments.filter((a) => a.user_id === userId);
+  // Rol por asignación de la organización (alcance + ventana horaria), igual que staffRoleOf y has_staff_role.
+  const assignedRole = (e: RougeEvent) => {
+    const a = myAssignments.find((x) => assignmentCovers(x, e));
+    return a && (!a.access_window || withinAccessWindow(e, now)) ? a.role : null;
+  };
+  const staffIds = new Set([...staffRows.map((r) => r.event_id), ...events.filter((e) => e.created_by === userId || assignedRole(e)).map((e) => e.id)]);
   const event = pickEvent(events, new Set(mine.map((r) => r.event_id)), staffIds, preferredEventId, now);
   const eventId = event?.id ?? "";
   const isStaff = !!event && staffIds.has(event.id);
-  const myRole = event ? (staffRows.find((r) => r.event_id === event.id)?.role ?? (event.created_by === userId ? "owner" : null)) : null;
+  const myRole = event ? (staffRows.find((r) => r.event_id === event.id)?.role ?? (event.created_by === userId ? "owner" : assignedRole(event))) : null;
   const isManager = myRole === "owner" || myRole === "manager";
 
   const byEvent = <T,>(table: string, select = "*") => (eventId ? q<T>(sb.from(table).select(select).eq("event_id", eventId)) : Promise.resolve([] as T[]));
 
   const [attendees, connections, squads, squadMembers, pins, messages, blasts, perks, rules, raffles, songs, menu, orders, blocks, codes, me] = await Promise.all([
-    byEvent<RougeState["event_attendees"][number]>("event_attendees"),
+    byEvent<RougeState["event_attendees"][number]>("event_attendees", ATTENDEE_COLUMNS),
     q<RougeState["connections"][number]>(sb.from("connections").select("*")), // los matches de TODOS los eventos persisten
     byEvent<RougeState["squads"][number]>("squads"),
     q<RougeState["squad_members"][number]>(sb.from("squad_members").select("*")),
@@ -104,14 +119,88 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
       ? (await q<NonNullable<RougeState["promoter_stats"]>[number]>(sb.rpc("promoter_stats", { p_event: eventId })).catch(() => [])).map((r) => ({ ...r, commission_per_entry: Number(r.commission_per_entry), to_pay: Number(r.to_pay) }))
       : null;
   const brands = [...new Map([...myBrands, ...eventBrands].map((b) => [b.id, b])).values()];
+  // Seguridad: invitaciones y auditoría de MI organización (dueño/a; producción ve la auditoría), PINs sin hash,
+  // reportes (RLS: los míos o los del evento para seguridad/dueño/producción) y si soy admin global.
+  // QR dinámicos: secretos de MIS credenciales; el del evento solo para puerta/barra (validación sin conexión).
+  const canScan = myRole === "owner" || myRole === "manager" || myRole === "security" || myRole === "bartender" || myRole === "waiter";
+  const [lists, qrSecrets, eventSecret] = await Promise.all([
+    byEvent<RougeState["ticket_lists"][number]>("ticket_lists").catch(() => []),
+    eventId ? q<NonNullable<RougeState["qr_secrets"]>[number]>(sb.rpc("my_qr_secrets", { p_event: eventId })).catch(() => []) : Promise.resolve([]),
+    eventId && canScan ? sb.rpc("event_qr_secret", { p_event: eventId }).then((r) => (r.data as string | null) ?? null, () => null) : Promise.resolve(null),
+  ]);
+  // Campañas: base de clientes de la organización (con teléfonos) solo para dueño/a y producción.
+  const [orgContacts, campaigns, campaignContacts] = eventId && isManager
+    ? await Promise.all([
+        q<NonNullable<RougeState["org_contacts"]>[number]>(sb.rpc("org_contacts", { p_event: eventId })).catch(() => []),
+        q<NonNullable<RougeState["campaigns"]>[number]>(sb.from("campaigns").select("*").eq("event_id", eventId)).catch(() => []),
+        q<NonNullable<RougeState["campaign_contacts"]>[number]>(sb.from("campaign_contacts").select("*")).catch(() => []),
+      ])
+    : [[], [], []];
+  // Configuración de organizaciones (la mía; ROUGE HQ ve todas) → autogestión del creador de eventos.
+  const orgSettings = await q<NonNullable<RougeState["organization_settings"]>[number]>(sb.from("organization_settings").select("*")).catch(() => []);
+  const vipReservations = await byEvent<NonNullable<RougeState["vip_reservations"]>[number]>("vip_reservations").catch(() => []);
+  const curves = eventId && isManager ? await q<NonNullable<RougeState["event_curves_history"]>[number]>(sb.rpc("org_event_curves", { p_event: eventId }).then((r) => ({ data: (r.data as unknown[]) ?? [], error: r.error }))).catch(() => []) : [];
+  const [invites, terminalPins, audit, reports, platformAdmin] = await Promise.all([
+    q<RougeState["staff_invites"][number]>(sb.from("staff_invites").select("id,organization_id,role,scope,event_ids,access_window,expires_at,used_at,used_by,revoked_at,created_by,created_at").eq("organization_id", userId)).catch(() => []),
+    q<{ organization_id: UUID; user_id: UUID; updated_at: string }>(sb.rpc("my_terminal_pins")).catch(() => []),
+    q<RougeState["audit_log"][number]>(sb.from("audit_log").select("*").order("created_at", { ascending: false }).limit(300)).catch(() => []),
+    q<RougeState["user_reports"][number]>(sb.from("user_reports").select("*").order("created_at", { ascending: false }).limit(200)).catch(() => []),
+    sb.rpc("am_platform_admin").then((r) => r.data === true, () => false),
+  ]);
   // Mis roles en todos los eventos (selector del panel) + el equipo completo del evento activo si soy staff.
   const teamRows = isStaff ? await byEvent<RougeState["event_staff"][number]>("event_staff") : [];
   const eventStaff = [...staffRows.filter((r) => r.event_id !== eventId || !isStaff), ...teamRows];
 
-  // Perfiles necesarios: asistentes, contrapartes de mis conexiones, squads y bloqueados.
-  const ids = new Set<UUID>([userId]);
-  attendees.forEach((a) => ids.add(a.user_id));
+  // [v1.8] Reuniones (RLS: solo las mías), salas/puntos de mis eventos y mis ajustes de privacidad.
+  const [meetings, spots, privacy] = await Promise.all([
+    q<RougeState["meetings"][number]>(sb.from("meetings").select("*").order("starts_at", { ascending: true })).catch(() => []),
+    q<RougeState["venue_spots"][number]>(sb.from("venue_spots").select("*")).catch(() => []),
+    q<RougeState["privacy_settings"][number]>(sb.from("privacy_settings").select("*").eq("user_id", userId)).catch(() => []),
+  ]);
+
+  // Cara de cada contacto en el evento donde se conocieron (chats e inbox de eventos pasados): su fila pública de
+  // asistente en esos eventos (persona_id). Solo contrapartes de mis conexiones y reuniones: acotado.
+  const otherEventIds = [...new Set([...connections.map((c) => c.event_id), ...meetings.map((m) => m.event_id)].filter((id) => id !== eventId))];
+  const counterpartIds = [...new Set([
+    ...connections.map((c) => (c.sender_id === userId ? c.receiver_id : c.sender_id)),
+    ...meetings.map((m) => (m.requester_id === userId ? m.invitee_id : m.requester_id)),
+  ])];
+  const pastAttendees = otherEventIds.length && counterpartIds.length
+    ? (await Promise.all(chunk(counterpartIds, PROFILE_BATCH).map((part) =>
+        q<RougeState["event_attendees"][number]>(sb.from("event_attendees").select(ATTENDEE_COLUMNS).in("event_id", otherEventIds).in("user_id", part)).catch(() => []),
+      ))).flat()
+    : [];
+
+  // Lo privado de la asistencia: lo mío completo, el equipo lo suyo y, para el resto, solo las zonas EN COMÚN.
+  const [myAttendances, staffAttendance, sharedZones] = await Promise.all([
+    q<RougeState["event_attendees"][number]>(sb.rpc("my_attendances")).catch(() => []),
+    eventId && isStaff && myRole !== "bartender" && myRole !== "waiter" && myRole !== "promoter"
+      ? q<{ user_id: UUID; total_spent: number | string; joined_via: RougeState["event_attendees"][number]["joined_via"]; referred_by: UUID | null; checked_in_at: string | null }>(sb.rpc("event_attendance", { p_event: eventId })).catch(() => [])
+      : Promise.resolve([]),
+    eventId ? q<{ user_id: UUID; zones: string[] | null }>(sb.rpc("shared_zones", { p_event: eventId })).catch(() => []) : Promise.resolve([]),
+  ]);
+  const mineById = new Map(myAttendances.map((a) => [a.event_id, a]));
+  const staffById = new Map(staffAttendance.map((a) => [a.user_id, a]));
+  const zonesById = new Map(sharedZones.map((z) => [z.user_id, z.zones ?? []]));
+  const allAttendees: RougeState["event_attendees"] = [...attendees, ...pastAttendees].map((a) => {
+    if (a.user_id === userId) return { ...a, ...(mineById.get(a.event_id) ?? {}) };
+    const st = a.event_id === eventId ? staffById.get(a.user_id) : undefined;
+    return {
+      ...a,
+      total_spent: Number(st?.total_spent ?? 0),
+      joined_via: st?.joined_via ?? "master_link",
+      referred_by: st?.referred_by ?? null,
+      checked_in_at: st?.checked_in_at ?? null,
+      visited_sectors: a.event_id === eventId ? (zonesById.get(a.user_id) ?? []) : [],
+    };
+  });
+
+  // Perfiles: el mío completo (my_profile) y el resto como tarjetas saneadas (profile_cards: edad y no fecha,
+  // @usuario y fotos solo si esa persona se mostró con su Perfil principal en un evento de noche que compartimos).
+  const ids = new Set<UUID>();
+  allAttendees.forEach((a) => ids.add(a.user_id));
   connections.forEach((c) => (ids.add(c.sender_id), ids.add(c.receiver_id)));
+  meetings.forEach((m) => (ids.add(m.requester_id), ids.add(m.invitee_id)));
   squadMembers.forEach((m) => ids.add(m.user_id));
   blocks.forEach((b) => b.blocked_user_id && ids.add(b.blocked_user_id));
   raffles.forEach((r) => r.winner_user_id && ids.add(r.winner_user_id));
@@ -119,8 +208,23 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
   expenses.forEach((e) => ids.add(e.paid_by));
   bans.forEach((b) => ids.add(b.user_id));
   teamRows.forEach((r) => ids.add(r.user_id));
-  // Por tandas: un `in (...)` con cientos de ids arma una URL que los gateways rechazan (evento real = miles de asistentes).
-  const profiles = (await Promise.all(chunk([...ids], PROFILE_BATCH).map((part) => q<Profile>(sb.from("profiles").select(PROFILE_COLUMNS).in("id", part))))).flat();
+  ids.delete(userId);
+  // Por tandas: listas largas de ids en una sola llamada arman pedidos enormes (evento real = miles de asistentes).
+  const cards = (await Promise.all(chunk([...ids], PROFILE_BATCH).map((part) => q<ProfileCard>(sb.rpc("profile_cards", { p_ids: part })).catch(() => [])))).flat();
+  const profiles: Profile[] = [
+    ...(me[0] ? [me[0]] : []),
+    ...cards.map((c) => ({ ...c, username: c.username ?? "", birth_date: null, phone_normalized: null })),
+  ];
+
+  // Perfiles adicionales: los míos (tabla, RLS propia) + los de otros saneados por persona_cards().
+  const personaIds = [...new Set(allAttendees.filter((a) => a.user_id !== userId).map((a) => a.persona_id).filter((x): x is UUID => !!x))];
+  const [myPersonas, usedPersonas] = await Promise.all([
+    q<ProfilePersona>(sb.from("profile_personas").select("*").eq("user_id", userId)).catch(() => []),
+    personaIds.length
+      ? Promise.all(chunk(personaIds, PROFILE_BATCH).map((part) => q<ProfilePersona>(sb.rpc("persona_cards", { p_ids: part })).catch(() => []))).then((r) => r.flat())
+      : Promise.resolve([] as ProfilePersona[]),
+  ]);
+  const personas = [...new Map([...myPersonas, ...usedPersonas].map((p) => [p.id, p])).values()];
 
   // Mi teléfono (my_profile) y, para el staff, los de los asistentes (event_crm) → CRM y bloqueos.
   const phones = new Map<UUID, string | null>();
@@ -143,9 +247,13 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
     current_user_id: userId,
     active_event_id: eventId,
     profiles: profiles.map((p) => ({ ...p, phone_normalized: phones.get(p.id) ?? null, photos: p.photos ?? [], music_genres: p.music_genres ?? [] })),
+    profile_personas: personas.map((p) => ({ ...p, photos: p.photos ?? [], music_genres: p.music_genres ?? [], looking_for: p.looking_for ?? [], offering: p.offering ?? [] })),
+    privacy_settings: privacy,
+    venue_spots: spots.map((x) => ({ ...x, capacity: x.capacity ?? null, coord_x: x.coord_x ?? null, coord_y: x.coord_y ?? null })),
+    meetings: meetings.map((m) => ({ ...m, pin_x: m.pin_x ?? null, pin_y: m.pin_y ?? null })),
     instagram_links: igRows.map((r) => ({ user_id: userId, username: r.username, account_type: r.account_type, connected_at: r.connected_at })),
     user_blocks: blocks,
-    events: events.map((e) => ({ ...e, brand_id: e.brand_id ?? null, logo_url: e.logo_url ?? null, theme_primary: e.theme_primary ?? null, theme_accent: e.theme_accent ?? null })),
+    events: events.map((e) => ({ ...e, kind: e.kind ?? "nightlife", networking_checkin_only: e.networking_checkin_only ?? false, brand_id: e.brand_id ?? null, logo_url: e.logo_url ?? null, theme_primary: e.theme_primary ?? null, theme_accent: e.theme_accent ?? null, qr_secret: e.id === eventId ? eventSecret : null, features: e.features ?? null, lifecycle_status: e.lifecycle_status ?? "live" })),
     brands,
     brand_payment_accounts: payAccounts,
     event_staff: eventStaff,
@@ -153,7 +261,7 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
     promoter_links: promoterLinks.map((l) => ({ ...l, commission_per_entry: Number(l.commission_per_entry) })),
     api_keys: apiKeys,
     event_bans: bans,
-    event_attendees: attendees.map((a) => ({ ...a, total_spent: Number(a.total_spent), visited_sectors: a.visited_sectors ?? [], referred_by: a.referred_by ?? null, checked_in_at: a.checked_in_at ?? null })),
+    event_attendees: allAttendees.map((a) => ({ ...a, persona_id: a.persona_id ?? null, total_spent: Number(a.total_spent), visited_sectors: a.visited_sectors ?? [], referred_by: a.referred_by ?? null, checked_in_at: a.checked_in_at ?? null })),
     connections,
     squads,
     squad_members: squadMembers.filter((m) => squadIds.has(m.squad_id)),
@@ -173,12 +281,35 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
     payout_aliases: aliases,
     admin_stats: adminStats,
     promoter_stats: promoterStats,
+    staff_assignments: assignments,
+    staff_invites: invites.map((i) => ({ ...i, token_hash: "" })),
+    terminal_pins: terminalPins.map((p) => ({ ...p, pin_hash: null })),
+    audit_log: audit,
+    user_reports: reports,
+    platform_admin_ids: platformAdmin ? [userId] : [],
+    superadmin: platformAdmin
+      ? await sb.rpc("superadmin_snapshot").then(
+          (r) => {
+            const d = r.data as NonNullable<RougeState["superadmin"]> | null;
+            return d ? { events: d.events, staff: d.staff.map((x) => ({ ...x, platform: PLATFORM_ROLE[x.role], active_now: !x.revoked_at })) } : null;
+          },
+          () => null,
+        )
+      : null,
+    ticket_lists: lists.map((l) => ({ ...l, late_price: Number(l.late_price) })),
+    qr_secrets: qrSecrets,
+    org_contacts: orgContacts.map((c) => ({ ...c, total_spent: Number(c.total_spent) })),
+    campaigns,
+    campaign_contacts: campaignContacts,
+    organization_settings: orgSettings,
+    vip_reservations: vipReservations.map((r) => ({ ...r, total_amount: Number(r.total_amount) })),
+    event_curves_history: curves.map((c) => ({ ...c, points: c.points.map((p) => ({ m: Number(p.m), entries: Number(p.entries), sales: Number(p.sales) })) })),
   };
   return { state, isStaff };
 }
 
 /** Tablas publicadas en `supabase_realtime` (ver schema.sql) que disparan una re-sincronización. */
-const REALTIME_TABLES = ["messages", "map_pins", "connections", "squad_members", "squads", "blast_deliveries", "user_perks_qrs", "bar_orders", "song_requests", "raffles", "event_attendees", "brands", "squad_expenses", "squad_settlements"];
+const REALTIME_TABLES = ["user_reports", "staff_assignments", "messages", "map_pins", "connections", "squad_members", "squads", "blast_deliveries", "user_perks_qrs", "bar_orders", "song_requests", "raffles", "event_attendees", "brands", "squad_expenses", "squad_settlements", "profile_personas", "meetings", "venue_spots"];
 
 /**
  * Escucha cambios relevantes. Realtime respeta RLS: cada usuario solo recibe

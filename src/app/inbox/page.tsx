@@ -2,19 +2,23 @@
 
 import * as C from "@/lib/store/commands";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Heart, MessageCircle, X, Zap } from "lucide-react";
 import type { Connection, Profile } from "@/lib/types";
 import { computeAffinity } from "@/lib/engine/affinity";
 import { respondConnection } from "@/lib/engine/actions";
-import { directMessages, getAttendee, getEvent, getProfile, inboxOf, matchesOf } from "@/lib/engine/selectors";
+import { getAttendee, getProfile, inboxOf } from "@/lib/engine/selectors";
+import { faceOf, verticalOf } from "@/lib/engine/verticals";
 import { useRouge } from "@/lib/store/RougeContext";
 import { useRequireProfile } from "@/lib/store/hooks";
 import { cn, timeAgo } from "@/lib/utils";
 import { useMatchCelebration } from "@/components/lobby/MatchCelebration";
+import { ConversationList, NoChatSelected, useConversations } from "@/components/chat/ConversationList";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { profileHref } from "@/lib/engine/privacy";
+import { awaitsMe, meetingsOf } from "@/lib/engine/meetings";
 
 export default function InboxPage() {
   const me = useRequireProfile();
@@ -27,30 +31,21 @@ function Inbox() {
   const router = useRouter();
   const meId = state.current_user_id;
   const eventId = state.active_event_id;
-  const me = getProfile(state, meId)!;
+  const me = faceOf(state, meId, eventId) ?? getProfile(state, meId)!;
+  const v = verticalOf(state, eventId);
+  const toAnswer = meetingsOf(state, meId, eventId).filter((m) => awaitsMe(m, meId)).length;
   const celebration = useMatchCelebration();
   const requests = inboxOf(state, meId, eventId);
   const [tab, setTab] = useState<"requests" | "matches">(requests.length ? "requests" : "matches");
 
-  // Matches de TODOS los eventos: sobreviven a la caducidad del lobby.
-  const matches = useMemo(
-    () =>
-      matchesOf(state, meId)
-        .map((m) => {
-          const msgs = directMessages(state, m.connection.id);
-          const last = msgs.at(-1);
-          return { ...m, last, sortKey: last?.created_at ?? m.connection.responded_at ?? m.connection.created_at };
-        })
-        .sort((a, b) => +new Date(b.sortKey) - +new Date(a.sortKey)),
-    [state, meId],
-  );
+  const matches = useConversations();
   const sent = state.connections.filter((c) => c.event_id === eventId && c.sender_id === meId && c.status === "pending");
 
   const respond = async (c: Connection, other: Profile, accept: boolean, thenChat = false) => {
     const r = await exec(C.respondConnection(c.id, meId, accept));
     if (!r.ok) return;
     if (!accept) {
-      notify({ tone: "info", title: c.type === "icebreaker" ? "Rompehielos ignorado" : "Solicitud rechazada", description: "No le avisamos.", duration: 2200 });
+      notify({ tone: "info", title: c.type === "icebreaker" ? `${verticalOf(state, c.event_id).copy.icebreaker} ignorado` : "Solicitud rechazada", description: "No le avisamos.", duration: 2200 });
       return;
     }
     if (thenChat) router.push(`/chat/${c.id}`);
@@ -58,14 +53,21 @@ function Inbox() {
   };
 
   return (
-    <main className="safe-top">
-      <header className="sticky top-0 z-30 bg-background/85 px-4 pb-2 pt-4 backdrop-blur-xl">
-        <h1 className="text-2xl">Bandeja</h1>
+    <div className="lg:grid lg:grid-cols-[minmax(320px,35%)_1fr] lg:gap-6">
+    <main className="safe-top lg:border-r lg:border-white/10">
+      <header className="sticky top-0 z-30 bg-background/85 px-4 pb-2 pt-4 backdrop-blur-xl md:pt-6">
+        <div className="flex items-center justify-between gap-2">
+          <h1 className="text-2xl">Bandeja</h1>
+          <Link href="/meetings" className="glass-pill inline-flex min-h-[40px] items-center gap-1.5 px-3 text-xs">
+            📅 {v.kind === "corporate" ? "Reuniones" : "Encuentros"}
+            {toAnswer > 0 && <span className="rounded-full bg-squad px-1.5 font-bold text-background">{toAnswer}</span>}
+          </Link>
+        </div>
         <div role="tablist" className="mt-3 grid grid-cols-2 rounded-2xl bg-white/[0.05] p-1">
           {(
             [
               ["requests", `Solicitudes${requests.length ? ` · ${requests.length}` : ""}`],
-              ["matches", `Matches · ${matches.length}`],
+              ["matches", `${v.copy.matches} · ${matches.length}`],
             ] as const
           ).map(([key, label]) => (
             <button
@@ -87,16 +89,16 @@ function Inbox() {
             {requests.length === 0 && <EmptyNote>No tenés solicitudes nuevas. Conectá desde la grilla del lobby 💘</EmptyNote>}
             {requests.map(({ connection: c, profile: p }) => {
               const att = getAttendee(state, eventId, p.id);
-              const aff = att ? computeAffinity(me, getAttendee(state, eventId, meId), p, att) : null;
+              const aff = att ? computeAffinity(me, getAttendee(state, eventId, meId), p, att, Date.now(), v.kind) : null;
               const drink = c.attached_drink_qr_id ? state.user_perks_qrs.find((q) => q.id === c.attached_drink_qr_id) : undefined;
               if (c.type === "icebreaker") {
                 return (
                   <article key={c.id} className="relative overflow-hidden rounded-3xl border border-rouge/50 bg-rouge/[0.08] p-4 shadow-glow-rouge">
                     <p className="mb-3 flex items-center gap-1.5 font-display text-xs font-bold uppercase tracking-wider text-rouge">
-                      <Zap className="size-3.5 fill-current" /> Rompehielos · fijado
+                      <Zap className="size-3.5 fill-current" /> {v.copy.icebreaker} · {v.kind === "corporate" ? "fijada" : "fijado"}
                     </p>
                     <div className="flex gap-3">
-                      <Link href={`/u/${p.username}`}>
+                      <Link href={profileHref(p, c.event_id)}>
                         <Avatar profile={p} size={52} ring="rouge" />
                       </Link>
                       <div className="min-w-0 flex-1">
@@ -124,12 +126,12 @@ function Inbox() {
               }
               return (
                 <article key={c.id} className="glass flex items-center gap-3 rounded-2xl p-3">
-                  <Link href={`/u/${p.username}`} className="flex min-w-0 flex-1 items-center gap-3">
+                  <Link href={profileHref(p, c.event_id)} className="flex min-w-0 flex-1 items-center gap-3">
                     <Avatar profile={p} size={52} />
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold">{p.full_name.split(" ")[0]} te dio Conectar</p>
                       <p className="truncate text-xs text-muted">
-                        {aff ? `${aff.musicPercent}% afinidad · ` : ""}
+                        {aff ? `${aff.percent}% afinidad · ` : ""}
                         {timeAgo(c.created_at)}
                       </p>
                     </div>
@@ -148,9 +150,9 @@ function Inbox() {
                 <h2 className="mb-2 text-sm text-muted">Enviadas · esperando respuesta</h2>
                 <div className="no-scrollbar flex gap-3 overflow-x-auto">
                   {sent.map((c) => {
-                    const p = getProfile(state, c.receiver_id);
+                    const p = faceOf(state, c.receiver_id, c.event_id);
                     return p ? (
-                      <Link key={c.id} href={`/u/${p.username}`} className="flex w-16 shrink-0 flex-col items-center gap-1 text-center">
+                      <Link key={c.id} href={profileHref(p, c.event_id)} className="flex w-16 shrink-0 flex-col items-center gap-1 text-center">
                         <Avatar profile={p} size={52} className={c.type === "icebreaker" ? "ring-2 ring-rouge" : "opacity-80"} />
                         <span className="w-full truncate text-[11px] text-muted">{c.type === "icebreaker" ? "⚡ " : ""}{p.full_name.split(" ")[0]}</span>
                       </Link>
@@ -164,27 +166,17 @@ function Inbox() {
 
         {tab === "matches" && (
           <>
-            {matches.length === 0 && <EmptyNote>Todavía no tenés matches. Cuando alguien te conecte de vuelta, aparece acá para siempre.</EmptyNote>}
-            {matches.map(({ connection: c, profile: p, last }) => (
-              <Link key={c.id} href={`/chat/${c.id}`} className="glass flex min-h-[72px] items-center gap-3 rounded-2xl p-3 transition hover:bg-white/10">
-                <Avatar profile={p} size={52} ring="rouge" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <p className="truncate font-semibold">{p.full_name.split(" ")[0]}</p>
-                    <span className="shrink-0 text-[11px] text-muted">{timeAgo(last?.created_at ?? c.responded_at ?? c.created_at)}</span>
-                  </div>
-                  <p className={cn("truncate text-sm", last && last.sender_id !== meId ? "text-primary" : "text-muted")}>
-                    {last ? `${last.sender_id === meId ? "Vos: " : ""}${last.message_type === "image" ? "📷 Foto" : last.content}` : "¡Es un Match! Escribile primero 👋"}
-                  </p>
-                  <p className="truncate text-[11px] text-muted/70">{getEvent(state, c.event_id)?.name}</p>
-                </div>
-              </Link>
-            ))}
+            <ConversationList />
           </>
         )}
       </div>
       {celebration.element}
     </main>
+      {/* PC: vista dividida — el chat se abre a la derecha (ver /chat/[id]) */}
+      <aside className="sticky top-0 hidden h-dvh py-6 lg:block">
+        <NoChatSelected />
+      </aside>
+    </div>
   );
 }
 

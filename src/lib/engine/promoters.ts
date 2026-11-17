@@ -7,9 +7,11 @@
  * Dueño/a y producción ven a todos, fijan la comisión por ingreso y liquidan.
  * Contraparte SQL: promoter_links, ensure_promoter_link, set_promoter_commission, promoter_stats, join_event (p_code RP…).
  */
-import type { PromoterLink, RougeState, UUID } from "@/lib/types";
+import type { CommissionTier, PromoterLink, RougeState, UUID } from "@/lib/types";
 import { shortCode, uid } from "@/lib/utils";
 import { can, staffRoleOf } from "./roles";
+import { FEATURE_DISABLED, featureOn } from "./features";
+import { NOT_IN_VERTICAL, hasFeature } from "./verticals";
 
 type R<T> = { ok: true; state: RougeState; data: T } | { ok: false; error: string };
 const fail = (error: string): { ok: false; error: string } => ({ ok: false, error });
@@ -24,6 +26,8 @@ export const promoterLinkOf = (s: RougeState, eventId: UUID, userId: UUID) => s.
  * equipo. El código lo genera el servidor (en Supabase el comando no es optimista).
  */
 export function ensurePromoterLink(state: RougeState, eventId: UUID, promoterId: UUID, actorId: UUID, now = Date.now()): R<PromoterLink> {
+  if (!featureOn(state, eventId, "enableRrpp")) return fail(FEATURE_DISABLED);
+  if (!hasFeature(state, eventId, "promoters")) return fail(NOT_IN_VERTICAL);
   if (staffRoleOf(state, eventId, promoterId) !== "promoter") return fail("Esa persona no es RRPP de este evento: sumala al equipo con el rol RRPP.");
   if (actorId !== promoterId && !can(state, eventId, actorId, "admin.events")) return fail("Tu rol no tiene permiso para esto.");
   const existing = promoterLinkOf(state, eventId, promoterId);
@@ -80,4 +84,85 @@ export function promoterStats(state: RougeState, eventId: UUID, viewerId: UUID):
       return { user_id: uidP, link, entries: mine.length, checked_in: checked, billable, to_pay: Math.round(billable * (link?.commission_per_entry ?? 0) * 100) / 100 };
     })
     .sort((a, b) => b.entries - a.entries);
+}
+
+// ── Liquidación escalonada (v1.7) ────────────────────────────────────
+
+export const MAX_TIERS = 6;
+
+/** Esquema por defecto sugerido: 1–30 al 15 %, desde la 31 al 20 %. */
+export const DEFAULT_TIERS: CommissionTier[] = [
+  { from: 1, percent: 15 },
+  { from: 31, percent: 20 },
+];
+
+export function checkTiers(tiers: CommissionTier[]): string | null {
+  if (tiers.length > MAX_TIERS) return `Máximo ${MAX_TIERS} tramos.`;
+  const sorted = [...tiers].sort((a, b) => a.from - b.from);
+  if (sorted.length && sorted[0].from !== 1) return "El primer tramo tiene que empezar en la entrada 1.";
+  for (let i = 0; i < sorted.length; i++) {
+    const t = sorted[i];
+    if (!Number.isInteger(t.from) || t.from < 1) return "Cada tramo empieza en una entrada (1, 31, 61…).";
+    if (!Number.isFinite(t.percent) || t.percent < 0 || t.percent > 100) return "El porcentaje va de 0 a 100.";
+    if (i && t.from === sorted[i - 1].from) return "Dos tramos no pueden empezar en la misma entrada.";
+  }
+  return null;
+}
+
+export interface PromoterSettlement {
+  /** Ingresos liquidables (en puerta si se escanea; si no, en la app). */
+  billable: number;
+  fixed: number;
+  /** Detalle por tramo: cuántas entradas cayeron en cada uno y cuánto suman. */
+  tiers: { from: number; to: number | null; percent: number; entries: number; amount: number }[];
+  tickets: number;
+  bar_spend: number;
+  bar: number;
+  total: number;
+}
+
+const money = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * Liquidación de un RRPP: fijo por ingreso + tramos MARGINALES sobre el precio de la entrada (las primeras 30 al 15 %,
+ * de la 31 en adelante al 20 %) + % sobre el consumo en barra de quienes entraron por su link.
+ */
+export function settlePromoter(link: Pick<PromoterLink, "commission_per_entry" | "ticket_price" | "commission_tiers" | "bar_commission_percent"> | null, billable: number, barSpend: number): PromoterSettlement {
+  const price = link?.ticket_price ?? 0;
+  const tiers = [...(link?.commission_tiers ?? [])].sort((a, b) => a.from - b.from);
+  const rows = tiers.map((t, i) => {
+    const to = tiers[i + 1] ? tiers[i + 1].from - 1 : null;
+    const entries = Math.max(0, Math.min(billable, to ?? billable) - t.from + 1);
+    return { from: t.from, to, percent: t.percent, entries, amount: money((entries * price * t.percent) / 100) };
+  });
+  const fixed = money(billable * (link?.commission_per_entry ?? 0));
+  const tickets = money(rows.reduce((a, r) => a + r.amount, 0));
+  const bar = money((barSpend * (link?.bar_commission_percent ?? 0)) / 100);
+  return { billable, fixed, tiers: rows, tickets, bar_spend: barSpend, bar, total: money(fixed + tickets + bar) };
+}
+
+/** Consumo en barra de las personas que entraron por el link de un RRPP (demo; en Supabase lo da promoter_stats). */
+export function promoterBarSpend(state: RougeState, eventId: UUID, promoterId: UUID): number {
+  const fromServer = state.promoter_stats?.find((r) => r.user_id === promoterId)?.bar_spend;
+  if (fromServer != null) return Number(fromServer);
+  return state.event_attendees.filter((a) => a.event_id === eventId && a.referred_by === promoterId).reduce((a, x) => a + x.total_spent, 0);
+}
+
+export interface PromoterSchemeInput {
+  ticket_price: number;
+  tiers: CommissionTier[];
+  bar_percent: number;
+}
+
+/** Dueño/a o producción configuran el esquema escalonado de un RRPP. */
+export function setPromoterScheme(state: RougeState, linkId: UUID, input: PromoterSchemeInput, actorId: UUID): R<PromoterLink> {
+  const link = state.promoter_links.find((l) => l.id === linkId);
+  if (!link) return fail("Ese link no existe.");
+  if (!can(state, link.event_id, actorId, "admin.events")) return fail("Tu rol no tiene permiso para esto.");
+  if (!Number.isFinite(input.ticket_price) || input.ticket_price < 0 || input.ticket_price > MAX_COMMISSION) return fail("Ingresá un precio de entrada válido.");
+  if (!Number.isFinite(input.bar_percent) || input.bar_percent < 0 || input.bar_percent > 100) return fail("El % de barra va de 0 a 100.");
+  const err = checkTiers(input.tiers);
+  if (err) return fail(err);
+  const next: PromoterLink = { ...link, ticket_price: money(input.ticket_price), commission_tiers: [...input.tiers].sort((a, b) => a.from - b.from), bar_commission_percent: money(input.bar_percent) };
+  return { ok: true, state: { ...state, promoter_links: state.promoter_links.map((l) => (l.id === linkId ? next : l)) }, data: next };
 }

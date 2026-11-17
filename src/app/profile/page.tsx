@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { Check, ChevronRight, Lock, PencilLine, QrCode, ShieldCheck } from "lucide-react";
+import { Check, ChevronRight, Lock, PencilLine, QrCode, ShieldCheck, UsersRound } from "lucide-react";
+import { faceOf, personasOf } from "@/lib/engine/verticals";
 import { useShare } from "@/components/share/ShareSheet";
 import { formatPhone, profileCompleteness } from "@/lib/engine/profile";
 import { getAttendee } from "@/lib/engine/selectors";
@@ -11,6 +12,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { ProfileView } from "@/components/profile/ProfileView";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { APP_NAME } from "@/lib/brand";
 
 export default function MyProfilePage() {
   const { state, mode, signOut } = useRouge();
@@ -19,15 +21,18 @@ export default function MyProfilePage() {
   if (!me) return null;
   const att = getAttendee(state, state.active_event_id, me.id);
   const { percent, items } = profileCompleteness(me);
+  const personas = personasOf(state, me.id);
+  // "Así te ven" en el evento activo: con el perfil que elegiste para ese evento.
+  const face = att ? faceOf(state, me.id, state.active_event_id) : null;
 
-  const share = () => shareSheet.open({ url: `/u/${me.username}`, title: `@${me.username} en ROUGE`, text: `Encontrame en ROUGE: @${me.username} ✨`, fileName: `rouge-${me.username}`, accent: "rouge", caption: `@${me.username}` });
+  const share = () => shareSheet.open({ url: `/u/${me.username}`, title: `@${me.username} en ${APP_NAME}`, text: `Encontrame en ${APP_NAME}: @${me.username} ✨`, fileName: `rouge-pass-${me.username}`, accent: "rouge", caption: `@${me.username}` });
 
   return (
     <main className="pb-12">
       {shareSheet.sheet}
       <PageHeader
         title="Mi perfil"
-        subtitle="Así te ven los demás asistentes"
+        subtitle={face?.persona ? `Así te ven en este evento · ${face.persona.label}` : "Así te ven los demás asistentes"}
         backHref="/app"
         action={
           <button type="button" onClick={share} aria-label="QR de mi perfil" className="grid size-11 place-items-center rounded-full hover:bg-white/5">
@@ -37,7 +42,7 @@ export default function MyProfilePage() {
       />
       <div className="space-y-5 px-4">
         <ProfileView
-          profile={me}
+          profile={face ?? me}
           mood={att?.mood_tag}
           actions={
             <div className="grid grid-cols-2 gap-2">
@@ -50,6 +55,20 @@ export default function MyProfilePage() {
             </div>
           }
         />
+
+        {/* Una cuenta, varias caras */}
+        <Link href="/profile/personas" className="glass flex min-h-touch items-center gap-3 rounded-2xl p-4">
+          <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-squad/15 text-squad">
+            <UsersRound className="size-5" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block font-semibold">Mis perfiles</span>
+            <span className="block text-xs text-muted">
+              {personas.length ? `Principal + ${personas.length} más · ` : ""}elegí con cuál mostrarte en cada evento (noche o corporativo)
+            </span>
+          </span>
+          <ChevronRight className="size-4 text-muted" />
+        </Link>
 
         {percent < 100 && (
           <section className="glass rounded-3xl p-4">

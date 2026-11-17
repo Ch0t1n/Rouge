@@ -4,7 +4,8 @@ import * as C from "@/lib/store/commands";
 import { useMemo, useRef, useState } from "react";
 import { Ban, Copy, Download, ImagePlus, Link2, Plus, Printer, QrCode, Save, Trash2 } from "lucide-react";
 import Link from "next/link";
-import type { LineupSlot, RougeEvent } from "@/lib/types";
+import type { EventKind, LineupSlot, RougeEvent } from "@/lib/types";
+import { vertical } from "@/lib/engine/verticals";
 import { generateInviteCodes, upsertEvent } from "@/lib/engine/actions";
 import { lobbyPhase } from "@/lib/engine/selectors";
 import { myBrands } from "@/lib/engine/branding";
@@ -15,6 +16,12 @@ import { cn, formatDateTime, toCSV, uid } from "@/lib/utils";
 import { AdminHeader, downloadCSV, Panel } from "@/components/admin/AdminChrome";
 import { useShare } from "@/components/share/ShareSheet";
 import { TeamPanel } from "@/components/admin/TeamPanel";
+import { OrgStaffPanel, TerminalPinPanel } from "@/components/admin/OrgStaffPanel";
+import { AuditPanel } from "@/components/admin/AuditPanel";
+import { TicketListsPanel } from "@/components/admin/TicketListsPanel";
+import { EventBuilderWizard } from "@/components/admin/EventBuilderWizard";
+import { EventModulesPanel } from "@/components/admin/EventModulesPanel";
+import { canManageModules } from "@/lib/engine/eventAdmin";
 import { ApiKeysPanel } from "@/components/admin/ApiKeysPanel";
 import { EventLifecyclePanel } from "@/components/admin/EventLifecyclePanel";
 import { can } from "@/lib/engine/roles";
@@ -22,7 +29,10 @@ import { VenueMap } from "@/components/venue/VenueMap";
 import { VENUE_LAYOUT } from "@/lib/mock/seed";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { TextAreaField, TextField } from "@/components/ui/field";
+import { Segmented, TextAreaField, TextField } from "@/components/ui/field";
+import { APP_NAME } from "@/lib/brand";
+import { Switch } from "@/components/ui/switch";
+import { VenueSpotsPanel } from "@/components/admin/VenueSpotsPanel";
 
 const H = 3_600_000;
 /** ISO → valor de <input type="datetime-local"> en hora local */
@@ -38,16 +48,21 @@ export default function AdminEventsPage() {
   const mine = state.events.filter((e) => can(state, e.id, state.current_user_id, "admin.events"));
   const [editing, setEditing] = useState<string | "new">(mine.some((e) => e.id === state.active_event_id) ? state.active_event_id : "new");
   const event = editing === "new" ? null : mine.find((e) => e.id === editing) ?? null;
+  // v1.8: crear eventos y configurar módulos es de ROUGE HQ; el dueño/a usa el MISMO creador si tiene autogestión.
+  const selfService = canManageModules(state, state.current_user_id, state.current_user_id);
+  const [builder, setBuilder] = useState(false);
 
   return (
-    <main className="mx-auto max-w-7xl space-y-6 px-5 py-6 lg:px-10 lg:py-10">
+    <main className="mx-auto max-w-7xl 2xl:max-w-[1600px] space-y-6 px-5 py-6 lg:px-10 lg:py-10">
       <AdminHeader
         title="Eventos y accesos"
         subtitle="Configurá la fiesta, el lobby, el plano y los links de ingreso."
         actions={
-          <Button variant="vip" onClick={() => setEditing("new")}>
-            <Plus /> Nuevo evento
-          </Button>
+          selfService ? (
+            <Button variant="vip" onClick={() => setBuilder(true)}>
+              <Plus /> Nuevo evento
+            </Button>
+          ) : undefined
         }
       />
       <div className="no-scrollbar flex gap-2 overflow-x-auto">
@@ -66,14 +81,50 @@ export default function AdminEventsPage() {
           </button>
         ))}
       </div>
-      <EventEditor key={editing} event={event} onSaved={(id) => { setEditing(id); setActiveEvent(id); }} />
+      {builder ? (
+        <Panel title="Nuevo evento">
+          <EventBuilderWizard
+            defaultOrgId={state.current_user_id}
+            onCancel={() => setBuilder(false)}
+            onDone={(id) => {
+              setBuilder(false);
+              setEditing(id);
+              setActiveEvent(id);
+            }}
+          />
+        </Panel>
+      ) : event ? (
+        <EventEditor key={editing} event={event} onSaved={(id) => { setEditing(id); setActiveEvent(id); }} />
+      ) : (
+        <Panel title="Nuevo evento">
+          <p className="text-sm text-muted">
+            {selfService ? "Creá tu evento con el creador: datos, fechas, listas, line-up, estética y módulos." : "La creación de eventos la gestiona ROUGE. Pedí que activen la autogestión de tu organización para crearlos vos."}
+          </p>
+          {selfService && (
+            <Button variant="vip" className="mt-4" onClick={() => setBuilder(true)}>
+              <Plus /> Abrir el creador
+            </Button>
+          )}
+        </Panel>
+      )}
+      {event && !builder && <EventModulesPanel event={event} editable={canManageModules(state, state.current_user_id, event.created_by)} />}
       {event && <AccessPanel event={event} />}
+      {event && can(state, event.id, state.current_user_id, "admin.events") && <TicketListsPanel event={event} />}
+      {event && <VenueSpotsPanel event={event} />}
       {event && (
         <div className="grid gap-6 xl:grid-cols-3">
           <ApiKeysPanel event={event} />
         </div>
       )}
       {event && can(state, event.id, state.current_user_id, "admin.team") && <TeamPanel event={event} />}
+      {/* Staff por organización: solo quien es dueño/a de SUS eventos (organización = su cuenta). */}
+      {event && event.created_by === state.current_user_id && (
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+          <OrgStaffPanel />
+          <TerminalPinPanel orgId={state.current_user_id} />
+        </div>
+      )}
+      {event && event.created_by && can(state, event.id, state.current_user_id, "admin.events") && <AuditPanel orgId={event.created_by} />}
       {event && (
         <EventLifecyclePanel
           key={`lifecycle-${event.id}`} // distinto del key del EventEditor (mismos hermanos)
@@ -97,6 +148,11 @@ function EventEditor({ event, onSaved }: { event: RougeEvent | null; onSaved: (i
     start.setHours(23, 30, 0, 0);
     return { starts: start.toISOString(), ends: new Date(start.getTime() + 6 * H).toISOString() };
   }, []);
+  const [kind, setKind] = useState<EventKind>(event?.kind ?? "nightlife");
+  // La vertical no cambia una vez que entró gente (moods y perfiles ya elegidos): mismo control que el servidor.
+  const kindLocked = !!event && state.event_attendees.some((a) => a.event_id === event.id);
+  const v = vertical(kind);
+  const [checkinOnly, setCheckinOnly] = useState(event?.networking_checkin_only ?? false);
   const [name, setName] = useState(event?.name ?? "");
   const [slug, setSlug] = useState(event?.slug ?? "");
   const [venue, setVenue] = useState(event?.venue_name ?? "");
@@ -119,6 +175,8 @@ function EventEditor({ event, onSaved }: { event: RougeEvent | null; onSaved: (i
       C.upsertEvent({
         // Un evento nuevo arranca con mi marca (logo, colores y cobro); se cambia en Marca y cobros.
         ...(event ? { id: event.id } : { brand_id: myBrands(state)[0]?.id ?? null }),
+        kind,
+        networking_checkin_only: checkinOnly,
         name,
         slug: slug || undefined,
         venue_name: venue,
@@ -161,6 +219,24 @@ function EventEditor({ event, onSaved }: { event: RougeEvent | null; onSaved: (i
   return (
     <div className="grid gap-6 xl:grid-cols-3">
       <Panel title={event ? "Datos del evento" : "Nuevo evento"} className="xl:col-span-2">
+        <div className="mb-5 space-y-2">
+          <Segmented<EventKind>
+            label="Tipo de evento"
+            options={[
+              { value: "nightlife", label: "🌙 Noche · ROUGE" },
+              { value: "corporate", label: "💼 Corporativo · ROUGE Pro" },
+            ]}
+            value={kind}
+            onChange={(k) => !kindLocked && setKind(k)}
+          />
+          <p className="text-xs text-muted">
+            {kindLocked
+              ? "Ya entró gente con perfiles y moods de este tipo: el tipo de evento no se puede cambiar."
+              : kind === "corporate"
+                ? "Networking por lo que cada uno busca y ofrece, perfil profesional obligatorio, Agenda en lugar de Line-up y sin RRPP, pedidos de temas ni trago de regalo."
+                : "Grilla por afinidad musical, Rompehielos con trago de regalo, RRPP, pedidos al DJ y Line-up."}
+          </p>
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField label="Nombre" value={name} onChange={(e) => setName(e.target.value)} placeholder="ROUGE Night × Bresh" />
           <TextField label="Link del evento" prefix="/join/" className="pl-[4.2rem]" value={slug} onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))} placeholder="se genera del nombre" />
@@ -171,28 +247,38 @@ function EventEditor({ event, onSaved }: { event: RougeEvent | null; onSaved: (i
           <TextField label="El lobby abre (horas antes)" type="number" min={0} value={opensBefore} onChange={(e) => setOpensBefore(Number(e.target.value))} hint="Para armar Squads y conectar antes de la fiesta." />
           <TextField label="El lobby cierra (horas después)" type="number" min={0} value={closesAfter} onChange={(e) => setClosesAfter(Number(e.target.value))} hint="Efecto Cenicienta: los matches y chats quedan." />
         </div>
+        <div className="mt-4 rounded-2xl border border-white/10 px-3">
+          <Switch
+            tone="squad"
+            id="checkin-only"
+            checked={checkinOnly}
+            onCheckedChange={setCheckinOnly}
+            label="Networking solo para acreditados"
+            description="La grilla, Conectar, Rompehielos y las reuniones son solo entre quienes ya pasaron por la puerta (escáner). Ideal para congresos y eventos con lista nominal."
+          />
+        </div>
         <div className="mt-4">
           <TextAreaField label="Descripción" value={description} maxLength={300} onChange={(e) => setDescription(e.target.value)} />
         </div>
 
         <div className="mt-6">
           <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-base">Line-up</h3>
+            <h3 className="text-base">{v.copy.lineup}</h3>
             <Button size="sm" variant="glass" onClick={addSlot}>
-              <Plus /> Agregar set
+              <Plus /> Agregar {v.copy.lineupItem}
             </Button>
           </div>
-          {lineup.length === 0 && <p className="rounded-2xl border border-dashed border-white/10 p-4 text-center text-sm text-muted">Sin sets todavía.</p>}
+          {lineup.length === 0 && <p className="rounded-2xl border border-dashed border-white/10 p-4 text-center text-sm text-muted">Sin {v.copy.lineupItem === "set" ? "sets" : "charlas"} todavía.</p>}
           <ul className="space-y-2">
             {lineup.map((sl) => (
               <li key={sl.id} className="grid grid-cols-1 items-end gap-2 rounded-2xl border border-white/10 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] 2xl:grid-cols-[minmax(10rem,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_auto_auto]">
                 <div className="min-w-0 sm:col-span-4 2xl:col-span-1">
-                  <TextField label="Artista" value={sl.artist} onChange={(e) => patchSlot(sl.id, { artist: e.target.value })} />
+                  <TextField label={v.copy.lineupArtist} value={sl.artist} onChange={(e) => patchSlot(sl.id, { artist: e.target.value })} />
                 </div>
                 <TextField label="Desde" type="datetime-local" value={toLocal(sl.starts_at)} onChange={(e) => patchSlot(sl.id, { starts_at: fromLocal(e.target.value) })} />
                 <TextField label="Hasta" type="datetime-local" value={toLocal(sl.ends_at)} onChange={(e) => patchSlot(sl.id, { ends_at: fromLocal(e.target.value) })} />
                 <label className="flex min-h-[52px] items-center gap-2 text-sm">
-                  <input type="checkbox" checked={!!sl.is_headliner} onChange={(e) => patchSlot(sl.id, { is_headliner: e.target.checked })} className="size-5 accent-rouge" /> Headliner
+                  <input type="checkbox" checked={!!sl.is_headliner} onChange={(e) => patchSlot(sl.id, { is_headliner: e.target.checked })} className="size-5 accent-rouge" /> {kind === "corporate" ? "Destacada" : "Headliner"}
                 </label>
                 <Button size="icon" variant="ghost" aria-label={`Quitar ${sl.artist || "set"}`} onClick={() => setLineup(lineup.filter((x) => x.id !== sl.id))}>
                   <Trash2 />
@@ -276,7 +362,7 @@ function AccessPanel({ event }: { event: RougeEvent }) {
             size="icon"
             variant="glass"
             aria-label="Ver QR del link maestro"
-            onClick={() => share.open({ url: masterLink, title: `QR de ${event.name}`, text: `Entrá al lobby de ${event.name} en ROUGE 🔴`, fileName: `rouge-${event.slug}`, accent: "vip", caption: event.master_invite_code })}
+            onClick={() => share.open({ url: masterLink, title: `QR de ${event.name}`, text: `Entrá al lobby de ${event.name} en ${APP_NAME} 🔴`, fileName: `rouge-pass-${event.slug}`, accent: "vip", caption: event.master_invite_code })}
           >
             <QrCode />
           </Button>
@@ -362,7 +448,7 @@ function AccessPanel({ event }: { event: RougeEvent }) {
                         size="sm"
                         variant="ghost"
                         aria-label={`QR de ${c.code}`}
-                        onClick={() => share.open({ url: `${origin}/join/${c.code}`, title: `Entrada ${c.code}`, text: `Tu acceso a ${event.name} en ROUGE (1 uso, no lo compartas) 🎟️`, fileName: `rouge-${c.code}`, accent: "vip", caption: c.code })}
+                        onClick={() => share.open({ url: `${origin}/join/${c.code}`, title: `Entrada ${c.code}`, text: `Tu acceso a ${event.name} en ${APP_NAME} (1 uso, no lo compartas) 🎟️`, fileName: `rouge-${c.code}`, accent: "vip", caption: c.code })}
                       >
                         <QrCode />
                       </Button>

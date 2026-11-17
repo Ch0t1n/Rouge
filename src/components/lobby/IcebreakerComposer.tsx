@@ -11,8 +11,11 @@ import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Avatar } from "@/components/ui/avatar";
+import { verticalOf } from "@/lib/engine/verticals";
 
 const OPENERS = ["Te vi en la pista y tenía que decirte algo 🔥", "¿Qué tema le pedirías al DJ ahora?", "Tu energía en la pista es otra cosa ✨", "¿Barra o pista? Te debo un trago 🍸"];
+/** Corporativo: la "Presentación" (1 por evento) para pedir una charla o una reunión. */
+const PRO_OPENERS = ["¿Tomamos un café en el coffee break?", "Me interesa lo que ofrecés, ¿5 minutos en la ronda de negocios?", "Creo que podemos trabajar juntos, ¿hablamos?", "Te vi en la charla, ¿te puedo hacer una consulta?"];
 
 /** La bala única de la noche: mensaje directo sin match previo (+ trago QR opcional). */
 export function IcebreakerComposer({ open, onClose, target, eventId }: { open: boolean; onClose: () => void; target: Profile; eventId: string }) {
@@ -22,6 +25,9 @@ export function IcebreakerComposer({ open, onClose, target, eventId }: { open: b
   const [drink, setDrink] = useState<string | null>(null);
   const drinks = state.bar_menu.filter((i) => i.is_available && GIFTABLE_CATEGORIES.includes(i.category));
   const first = target.full_name.split(" ")[0];
+  const v = verticalOf(state, eventId);
+  const pro = v.kind === "corporate";
+  const name = v.copy.icebreaker;
 
   const send = async () => {
     const r = await exec(C.sendIcebreaker(eventId, state.current_user_id, target.id, { message: text, giftDrinkItemId: gift && drink ? drink : undefined }));
@@ -30,7 +36,7 @@ export function IcebreakerComposer({ open, onClose, target, eventId }: { open: b
       setText("");
       notify({
         tone: "rouge",
-        title: "⚡ Rompehielos enviado",
+        title: pro ? "⚡ Presentación enviada" : "⚡ Rompehielos enviado",
         description: r.data.attached_drink_qr_id ? `Aparece fijado arriba en la bandeja de ${first}, con tu trago de regalo.` : `Aparece fijado arriba en la bandeja de ${first}.`,
       });
     }
@@ -42,13 +48,13 @@ export function IcebreakerComposer({ open, onClose, target, eventId }: { open: b
       onClose={onClose}
       title={
         <span className="flex items-center gap-2">
-          <Zap className="size-5 fill-rouge text-rouge" /> Rompehielos para {first}
+          <Zap className="size-5 fill-rouge text-rouge" /> {name} para {first}
         </span>
       }
-      description="Tenés 1 sola bala esta noche. Le llega directo, sin necesidad de match."
+      description={pro ? "Tenés 1 sola por evento. Le llega directo y queda fijada arriba de su bandeja, sin necesidad de ser contactos." : "Tenés 1 sola bala esta noche. Le llega directo, sin necesidad de match."}
       footer={
         <Button block size="lg" onClick={send} disabled={!text.trim() || (gift && !drink)}>
-          <Send /> Disparar Rompehielos {gift && drink ? `· ${formatMoney(drinks.find((d) => d.id === drink)!.price)}` : ""}
+          <Send /> {pro ? "Enviar presentación" : "Disparar Rompehielos"} {gift && drink ? `· ${formatMoney(drinks.find((d) => d.id === drink)!.price)}` : ""}
         </Button>
       }
     >
@@ -71,13 +77,14 @@ export function IcebreakerComposer({ open, onClose, target, eventId }: { open: b
           </div>
         </div>
         <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5">
-          {OPENERS.map((o) => (
+          {(pro ? PRO_OPENERS : OPENERS).map((o) => (
             <button key={o} type="button" onClick={() => setText(o)} className="glass-pill shrink-0 whitespace-nowrap py-2 text-xs">
               {o}
             </button>
           ))}
         </div>
 
+        {v.features.icebreakerGift && (
         <div className="rounded-2xl border border-vip/30 bg-vip/[0.06] p-3">
           <Switch tone="vip" checked={gift} onCheckedChange={setGift} label="🍸 Adjuntar Trago Rompehielos" description="Le llega un QR para retirar en la barra. Se paga ahora." id="gift-drink" />
           {gift && (
@@ -103,6 +110,7 @@ export function IcebreakerComposer({ open, onClose, target, eventId }: { open: b
             </div>
           )}
         </div>
+        )}
       </div>
     </BottomSheet>
   );

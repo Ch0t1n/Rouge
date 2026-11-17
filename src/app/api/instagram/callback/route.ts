@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { verifyState } from "@/lib/instagram/oauth";
+import { rateLimited } from "@/lib/security/api";
 import { exchangeCode, fetchMe, IG_COOKIE, IgError, igConfig, igConfigured, redirectUri, saveConnection, sessionForInstagram, siteOrigin } from "@/lib/instagram/server";
 
 export const runtime = "nodejs";
@@ -12,9 +13,12 @@ export const dynamic = "force-dynamic";
  * Los errores vuelven a la pantalla de origen con ?ig_error=<código>.
  */
 export async function GET(req: NextRequest) {
+  const early = rateLimited(req, "igCallback");
+  if (early) return early;
+  if (!igConfigured()) return NextResponse.json({ error: "ig_not_configured" }, { status: 503 });
   const site = siteOrigin(req);
   const params = req.nextUrl.searchParams;
-  const st = igConfigured() ? verifyState(params.get("state"), igConfig().appSecret, req.cookies.get(IG_COOKIE)?.value) : null;
+  const st = verifyState(params.get("state"), igConfig().appSecret, req.cookies.get(IG_COOKIE)?.value);
   const back = (code: string) => {
     const target = st?.mode === "link" ? (st.next ?? "/profile/edit") : "/login";
     const url = new URL(target, site);
@@ -22,11 +26,13 @@ export async function GET(req: NextRequest) {
     return done(NextResponse.redirect(url, 303));
   };
   const done = (res: NextResponse) => {
-    res.cookies.set(IG_COOKIE, "", { path: "/api/instagram", maxAge: 0 });
+    res.cookies.set(IG_COOKIE, "", { path: "/api/instagram", maxAge: 0, httpOnly: true, sameSite: "lax" });
+    res.headers.set("Referrer-Policy", "no-referrer");
     return res;
   };
 
   if (!st) return back("ig_state");
+  // El state es de un solo uso: la cookie se borra en cualquier salida (done).
   if (params.get("error")) return back(params.get("error_reason") === "user_denied" || params.get("error") === "access_denied" ? "ig_denied" : "ig_oauth");
   const code = params.get("code");
   if (!code) return back("ig_oauth");

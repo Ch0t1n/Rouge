@@ -17,7 +17,7 @@ import { TextField } from "@/components/ui/field";
  * `value`/`onChange` es el @ manual del formulario (solo se guarda si NO hay cuenta conectada).
  */
 export function InstagramField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const { state, mode, exec, notify } = useRouge();
+  const { state, mode, demoVisible, exec, notify } = useRouge();
   const me = state.current_user_id;
   const link = state.instagram_links.find((l) => l.user_id === me);
   const [busy, setBusy] = useState(false);
@@ -27,7 +27,7 @@ export function InstagramField({ value, onChange }: { value: string; onChange: (
     if (mode === "demo") {
       const suggestion = parseInstagram(value) ?? state.profiles.find((p) => p.id === me)?.username ?? "noche.demo";
       const r = await exec(C.linkInstagramDemo(me, suggestion));
-      if (r.ok) notify({ tone: "rouge", title: `Instagram conectado · @${r.data.username}`, description: "Modo Demo: con Supabase se abre Instagram para autorizar." });
+      if (r.ok) notify({ tone: "rouge", title: `Instagram conectado · @${r.data.username}`, description: demoVisible ? "Modo Demo: con Supabase se abre Instagram para autorizar." : undefined });
       return;
     }
     setBusy(true);

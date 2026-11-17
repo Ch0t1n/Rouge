@@ -17,6 +17,11 @@ import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
+import { privacyOf, profileHref } from "@/lib/engine/privacy";
+import { displayStatus, meetingPlace, meetingPoint, meetingsOf, otherOf } from "@/lib/engine/meetings";
+import { faceOf } from "@/lib/engine/verticals";
+import type { MapMark } from "@/components/venue/VenueMap";
+import { formatTime } from "@/lib/utils";
 
 export default function MapPage() {
   const me = useRequireProfile();
@@ -42,6 +47,27 @@ function LiveMap() {
   const myPin = activePinOf(state, event.id, meId, now);
   const pins = useMemo(() => visiblePins(state, event.id, meId, now), [state, event.id, meId, now]);
   const matches = useMemo(() => matchesOf(state, meId, event.id), [state, meId, event.id]);
+  // Reuniones aceptadas (y pendientes) con lugar en el plano: solo las mías. ?meeting=<id> la resalta.
+  const focusMeeting = params.get("meeting");
+  const meetingMarks: MapMark[] = meetingsOf(state, meId, event.id)
+    .filter((m) => ["accepted", "pending", "rescheduled"].includes(displayStatus(m, now)))
+    .flatMap((m) => {
+      const pt = meetingPoint(state, m);
+      if (!pt) return [];
+      const other = faceOf(state, otherOf(m, meId), event.id);
+      return [{
+        key: `meeting-${m.id}`,
+        x: pt.x,
+        y: pt.y,
+        icon: "📅",
+        tone: m.status === "accepted" ? ("squad" as const) : ("muted" as const),
+        label: `${formatTime(m.starts_at)} · ${other?.full_name.split(" ")[0] ?? ""} · ${meetingPlace(state, m)}`,
+        emphasis: m.id === focusMeeting,
+        onClick: () => router.push(`/meetings#${m.id}`),
+      }];
+    });
+  // Privacidad: si elegí "solo mi Squad", el pin nunca se comparte con matches.
+  const squadOnly = !privacyOf(state, meId).pin_share_matches;
 
   const initialMode: Mode = params.get("mode") === "base" && mine ? "base" : params.get("rescue") ? "rescue" : "pin";
   const [mode, setMode] = useState<Mode>(initialMode);
@@ -79,7 +105,7 @@ function LiveMap() {
 
   const confirmPin = async () => {
     if (!draft) return;
-    const r = await exec(C.dropPin(event.id, meId, { x: draft.x, y: draft.y, shareWithSquad: shareSquad && !!mine, matchIds: shareMatches ? selected : [], note }));
+    const r = await exec(C.dropPin(event.id, meId, { x: draft.x, y: draft.y, shareWithSquad: shareSquad && !!mine, matchIds: shareMatches && !squadOnly ? selected : [], note }));
     if (!r.ok) return;
     setDraft(null);
     setNote("");
@@ -126,10 +152,11 @@ function LiveMap() {
         </div>
       </header>
 
-      <div className="space-y-3 px-4 pb-8">
+      {/* PC: plano grande a la izquierda; estado, acciones y quién está en el plano a la derecha. */}
+      <div className="flex flex-col gap-3 px-4 pb-8 lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:grid-rows-[auto_auto_auto_1fr] lg:items-start lg:gap-x-6">
         {/* Modo */}
         {mode !== "pin" ? (
-          <div className={cn("flex items-center gap-3 rounded-2xl border p-3 text-sm", mode === "rescue" ? "border-sos bg-sos/15 text-sos shadow-glow-sos" : "border-vip/50 bg-vip/10 text-vip")}>
+          <div className={cn("flex items-center lg:col-start-2 gap-3 rounded-2xl border p-3 text-sm", mode === "rescue" ? "border-sos bg-sos/15 text-sos shadow-glow-sos" : "border-vip/50 bg-vip/10 text-vip")}>
             {mode === "rescue" ? <Siren className="size-5 shrink-0" /> : <Flag className="size-5 shrink-0" />}
             <p className="flex-1 font-semibold">{mode === "rescue" ? "Tocá dónde estás: le mandamos tu pin rojo al Squad." : "Tocá el plano para fijar el Punto Base del Squad."}</p>
             <Button size="sm" variant="ghost" onClick={() => setMode("pin")}>
@@ -137,7 +164,7 @@ function LiveMap() {
             </Button>
           </div>
         ) : myPin ? (
-          <div className={cn("flex items-center gap-3 rounded-2xl border p-3", myPin.is_rescue_alert ? "border-sos bg-sos/10" : "border-white/10 bg-white/[0.04]")}>
+          <div className={cn("flex items-center gap-3 rounded-2xl border p-3 lg:col-start-2", myPin.is_rescue_alert ? "border-sos bg-sos/10" : "border-white/10 bg-white/[0.04]")}>
             <span className={cn("grid size-10 shrink-0 place-items-center rounded-xl", myPin.is_rescue_alert ? "bg-sos text-white" : "bg-squad/15 text-squad")}>
               {myPin.is_rescue_alert ? <Siren className="size-5" /> : <MapPin className="size-5" />}
             </span>
@@ -155,11 +182,12 @@ function LiveMap() {
             </button>
           </div>
         ) : (
-          <p className="flex items-center gap-2 rounded-2xl border border-dashed border-white/15 p-3 text-sm text-muted">
+          <p className="flex items-center gap-2 rounded-2xl border border-dashed border-white/15 p-3 text-sm text-muted lg:col-start-2">
             <Clock3 className="size-4 shrink-0" /> Tocá el plano y marcá "Estoy acá". Tu pin dura 15 min y vos elegís quién lo ve.
           </p>
         )}
 
+        <div className="lg:sticky lg:top-24 lg:col-start-1 lg:row-span-4 lg:row-start-1">
         <VenueMap
           layout={event.venue_layout_json}
           mapImageUrl={event.venue_map_url}
@@ -169,9 +197,11 @@ function LiveMap() {
           basePin={mine?.squad.base_pin_x != null ? { x: mine.squad.base_pin_x, y: mine.squad.base_pin_y!, label: mine.squad.base_pin_label ?? "Punto Base" } : null}
           onTap={onTap}
           onPinClick={setInspect}
+          marks={meetingMarks}
         />
+        </div>
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-2 lg:col-start-2">
           <Button variant="danger" onClick={() => (mine ? setMode("rescue") : notify({ tone: "info", title: "Necesitás un Squad para el Botón de Rescate", cta: { label: "Armar Squad", href: "/squad" } }))}>
             <Siren /> Rescate
           </Button>
@@ -179,7 +209,8 @@ function LiveMap() {
             <Flag className="text-vip" /> Punto Base
           </Button>
         </div>
-        <p className="text-center text-[11px] text-muted/70">Nadie te ve en el plano salvo las personas que elegís, y solo por 15 minutos.</p>
+        <p className="text-center text-[11px] text-muted/70 lg:col-start-2">Nadie te ve en el plano salvo las personas que elegís, y solo por 15 minutos.</p>
+        <PinRoster pins={pins} onPick={setInspect} />
       </div>
 
       {/* Estoy acá */}
@@ -199,8 +230,8 @@ function LiveMap() {
             <Switch tone="squad" id="share-squad" checked={shareSquad && !!mine} disabled={!mine} onCheckedChange={setShareSquad} label="Mi Squad de amigos" description={mine ? `${mine.squad.name} · pin cian` : "Todavía no tenés Squad"} />
           </div>
           <div className={cn("rounded-2xl border px-3", shareMatches ? "border-rouge/50 bg-rouge/[0.07]" : "border-white/10")}>
-            <Switch tone="rouge" id="share-matches" checked={shareMatches} disabled={!matches.length} onCheckedChange={setShareMatches} label="Matches específicos de esta noche" description={matches.length ? "Solo los que selecciones · pin rouge" : "Todavía no tenés matches esta noche"} />
-            {shareMatches && (
+            <Switch tone="rouge" id="share-matches" checked={shareMatches && !squadOnly} disabled={!matches.length || squadOnly} onCheckedChange={setShareMatches} label="Matches específicos de esta noche" description={squadOnly ? "Desactivado en tu Privacidad: tu ubicación es solo para tu Squad" : matches.length ? "Solo los que selecciones · pin rouge" : "Todavía no tenés matches esta noche"} />
+            {shareMatches && !squadOnly && (
               <ul className="space-y-1 pb-3">
                 {matches.map(({ profile: p }) => {
                   const on = selected.includes(p.id);
@@ -289,11 +320,39 @@ function PinDetail({ vp, onClose, go }: { vp: VisiblePin; onClose: () => void; g
               <MessageCircle /> Escribile
             </Button>
           ) : null}
-          <Button variant="glass" onClick={() => { onClose(); go(`/u/${vp.profile.username}`); }}>
+          <Button variant="glass" onClick={() => { onClose(); go(profileHref(vp.profile, vp.pin.event_id)); }}>
             Ver perfil
           </Button>
         </div>
       )}
     </div>
+  );
+}
+
+/** PC: lista de quiénes ves en el plano (Squad y matches que te compartieron su pin), con minutos restantes. */
+function PinRoster({ pins, onPick }: { pins: VisiblePin[]; onPick: (p: VisiblePin) => void }) {
+  const others = pins.filter((p) => p.audience !== "self");
+  return (
+    <section aria-label="Quién está en el plano" className="glass hidden rounded-3xl p-4 lg:col-start-2 lg:block">
+      <h2 className="mb-2 text-base">En el plano ahora · {others.length}</h2>
+      {others.length === 0 ? (
+        <p className="text-sm text-muted">Nadie de tu Squad ni tus matches compartió su ubicación todavía.</p>
+      ) : (
+        <ul className="space-y-1">
+          {others.map((vp) => (
+            <li key={vp.pin.id}>
+              <button type="button" onClick={() => onPick(vp)} className="flex min-h-touch w-full items-center gap-3 rounded-2xl px-2 py-1.5 text-left hover:bg-white/5">
+                <Avatar profile={vp.profile} size={36} ring={vp.pin.is_rescue_alert ? "rouge" : vp.audience === "squad" ? "squad" : "rouge"} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold">{vp.pin.is_rescue_alert ? "🚨 " : ""}{vp.profile.full_name.split(" ")[0]}</span>
+                  <span className="block truncate text-xs text-muted">{vp.pin.sector_name ?? "En el plano"}{vp.pin.note ? ` · ${vp.pin.note}` : ""}</span>
+                </span>
+                <span className={cn("metric text-xs", vp.audience === "squad" ? "text-squad" : "text-rouge")}>{vp.minutesLeft}′</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }

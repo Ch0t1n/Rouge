@@ -8,6 +8,9 @@ import type { RougeEvent } from "@/lib/types";
 import { useRouge } from "@/lib/store/RougeContext";
 import { Panel } from "@/components/admin/AdminChrome";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { accessWindowOf } from "@/lib/engine/roles";
+import { formatDateTime } from "@/lib/utils";
 
 /** ISO → valor de <input type="datetime-local"> en hora local. */
 const toLocal = (iso: string) => {
@@ -80,6 +83,28 @@ export function EventLifecyclePanel({ event, onDuplicated, onDeleted }: { event:
           <Button size="sm" variant="danger" onClick={remove} disabled={!isCreator || attendees > 0}>
             <Trash2 /> Eliminar
           </Button>
+        </div>
+      </div>
+      {/* Seguridad y privacidad de la noche */}
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4">
+          <Switch
+            tone="squad"
+            id="checkin-lobby"
+            checked={!!event.require_checkin_for_lobby}
+            onCheckedChange={async (v) => {
+              const r = await exec(C.upsertEvent({ ...event, require_checkin_for_lobby: v }));
+              if (r.ok) notify({ tone: "squad", title: v ? "Grilla solo para quien ya entró" : "Grilla para todos los que tienen entrada", duration: 2000 });
+            }}
+            label="Lobby solo para quienes ya ingresaron"
+            description="Privacidad: aparecés en la grilla recién cuando te escanean en la puerta (tu Squad y tus matches te ven igual)."
+          />
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm">
+          <p className="font-semibold">Ventana horaria del staff de puerta y barra</p>
+          <p className="mt-1 text-muted">
+            Activos del {formatDateTime(new Date(accessWindowOf(event).from).toISOString())} al {formatDateTime(new Date(accessWindowOf(event).to).toISOString())} (2 h antes de abrir · 1 h después del cierre). Fuera de ese rango no pueden operar ni ver nada.
+          </p>
         </div>
       </div>
     </Panel>

@@ -5,8 +5,10 @@ Cuatro niveles. Antes de cada commit: `npm run typecheck && npm test && npm run 
 | Nivel | Comando | Qué cubre | Necesita |
 |---|---|---|---|
 | Unitarios + contrato | `npm test` | Reglas del motor (bloqueos, ghost, pines, rompehielos, barra, roles, Instagram…), helpers de OAuth y el **contrato cliente ↔ `schema.sql`** (nombres de RPC, parámetros, tablas y columnas de cada comando y del cargador). | Nada |
+| Seguridad del esquema | `npm test` (`schema.security.test.ts`) | Carga el `schema.sql` real en PGlite (dos veces: idempotente) y ejecuta ~50 ataques como asistentes, staff y anónimos: helpers privados, chats y fotos ajenas, pines, Kanban, QRs, blasts con `javascript:`, fuerza bruta de códigos, privilegios por columna. | Nada |
+| Seguridad web | `npm test` (`security.test.ts`) | CSP y headers, redirecciones internas (open redirect), links de blasts, límite de pedidos, cifrado de tokens. | Nada |
 | Integración real | `npm run test:integration` | Flujo completo contra un Supabase de verdad con usuarios reales: RLS, privacidad del teléfono, códigos ocultos, roles, Instagram (tokens invisibles, verificado), Realtime y Storage. Se saltea sin credenciales. | Supabase de prueba |
-| E2E demo | `npm run e2e:demo` | Navegador real (Playwright) sobre la app en Modo Demo: onboarding, lobby, squad, barra, panel, roles, QR, landing, Instagram/Google simulados. | App en demo levantada |
+| E2E demo | `npm run e2e:demo` | Navegador real (Playwright) sobre la app en Modo Demo: onboarding, lobby, squad, barra, panel, roles, QR, landing, Instagram/Google simulados; `demo-pro.cjs`: privacidad por contexto, reuniones con sala y `/empresas` (formulario y API de leads). | App en demo levantada |
 | E2E API | `npm run e2e:api` | API v1 por HTTP: claves, códigos por entrada idempotentes, paginación, check-in, anulación, QR PNG/SVG, alcance y revocación. | App con Supabase + `SUPABASE_SERVICE_ROLE_KEY` |
 | E2E Supabase | `npm run e2e:supabase` · `npm run e2e:instagram` | Navegador real contra Supabase: magic link real (Mailpit), Storage, Realtime, roles; login con Instagram contra una API imitada. | App + Supabase local + Mailpit |
 
@@ -83,6 +85,8 @@ servidor, segundo ingreso, cancelar, conectar desde el editor, desconectar, cuen
 
 ## Validación del SQL
 
-Además de la integración real, el esquema se valida en PGlite (Postgres en memoria) durante el desarrollo. Recordar
+Además de la integración real, el esquema se valida en PGlite (Postgres en memoria) en cada `npm test`
+(`src/lib/store/schema.security.test.ts`, con stubs mínimos de `auth`, `storage` y roles de Supabase). Al tocar una
+política o una RPC, sumá ahí el ataque que tiene que frenar. Recordar
 que PGlite no tiene el schema `extensions` de Supabase: por eso toda función `security definer` fija
 `search_path = public, extensions`.

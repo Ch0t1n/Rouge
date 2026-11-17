@@ -1,6 +1,6 @@
 // Demo · RRPP (link propio, números sin datos personales, comisión) y puerta (escáner: pase de la app y entradas).
 const { chromium } = require("playwright");
-const { BASE: B, OUT: SP } = require("./env.cjs");
+const { BASE: B, OUT: SP, unlockDemo } = require("./env.cjs");
 const log = (...a) => console.log(...a);
 const assert = (c, m) => { if (!c) throw new Error("✘ " + m); log("✔ " + m); };
 const open = (role, path) => `${B}/demo/abrir?rol=${role}&a=${encodeURIComponent(path)}`;
@@ -9,6 +9,7 @@ const EV = id(1000);
 (async () => {
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  await unlockDemo(ctx); // personas y "Simular…" solo tras entrar por /demo
   const errors = [];
   const watch = (p, tag) => {
     p.on("pageerror", (e) => errors.push(`[${tag}] ${e.message}`));

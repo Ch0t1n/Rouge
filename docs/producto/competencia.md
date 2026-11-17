@@ -1,12 +1,12 @@
 # Competencia y qué nos falta (noviembre 2026)
 
-Relevamiento de las apps con las que un organizador compara a ROUGE y de las funciones que ellas tienen y ROUGE
+Relevamiento de las apps con las que un organizador compara a Rouge Pass y de las funciones que ellas tienen y Rouge Pass
 todavía no. Las fuentes están al final; varias comparativas son de los propios proveedores (Posh, Ticket Fairy), así
 que sus números se toman como orientativos.
 
 ## Mapa de la competencia
 
-| Categoría | Ejemplos | Qué resuelven | Qué NO resuelven (y ROUGE sí) |
+| Categoría | Ejemplos | Qué resuelven | Qué NO resuelven (y Rouge Pass sí) |
 |---|---|---|---|
 | Ticketeras de música y noche | DICE, Posh, Bombo (AR), Passline, Venti, Alpogo | Venta de entradas, lista de espera, reventa segura, RRPP con comisión, SMS | Conocer gente en la fiesta, Squad y rescate, plano, barra sin fila, cuentas de la mesa |
 | Invitaciones sociales | Partiful, Apple Invites | RSVP, ver quién va, lista de espera automática, entradas con niveles y códigos | Operación del boliche (barra, seguridad, LED), datos para el organizador |
@@ -58,7 +58,7 @@ Esfuerzo: **S** días · **M** 1–2 semanas · **L** 3+ semanas.
 
 ✅ Ya hecho en la v1.6: **RRPP con link y comisión (2)** y **escáner con cámara (5)**. Sigue: **lista de espera (6)**. Son
 rápidos, los pide todo organizador y suben las ventas desde la primera fiesta. Después, **entradas propias (1)** con
-lotes y códigos, que convierte a ROUGE en la plataforma completa del evento, y la **reserva de Mesa VIP con seña (3)**.
+lotes y códigos, que convierte a Rouge Pass en la plataforma completa del evento, y la **reserva de Mesa VIP con seña (3)**.
 La **facturación ARCA (4)** tiene que estar antes de cobrar volúmenes grandes con Mercado Pago.
 
 ## Fuentes
