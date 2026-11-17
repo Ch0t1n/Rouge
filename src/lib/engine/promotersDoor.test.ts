@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createSeedState, DEMO_IDS } from "@/lib/mock/seed";
 import type { RougeState } from "@/lib/types";
 import * as A from "./actions";
-import { ensurePromoterLink, promoterStats, setPromoterCommission } from "./promoters";
+import { checkTiers, ensurePromoterLink, promoterBarSpend, promoterStats, setPromoterCommission, setPromoterScheme, settlePromoter } from "./promoters";
 import { doorCheckIn, doorCounts, parseDoorValue, passValue } from "./door";
 import { credentialSecret, dynamicQrValue } from "./qr";
 import { removeAttendee } from "./eventAdmin";
@@ -97,5 +97,36 @@ describe("puerta", () => {
     expect(doorCheckIn(s, EV, live(DEMO_IDS.bartender), NOW).data.status).toBe("not_attendee");
     const out = ok(removeAttendee(s, EV, joaco, true, ORG, null, NOW));
     expect(doorCheckIn(out.state, EV, live(joaco), NOW).data.status).toBe("banned");
+  });
+});
+
+describe("liquidación escalonada de RRPP", () => {
+  it("tramos marginales: 1–30 al 15 %, desde la 31 al 20 %, más % de barra y fijo", () => {
+    const link = { commission_per_entry: 100, ticket_price: 10000, commission_tiers: [{ from: 31, percent: 20 }, { from: 1, percent: 15 }], bar_commission_percent: 5 };
+    const r = settlePromoter(link, 40, 200000);
+    expect(r.tiers).toEqual([
+      { from: 1, to: 30, percent: 15, entries: 30, amount: 45000 },
+      { from: 31, to: null, percent: 20, entries: 10, amount: 20000 },
+    ]);
+    expect(r.tickets).toBe(65000);
+    expect(r.fixed).toBe(4000);
+    expect(r.bar).toBe(10000);
+    expect(r.total).toBe(79000);
+    // Si no llega al segundo tramo, ese tramo queda en 0
+    expect(settlePromoter(link, 12, 0).tiers[1].entries).toBe(0);
+    expect(settlePromoter(null, 10, 1000).total).toBe(0);
+  });
+
+  it("valida los tramos y solo dueño/a o producción configuran el esquema", () => {
+    expect(checkTiers([{ from: 2, percent: 10 }])).toMatch(/entrada 1/);
+    expect(checkTiers([{ from: 1, percent: 120 }])).toMatch(/0 a 100/);
+    expect(checkTiers([{ from: 1, percent: 10 }, { from: 1, percent: 20 }])).toMatch(/misma entrada/);
+    const s = createSeedState(NOW);
+    const link = s.promoter_links[0];
+    const input = { ticket_price: 10000, tiers: [{ from: 1, percent: 15 }], bar_percent: 5 };
+    expect(setPromoterScheme(s, link.id, input, RP).ok).toBe(false);
+    expect(setPromoterScheme(s, link.id, input, ORG).ok).toBe(true);
+    // el consumo en barra que cuenta es el de quienes entraron por su link
+    expect(promoterBarSpend(s, EV, RP)).toBe(s.event_attendees.filter((a) => a.referred_by === RP).reduce((a, x) => a + x.total_spent, 0));
   });
 });

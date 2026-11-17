@@ -341,7 +341,18 @@ export interface PromoterLink {
   code: string;
   /** Lo que se le paga al RRPP por cada ingreso (lo fija dueño/a o producción). */
   commission_per_entry: number;
+  /** Esquema escalonado (v1.7): precio de la entrada para calcular el % y tramos marginales por cantidad vendida. */
+  ticket_price?: number;
+  commission_tiers?: CommissionTier[];
+  /** % adicional sobre lo que consumieron en barra quienes entraron por su link. */
+  bar_commission_percent?: number;
   created_at: ISODate;
+}
+
+/** Tramo de comisión: desde la entrada N (1-based) en adelante se paga `percent` % del precio de la entrada. */
+export interface CommissionTier {
+  from: number;
+  percent: number;
 }
 
 export type ApiScope = "codes:read" | "codes:write";
@@ -686,7 +697,7 @@ export interface RougeState {
   squad_settlements: SquadSettlement[];
   payout_aliases: PayoutAlias[];
   /** Supabase: números por RRPP calculados en el servidor (RPC promoter_stats). El RRPP no ve a los asistentes. */
-  promoter_stats?: { user_id: UUID; link_id: UUID | null; code: string | null; commission_per_entry: number; entries: number; checked_in: number; billable: number; to_pay: number }[] | null;
+  promoter_stats?: { user_id: UUID; link_id: UUID | null; code: string | null; commission_per_entry: number; entries: number; checked_in: number; billable: number; to_pay: number; bar_spend?: number }[] | null;
   /** Solo staff en Modo Supabase: conteos de conexiones (que son privadas por RLS). */
   admin_stats?: AdminStats | null;
   /** Staff de MI organización (dueño/a) o mis propias asignaciones (staff). */

@@ -227,6 +227,7 @@ describe("contrato comandos ↔ schema.sql", () => {
     ["doorReconcile", () => runRemote(C.doorReconcile(EV, [{ kind: "code", ref: s0().event_invite_codes[11].code, at: new Date().toISOString(), terminal: "Puerta 1" }]), { ...s0(), current_user_id: DEMO_IDS.security }, { door_reconcile: { applied: 1, conflicts: [] } })],
     ["upsertTicketList", () => runRemote(C.upsertTicketList(EV, { name: "Lista Free", free_until: s0().events[0].starts_at, late_price: 8000 }), st())],
     ["assignCodesToList", () => runRemote(C.assignCodesToList(EV, [s0().event_invite_codes[20].id], s0().ticket_lists[0].id), st())],
+    ["setPromoterScheme", () => runRemote(C.setPromoterScheme(s0().promoter_links[0].id, { ticket_price: 10000, tiers: [{ from: 1, percent: 15 }, { from: 31, percent: 20 }], bar_percent: 5 }), st())],
     ["deleteAccount", () => runRemote(C.deleteAccount("@" + s0().profiles.find((p) => p.id === ME)!.username), s0())],
   ];
 

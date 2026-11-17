@@ -494,6 +494,10 @@ create table if not exists public.promoter_links (
   unique (event_id, user_id)
 );
 create index if not exists idx_attendees_referred on public.event_attendees (event_id, referred_by) where referred_by is not null;
+-- [v1.7] Esquema escalonado del RRPP: precio de la entrada, tramos marginales (% por cantidad) y % sobre la barra.
+alter table public.promoter_links add column if not exists ticket_price numeric(12,2) not null default 0 check (ticket_price >= 0);
+alter table public.promoter_links add column if not exists commission_tiers jsonb not null default '[]'::jsonb;
+alter table public.promoter_links add column if not exists bar_commission_percent numeric(5,2) not null default 0 check (bar_commission_percent between 0 and 100);
 
 -- [v1.5] Expulsados de un evento por el organizador: no pueden volver a entrar a ESE evento.
 create table if not exists public.event_bans (
@@ -2072,8 +2076,9 @@ end $$;
 
 -- Números por RRPP (espejo de promoterStats): el RRPP ve solo su fila; dueño/a y producción, todas. Sin datos personales.
 -- Si el evento usa el escáner de la puerta, se liquida por ingreso confirmado; si no, por ingreso a la app.
+drop function if exists public.promoter_stats(uuid);
 create or replace function public.promoter_stats(p_event uuid)
-returns table (user_id uuid, link_id uuid, code text, commission_per_entry numeric, entries int, checked_in int, billable int, to_pay numeric)
+returns table (user_id uuid, link_id uuid, code text, commission_per_entry numeric, entries int, checked_in int, billable int, to_pay numeric, bar_spend numeric)
 language sql stable security definer set search_path = public, extensions as $$
   with door as (
     select exists (select 1 from public.event_attendees where event_id = p_event and checked_in_at is not null)
@@ -2081,7 +2086,9 @@ language sql stable security definer set search_path = public, extensions as $$
   ), base as (
     select s.user_id, l.id as link_id, l.code, coalesce(l.commission_per_entry, 0) as commission_per_entry,
            (select count(*)::int from public.event_attendees a where a.event_id = p_event and a.referred_by = s.user_id) as entries,
-           (select count(*)::int from public.event_attendees a where a.event_id = p_event and a.referred_by = s.user_id and a.checked_in_at is not null) as checked_in
+           (select count(*)::int from public.event_attendees a where a.event_id = p_event and a.referred_by = s.user_id and a.checked_in_at is not null) as checked_in,
+           -- [v1.7] consumo en barra de quienes entraron por su link (para el % de barra); solo un total, nunca por persona
+           (select coalesce(sum(a.total_spent), 0) from public.event_attendees a where a.event_id = p_event and a.referred_by = s.user_id) as bar_spend
     from public.event_staff s
     left join public.promoter_links l on l.event_id = s.event_id and l.user_id = s.user_id
     where s.event_id = p_event and s.role::text = 'promoter'
@@ -2089,10 +2096,27 @@ language sql stable security definer set search_path = public, extensions as $$
   )
   select b.user_id, b.link_id, b.code, b.commission_per_entry, b.entries, b.checked_in,
          case when d.uses_door then b.checked_in else b.entries end as billable,
-         round((case when d.uses_door then b.checked_in else b.entries end) * b.commission_per_entry, 2) as to_pay
+         round((case when d.uses_door then b.checked_in else b.entries end) * b.commission_per_entry, 2) as to_pay,
+         b.bar_spend
   from base b cross join door d
   order by b.entries desc;
 $$;
+
+-- [v1.7] Esquema escalonado (espejo de setPromoterScheme). Dueño/a o producción.
+create or replace function public.set_promoter_scheme(p_link uuid, p_ticket_price numeric, p_tiers jsonb, p_bar_percent numeric)
+returns public.promoter_links language plpgsql security definer set search_path = public, extensions as $$
+declare v public.promoter_links; t jsonb; v_prev int := 0;
+begin
+  select * into v from public.promoter_links where id = p_link for update;
+  if v.id is null or not public.is_event_manager(v.event_id) then raise exception 'forbidden'; end if;
+  if p_ticket_price < 0 or p_bar_percent < 0 or p_bar_percent > 100 or jsonb_typeof(p_tiers) <> 'array' or jsonb_array_length(p_tiers) > 6 then raise exception 'invalid_amount'; end if;
+  for t in select value from jsonb_array_elements(p_tiers) order by (value->>'from')::int loop
+    if (t->>'from')::int <= v_prev or (t->>'percent')::numeric not between 0 and 100 or (v_prev = 0 and (t->>'from')::int <> 1) then raise exception 'invalid_amount'; end if;
+    v_prev := (t->>'from')::int;
+  end loop;
+  update public.promoter_links set ticket_price = p_ticket_price, commission_tiers = p_tiers, bar_commission_percent = p_bar_percent where id = p_link returning * into v;
+  return v;
+end $$;
 
 -- [v1.6] Puerta (espejo de doorCheckIn): entrada (código de 1 uso o su URL /join/<código>) o pase de la app
 -- (ROUGE:PASS:<evento>:<usuario>). Devuelve nombre, foto y edad para comparar con quien entra. Dueño/a, producción y seguridad.

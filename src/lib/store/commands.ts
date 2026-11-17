@@ -726,6 +726,13 @@ export const setPromoterCommission = (linkId: UUID, amount: number): Command<Rou
  * Escaneo en la puerta. `terminal`: nombre del dispositivo (si otra terminal ya lo hizo entrar, se ve cuál).
  * Atómico en el servidor (door_scan con FOR UPDATE): con dos escaneos simultáneos, solo el primero entra.
  */
+/** Esquema escalonado del RRPP: tramos por cantidad + % sobre la barra (dueño/a o producción). */
+export const setPromoterScheme = (linkId: UUID, input: RP.PromoterSchemeInput): Command<RougeState["promoter_links"][number]> => ({
+  name: "setPromoterScheme",
+  local: (s) => RP.setPromoterScheme(s, linkId, input, s.current_user_id),
+  remote: async (sb) => void (await rpc(sb, "set_promoter_scheme", { p_link: linkId, p_ticket_price: input.ticket_price, p_tiers: input.tiers, p_bar_percent: input.bar_percent })),
+});
+
 export const doorCheckIn = (eventId: UUID, value: string, terminal: string | null = null): Command<D.DoorResult> => ({
   name: "doorCheckIn",
   optimistic: false,

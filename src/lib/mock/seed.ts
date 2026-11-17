@@ -351,7 +351,7 @@ export function createSeedState(now = Date.now()): RougeState {
 
   // ── RRPP: link propio de Vicky (entraron por él Mateo, Lucas, Bruno y Joaquín) ──
   const promoter_links: PromoterLink[] = [
-    { id: id(17001), event_id: event.id, user_id: DEMO_IDS.promoter, code: "RPVICKY7", commission_per_entry: 1500, created_at: t(-60 * 24 * 4) },
+    { id: id(17001), event_id: event.id, user_id: DEMO_IDS.promoter, code: "RPVICKY7", commission_per_entry: 1500, ticket_price: 12000, commission_tiers: [{ from: 1, percent: 15 }, { from: 3, percent: 20 }], bar_commission_percent: 5, created_at: t(-60 * 24 * 4) },
   ];
   const REFERRED = new Set([5, 6, 7, 8]);
 
@@ -662,7 +662,7 @@ export function createSeedState(now = Date.now()): RougeState {
     squad_settlements: [],
     payout_aliases,
     staff_assignments: [
-      { id: id(17001), organization_id: DEMO_IDS.organizer, user_id: DEMO_IDS.doorScanner, role: "security", scope: "all_org_events", event_ids: [], access_window: true, revoked_at: null, created_by: DEMO_IDS.organizer, created_at: t(-60 * 24 * 3) },
+      { id: id(17501), organization_id: DEMO_IDS.organizer, user_id: DEMO_IDS.doorScanner, role: "security", scope: "all_org_events", event_ids: [], access_window: true, revoked_at: null, created_by: DEMO_IDS.organizer, created_at: t(-60 * 24 * 3) },
     ],
     staff_invites: [],
     terminal_pins: (
@@ -673,7 +673,7 @@ export function createSeedState(now = Date.now()): RougeState {
       ] as const
     ).map(([u, pin]) => ({ organization_id: DEMO_IDS.organizer, user_id: u, pin_hash: pinHash(DEMO_IDS.organizer, u, pin), updated_at: t(-60 * 24 * 2) })),
     audit_log: [
-      { id: id(18001), organization_id: DEMO_IDS.organizer, event_id: null, actor_id: DEMO_IDS.organizer, operator_id: null, action: "staff.invited", target: id(17001), details: { role: "security", scope: "all_org_events", events: 0 }, created_at: t(-60 * 24 * 3 - 20) },
+      { id: id(18001), organization_id: DEMO_IDS.organizer, event_id: null, actor_id: DEMO_IDS.organizer, operator_id: null, action: "staff.invited", target: id(17501), details: { role: "security", scope: "all_org_events", events: 0 }, created_at: t(-60 * 24 * 3 - 20) },
       { id: id(18002), organization_id: DEMO_IDS.organizer, event_id: null, actor_id: DEMO_IDS.doorScanner, operator_id: null, action: "staff.joined", target: DEMO_IDS.doorScanner, details: { role: "security", scope: "all_org_events" }, created_at: t(-60 * 24 * 3) },
     ],
     user_reports: [
