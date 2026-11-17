@@ -138,6 +138,11 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 - `npm run test:integration` no se pudo correr en este entorno (requiere un Supabase de prueba): correrlo antes de
   desplegar `schema.sql`.
 
+### Agregado
+- **Analíticas de Vercel** (`@vercel/analytics`): vistas de página sin cookies en los despliegues de Vercel. Las URLs
+  salen sin query ni fragmento y con los segmentos privados ocultos (`/join/[code]`, `/u/[username]`,
+  `/chat/[connectionId]`). Se activa en Vercel → Analytics.
+
 ## [1.6.0] — 2026-11-16
 
 ### Agregado

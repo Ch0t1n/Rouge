@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans, Space_Grotesk } from "next/font/google";
 import { AppShell } from "@/components/layout/AppShell";
 import { ServiceWorkerRegister } from "@/components/layout/ServiceWorkerRegister";
+import { VercelAnalytics } from "@/components/layout/VercelAnalytics";
 import { RougeProvider } from "@/lib/store/RougeContext";
 import { APP_NAME, SITE_URL } from "@/lib/brand";
 import "./globals.css";
@@ -60,6 +61,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <AppShell>{children}</AppShell>
         </RougeProvider>
         <ServiceWorkerRegister />
+        <VercelAnalytics />
       </body>
     </html>
   );
