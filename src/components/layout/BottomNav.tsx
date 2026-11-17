@@ -8,6 +8,7 @@ import { useRouge } from "@/lib/store/RougeContext";
 import { cn } from "@/lib/utils";
 import { enabledNav } from "@/lib/engine/features";
 import { useEventFeatures } from "@/lib/store/hooks";
+import { verticalOf } from "@/lib/engine/verticals";
 
 export const NAV_ITEMS = [
   { href: "/app", label: "Inicio", icon: House },
@@ -18,7 +19,7 @@ export const NAV_ITEMS = [
 ] as const;
 
 /** Rutas donde se muestra la navegación inferior (móvil). En tablet/PC manda el sidebar. */
-export const NAV_ROUTES: readonly string[] = [...NAV_ITEMS.map((i) => i.href), "/profile", "/perks"];
+export const NAV_ROUTES: readonly string[] = [...NAV_ITEMS.map((i) => i.href), "/profile", "/perks", "/meetings"];
 
 export const isNavActive = (href: string, pathname: string) => (href === "/app" ? pathname === "/app" : pathname === href || pathname.startsWith(href + "/") || (href === "/inbox" && pathname.startsWith("/chat/")));
 
@@ -41,6 +42,10 @@ export function BottomNav() {
   const { pending, rescue, invites } = useNavBadges();
   // Solo los módulos prendidos en el evento (ej. sin lobby ni chat: Inicio, Plano, Squad).
   const items = enabledNav(NAV_ITEMS, useEventFeatures());
+  const { state } = useRouge();
+  const v = verticalOf(state, state.active_event_id);
+  // Vocabulario de la vertical: en corporativo "Networking" y "Equipo".
+  const labelOf = (href: string, label: string) => (href === "/lobby" ? (v.kind === "corporate" ? "Networking" : label) : href === "/squad" ? v.copy.squad : label);
 
   return (
     <nav
@@ -48,7 +53,8 @@ export function BottomNav() {
       className="fixed inset-x-0 bottom-0 z-40 mx-auto max-w-md border-t border-white/10 bg-background/85 pb-[var(--safe-bottom)] backdrop-blur-xl md:hidden"
     >
       <ul className="grid" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
-        {items.map(({ href, label, icon: Icon }) => {
+        {items.map(({ href, label: rawLabel, icon: Icon }) => {
+          const label = labelOf(href, rawLabel);
           const active = isNavActive(href, pathname);
           return (
             <li key={href}>

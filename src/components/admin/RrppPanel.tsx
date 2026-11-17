@@ -16,6 +16,7 @@ import { formatMoney, toCSV } from "@/lib/utils";
 import { AdminHeader, downloadCSV, Panel } from "@/components/admin/AdminChrome";
 import { ShareButton } from "@/components/share/ShareSheet";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { hasFeature } from "@/lib/engine/verticals";
 
 const joinPath = (code: string) => `/join/${code}`;
 
@@ -29,6 +30,18 @@ export function RrppPanel() {
   const me = state.current_user_id;
   const manager = can(state, event.id, me, "admin.events");
   const stats = promoterStats(state, event.id, me);
+
+  if (!hasFeature(state, event.id, "promoters")) {
+    return (
+      <main className="mx-auto max-w-6xl space-y-6 px-5 py-6 lg:px-10 lg:py-10">
+        <AdminHeader title="RRPP" subtitle="Los RRPP con link y comisión son de los eventos de noche." />
+        <p className="glass rounded-2xl p-5 text-sm text-muted">
+          Este es un evento corporativo (ROUGE Pro): la gente entra por el link del evento o por su código de 1 uso. Para medir de dónde
+          viene cada asistente usá los códigos con etiqueta (Eventos y accesos).
+        </p>
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto max-w-6xl space-y-6 px-5 py-6 lg:px-10 lg:py-10">

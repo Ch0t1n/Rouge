@@ -17,6 +17,7 @@ import type {
   UUID,
   VenueSector,
 } from "@/lib/types";
+import { faceOf, type Face } from "./verticals";
 
 // ── Lookups ──────────────────────────────────────────────────────────
 
@@ -83,31 +84,61 @@ export function lineupNow(e: RougeEvent, now = Date.now()): { current?: LineupSl
 
 export interface GridEntry {
   attendee: EventAttendee;
-  profile: Profile;
+  /** La cara con la que entró a ESTE evento (perfil principal o el perfil elegido de la vertical). */
+  profile: Face;
 }
 
-/** Asistentes que el viewer puede ver: sin bloqueos, sin ghost mode, sin sí mismo. */
+/** Acreditado/a: la persona y el equipo ven la hora (`checked_in_at`); los demás, solo `is_checked_in`. */
+export const isCheckedIn = (a: EventAttendee | undefined) => !!a && (a.checked_in_at != null || a.is_checked_in === true);
+
+/** Equipo del evento con acceso a datos (sin RRPP), o quien lo creó. Espejo de public.is_event_staff. */
+export const isEventStaff = (s: RougeState, eventId: UUID, userId: UUID) =>
+  getEvent(s, eventId)?.created_by === userId || s.event_staff.some((r) => r.event_id === eventId && r.user_id === userId && r.role !== "promoter");
+
+/**
+ * ¿`viewer` puede ver la asistencia de `target`? (⇔ public.can_see_attendee, base de la RLS de event_attendees)
+ * Uno mismo y el equipo siempre. Otro asistente: sin bloqueo; si está en Modo Solo Amigos solo su Squad y sus matches;
+ * si el evento limita el networking a acreditados, los dos tienen que haber pasado por la puerta.
+ */
+export function canSeeAttendee(s: RougeState, eventId: UUID, viewer: UUID, target: UUID): boolean {
+  if (viewer === target || isEventStaff(s, eventId, viewer)) return true;
+  const t = getAttendee(s, eventId, target);
+  const v = getAttendee(s, eventId, viewer);
+  if (!t || !v || isBlockedBetween(s, viewer, target)) return false;
+  if (areSquadmates(s, eventId, viewer, target) || isMatch(s, eventId, viewer, target)) return true;
+  if (t.ghost_mode) return false;
+  if (getEvent(s, eventId)?.networking_checkin_only && !(isCheckedIn(t) && isCheckedIn(v))) return false;
+  return true;
+}
+
+/** ¿Puede hacer networking nuevo (conectar, rompehielos, reuniones)? Si el evento lo limita, solo acreditados. */
+export function networkingOpenFor(s: RougeState, eventId: UUID, userId: UUID): boolean {
+  const a = getAttendee(s, eventId, userId);
+  return !!a && (!getEvent(s, eventId)?.networking_checkin_only || isCheckedIn(a));
+}
+
+/** Asistentes que el viewer puede ver en la grilla: sin bloqueos, sin ghost mode, sin sí mismo (canSeeAttendee). */
 export function visibleAttendees(s: RougeState, eventId: UUID, viewerId: UUID): GridEntry[] {
   const out: GridEntry[] = [];
   for (const a of s.event_attendees) {
     if (a.event_id !== eventId || a.user_id === viewerId || a.ghost_mode) continue;
-    if (isBlockedBetween(s, viewerId, a.user_id)) continue;
+    if (!canSeeAttendee(s, eventId, viewerId, a.user_id)) continue;
     // Privacidad (v1.7): con require_checkin_for_lobby solo aparece quien ya ingresó por la puerta.
     if (s.events.find((e) => e.id === eventId)?.require_checkin_for_lobby && !a.checked_in_at) continue;
-    const profile = getProfile(s, a.user_id);
+    const profile = faceOf(s, a.user_id, eventId);
     if (profile) out.push({ attendee: a, profile });
   }
   return out;
 }
 
 /** Búsqueda por @username (para invitar al squad). Respeta bloqueos; no respeta ghost (es para amigos). */
-export function searchAttendeesByUsername(s: RougeState, eventId: UUID, viewerId: UUID, q: string): Profile[] {
+export function searchAttendeesByUsername(s: RougeState, eventId: UUID, viewerId: UUID, q: string): Face[] {
   const needle = q.trim().replace(/^@/, "").toLowerCase();
   if (!needle) return [];
   return s.event_attendees
     .filter((a) => a.event_id === eventId && a.user_id !== viewerId && !isBlockedBetween(s, viewerId, a.user_id))
-    .map((a) => getProfile(s, a.user_id))
-    .filter((p): p is Profile => !!p && p.username.toLowerCase().includes(needle));
+    .map((a) => faceOf(s, a.user_id, eventId))
+    .filter((p): p is Face => !!p && (p.username.toLowerCase().includes(needle) || p.full_name.toLowerCase().includes(needle)));
 }
 
 // ── Conexiones y matches ─────────────────────────────────────────────
@@ -149,7 +180,8 @@ export function matchesOf(s: RougeState, userId: UUID, eventId?: UUID) {
     )
     .map((c) => ({ connection: c, otherId: c.sender_id === userId ? c.receiver_id : c.sender_id }))
     .filter(({ otherId }) => !isBlockedBetween(s, userId, otherId))
-    .map(({ connection, otherId }) => ({ connection, profile: getProfile(s, otherId)! }))
+    // Cada match se muestra con la cara del evento donde se conocieron.
+    .map(({ connection, otherId }) => ({ connection, profile: faceOf(s, otherId, connection.event_id)! }))
     .filter((m) => !!m.profile);
 }
 
@@ -162,7 +194,7 @@ export function inboxOf(s: RougeState, userId: UUID, eventId: UUID) {
       if (a.type !== b.type) return a.type === "icebreaker" ? -1 : 1;
       return +new Date(b.created_at) - +new Date(a.created_at);
     })
-    .map((c) => ({ connection: c, profile: getProfile(s, c.sender_id)! }))
+    .map((c) => ({ connection: c, profile: faceOf(s, c.sender_id, c.event_id)! }))
     .filter((x) => !!x.profile);
 }
 
@@ -201,7 +233,7 @@ export type PinAudience = "self" | "squad" | "match";
 
 export interface VisiblePin {
   pin: MapPin;
-  profile: Profile;
+  profile: Face;
   audience: PinAudience;
   minutesLeft: number;
 }
@@ -217,7 +249,7 @@ export function visiblePins(s: RougeState, eventId: UUID, viewerId: UUID, now = 
   const out: VisiblePin[] = [];
   for (const pin of s.map_pins) {
     if (pin.event_id !== eventId || !isPinActive(pin, now)) continue;
-    const profile = getProfile(s, pin.user_id);
+    const profile = faceOf(s, pin.user_id, eventId);
     if (!profile) continue;
     let audience: PinAudience | null = null;
     if (pin.user_id === viewerId) audience = "self";
@@ -273,7 +305,7 @@ export const topSongs = (s: RougeState, eventId: UUID, limit = 5) =>
 // ── Seguridad del Squad ──────────────────────────────────────────────
 
 export interface RescueAlert {
-  profile: Profile;
+  profile: Face;
   member: SquadMember;
   pin: MapPin | undefined;
 }
@@ -284,7 +316,7 @@ export function rescueAlertsFor(s: RougeState, eventId: UUID, userId: UUID, now 
   if (!mine) return [];
   return squadMembers(s, mine.squad.id)
     .filter((m) => m.user_id !== userId && m.safety_status === "rescue_needed")
-    .map((m) => ({ member: m, profile: getProfile(s, m.user_id)!, pin: activePinOf(s, eventId, m.user_id, now) }))
+    .map((m) => ({ member: m, profile: faceOf(s, m.user_id, eventId)!, pin: activePinOf(s, eventId, m.user_id, now) }))
     .filter((r) => !!r.profile);
 }
 
@@ -295,7 +327,7 @@ export function eventRescueAlerts(s: RougeState, eventId: UUID, now = Date.now()
     .flatMap((sq) =>
       squadMembers(s, sq.id)
         .filter((m) => m.safety_status === "rescue_needed")
-        .map((m) => ({ squad: sq, member: m, profile: getProfile(s, m.user_id)!, pin: s.map_pins.find((p) => p.event_id === eventId && p.user_id === m.user_id && p.is_rescue_alert && isPinActive(p, now)) ?? activePinOf(s, eventId, m.user_id, now) })),
+        .map((m) => ({ squad: sq, member: m, profile: faceOf(s, m.user_id, eventId)!, pin: s.map_pins.find((p) => p.event_id === eventId && p.user_id === m.user_id && p.is_rescue_alert && isPinActive(p, now)) ?? activePinOf(s, eventId, m.user_id, now) })),
     )
     .filter((r) => !!r.profile)
     .sort((a, b) => +new Date(b.pin?.created_at ?? 0) - +new Date(a.pin?.created_at ?? 0));

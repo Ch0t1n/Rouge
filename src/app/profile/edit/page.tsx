@@ -36,7 +36,7 @@ function EditForm() {
 
   const [fullName, setFullName] = useState(me.full_name);
   const [username, setUsername] = useState(me.username);
-  const [birthDate, setBirthDate] = useState(me.birth_date);
+  const [birthDate, setBirthDate] = useState(me.birth_date ?? "");
   const [gender, setGender] = useState<Gender>(me.gender);
   const [phone, setPhone] = useState(me.phone_normalized ? formatPhone(me.phone_normalized) : "");
   const [photos, setPhotos] = useState<ProfilePhoto[]>(me.photos);
@@ -56,7 +56,7 @@ function EditForm() {
     () =>
       fullName !== me.full_name ||
       username !== me.username ||
-      birthDate !== me.birth_date ||
+      birthDate !== (me.birth_date ?? "") ||
       gender !== me.gender ||
       phoneNorm !== me.phone_normalized ||
       JSON.stringify(photos) !== JSON.stringify(me.photos) ||

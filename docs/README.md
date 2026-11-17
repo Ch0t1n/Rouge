@@ -12,6 +12,8 @@
 | [Demo comercial y Modo Demo](producto/demo-comercial.md) | Ventas y redes: guion de 7 minutos, personas del demo, material. |
 | [Guía: demo gratuita para un cliente](producto/guia-demo-manana.md) | Checklist del día: publicar la demo, preparar equipos, guion, objeciones, oferta del piloto y seguimiento. |
 
+| [Estrategia corporativa (ROUGE Pro)](producto/estrategia-corporativa.md) | Una marca para noche y eventos corporativos: debate, decisiones, perfiles múltiples y plan de validación con pymes. |
+
 ## Técnica
 
 | Documento | Contenido |

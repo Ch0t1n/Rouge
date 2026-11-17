@@ -48,6 +48,7 @@ export function Footer() {
         { label: "Entrar al panel", href: "/admin", staff: true },
         { label: "Crear mi evento", href: "/admin/events", staff: true },
         { label: "API para ticketeras", href: "/api/v1/openapi.json", external: true },
+        { label: "Eventos corporativos · ROUGE Pro", href: "/empresas" },
       ]
     : [
         { label: "Tengo una entrada", href: appHref },

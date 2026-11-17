@@ -26,6 +26,7 @@ import type {
   PerkRule,
   PerkType,
   Profile,
+  ProfilePersona,
   PromoterLink,
   Raffle,
   RaffleFilter,
@@ -39,8 +40,11 @@ import type {
   UUID,
 } from "@/lib/types";
 import { addMs, minutes, normalizePhone, shortCode, uid } from "@/lib/utils";
-import { VENUE_LAYOUT } from "@/lib/mock/seed";
+import { PRO_VENUE_LAYOUT, VENUE_LAYOUT } from "@/lib/mock/seed";
+import { PIN_SQUAD_ONLY, privacyOf } from "./privacy";
 import {
+  canSeeAttendee,
+  networkingOpenFor,
   activePinOf,
   connectionBetween,
   getAttendee,
@@ -63,6 +67,20 @@ import { isSafeCtaLink } from "@/lib/security/paths";
 
 /** Módulo apagado en el evento → la acción no se procesa (mismo criterio que event_feature en SQL). */
 const off = (state: RougeState, eventId: UUID, ...keys: FeatureKey[]) => (keys.every((k) => featureOn(state, eventId, k)) ? null : fail(FEATURE_DISABLED));
+import {
+  COMPANY_MAX,
+  JOB_TITLE_MAX,
+  MAX_PERSONAS,
+  NEEDS_MAX,
+  NOT_IN_VERTICAL,
+  PERSONA_LABEL_MAX,
+  checkMoodForEvent,
+  checkPersonaForEvent,
+  hasFeature,
+  parseLinkedin,
+  vertical,
+} from "./verticals";
+import { BUSINESS_NEEDS, EVENT_KINDS, INDUSTRIES } from "@/lib/types";
 
 export type Result<T = undefined> = { ok: true; state: RougeState; data: T } | { ok: false; error: string };
 
@@ -182,7 +200,7 @@ export function upsertProfile(state: RougeState, userId: UUID, input: ProfileInp
     input = { ...input, full_name: name };
   }
   if (input.birth_date !== undefined) {
-    const err = checkBirthDate(input.birth_date, new Date(now));
+    const err = checkBirthDate(input.birth_date ?? "", new Date(now));
     if (err) return fail(err);
   }
   if (input.photos && input.photos.length > MAX_PHOTOS) return fail(`Máximo ${MAX_PHOTOS} fotos.`);
@@ -246,6 +264,113 @@ export function upsertProfile(state: RougeState, userId: UUID, input: ProfileInp
   const merged: Profile = { ...existing, ...rest, phone_normalized };
   const profile: Profile = { ...merged, instagram_verified: instagramVerified(state, userId, merged.instagram_username) };
   return ok({ ...state, profiles: state.profiles.map((p) => (p.id === userId ? profile : p)) }, profile);
+}
+
+// ── Perfiles adicionales (una cuenta, varias caras) ──────────────────
+
+export type PersonaInput = Partial<Omit<ProfilePersona, "id" | "user_id" | "created_at">> & Pick<ProfilePersona, "kind"> & { id?: UUID };
+
+/**
+ * Crea o edita un perfil adicional (espejo de los checks de `profile_personas` en SQL).
+ * Profesional: nombre, cargo o empresa y al menos una cosa que busca u ofrece. Noche: nombre y géneros válidos.
+ */
+export function upsertPersona(state: RougeState, userId: UUID, input: PersonaInput, now = Date.now()): Result<ProfilePersona> {
+  const base = getProfile(state, userId);
+  if (!base) return fail("Primero creá tu perfil.");
+  const existing = input.id ? state.profile_personas.find((p) => p.id === input.id) : undefined;
+  if (input.id && existing && existing.user_id !== userId) return fail("Ese perfil no existe.");
+  if (!EVENT_KINDS.includes(input.kind)) return fail("Tipo de perfil inválido.");
+  if (existing && existing.kind !== input.kind) return fail("No se puede cambiar el tipo de un perfil: creá uno nuevo.");
+  if (!existing && state.profile_personas.filter((p) => p.user_id === userId).length >= MAX_PERSONAS) return fail(`Podés tener hasta ${MAX_PERSONAS} perfiles además del principal.`);
+
+  const merged = { ...existing, ...input };
+  const label = (merged.label ?? "").trim().replace(/\s+/g, " ") || (input.kind === "corporate" ? "Profesional" : "Noche");
+  if (label.length > PERSONA_LABEL_MAX) return fail(`El nombre del perfil tiene un máximo de ${PERSONA_LABEL_MAX} caracteres.`);
+  const display_name = (merged.display_name ?? base.full_name).trim().replace(/\s+/g, " ");
+  if (!display_name) return fail("Ingresá el nombre con el que te van a ver.");
+  if (display_name.length > NAME_MAX) return fail(`El nombre tiene un máximo de ${NAME_MAX} caracteres.`);
+  const bio = (merged.bio ?? "").trim();
+  if (bio.length > BIO_MAX) return fail(`La bio tiene un máximo de ${BIO_MAX} caracteres.`);
+  const photos = merged.photos ?? [];
+  if (photos.length > MAX_PHOTOS) return fail(`Máximo ${MAX_PHOTOS} fotos.`);
+
+  let persona: ProfilePersona = {
+    id: existing?.id ?? input.id ?? uid(),
+    user_id: userId,
+    kind: input.kind,
+    label,
+    display_name,
+    bio,
+    photos,
+    music_genres: [],
+    spotify_embed_url: null,
+    job_title: "",
+    company: "",
+    industry: null,
+    looking_for: [],
+    offering: [],
+    linkedin_url: null,
+    created_at: existing?.created_at ?? iso(now),
+  };
+
+  if (input.kind === "corporate") {
+    const job_title = (merged.job_title ?? "").trim();
+    const company = (merged.company ?? "").trim();
+    if (job_title.length > JOB_TITLE_MAX) return fail(`El cargo tiene un máximo de ${JOB_TITLE_MAX} caracteres.`);
+    if (company.length > COMPANY_MAX) return fail(`La empresa tiene un máximo de ${COMPANY_MAX} caracteres.`);
+    if (!job_title && !company) return fail("Contá tu cargo o tu empresa: es lo primero que ven los demás.");
+    const valid = new Set<string>(BUSINESS_NEEDS.map((n) => n.id));
+    const looking_for = [...new Set(merged.looking_for ?? [])];
+    const offering = [...new Set(merged.offering ?? [])];
+    if ([...looking_for, ...offering].some((n) => !valid.has(n))) return fail("Opción inválida en lo que buscás u ofrecés.");
+    if (offering.includes("clients")) return fail("En \"ofrezco\" elegí lo que vendés o das: los clientes son quienes lo buscan.");
+    if (looking_for.length > NEEDS_MAX || offering.length > NEEDS_MAX) return fail(`Elegí hasta ${NEEDS_MAX} cosas que buscás y ${NEEDS_MAX} que ofrecés.`);
+    if (!looking_for.length && !offering.length) return fail("Elegí al menos algo que buscás u ofrecés: así te recomendamos con quién hablar.");
+    const industry = merged.industry ?? null;
+    if (industry && !INDUSTRIES.some((i) => i.id === industry)) return fail("Rubro inválido.");
+    let linkedin_url: string | null = null;
+    if (merged.linkedin_url) {
+      linkedin_url = parseLinkedin(merged.linkedin_url);
+      if (!linkedin_url) return fail("Link de LinkedIn inválido (ej. linkedin.com/in/tu-nombre).");
+    }
+    persona = { ...persona, job_title, company, industry, looking_for, offering, linkedin_url };
+  } else {
+    const genres = merged.music_genres ?? [];
+    const err = checkGenres(genres);
+    if (err) return fail(err);
+    let spotify: string | null = null;
+    if (merged.spotify_embed_url) {
+      const ref = parseSpotify(merged.spotify_embed_url);
+      if (!ref) return fail("Link de Spotify inválido.");
+      spotify = ref.embedUrl;
+    }
+    persona = { ...persona, music_genres: genres, spotify_embed_url: spotify };
+  }
+
+  const list = existing ? state.profile_personas.map((p) => (p.id === persona.id ? persona : p)) : [...state.profile_personas, persona];
+  return ok({ ...state, profile_personas: list }, persona);
+}
+
+/**
+ * Borra un perfil adicional. No se puede mientras lo usás en un evento con el lobby abierto (cambialo antes).
+ * En los eventos ya cerrados los demás pasan a ver una cara neutra (nombre, sin fotos): nunca otro perfil.
+ */
+export function deletePersona(state: RougeState, userId: UUID, personaId: UUID, now = Date.now()): Result {
+  const p = state.profile_personas.find((x) => x.id === personaId && x.user_id === userId);
+  if (!p) return fail("Ese perfil no existe.");
+  const inUse = state.event_attendees.some((a) => a.persona_id === personaId && a.user_id === userId && (() => {
+    const ev = getEvent(state, a.event_id);
+    return !!ev && lobbyPhase(ev, now) !== "expired";
+  })());
+  if (inUse) return fail("Estás usando este perfil en un evento en curso: cambialo desde el evento antes de borrarlo.");
+  return ok(
+    {
+      ...state,
+      profile_personas: state.profile_personas.filter((x) => x.id !== personaId),
+      event_attendees: state.event_attendees.map((a) => (a.persona_id === personaId ? { ...a, persona_id: null } : a)),
+    },
+    undefined,
+  );
 }
 
 export function blockUser(state: RougeState, blockerId: UUID, blockedUserId: UUID, now = Date.now()): Result {
@@ -349,11 +474,17 @@ export function joinEvent(
   code: string,
   mood: MoodTag,
   now = Date.now(),
+  personaId: UUID | null = null,
 ): Result<{ eventId: UUID; squadId?: UUID }> {
   if (!getProfile(state, userId)) return fail("Primero creá tu perfil.");
   const resolved = resolveAccessCode(state, code);
   if (!resolved) return fail("Código o link inválido.");
   const { event, via, inviteCode, squad, promoter } = resolved;
+  // Vertical: el mood y el perfil tienen que ser del tipo de evento (⇔ join_event: invalid_mood / persona_required).
+  const moodErr = checkMoodForEvent(event, mood);
+  if (moodErr) return fail(moodErr);
+  const personaErr = checkPersonaForEvent(state, userId, event, personaId);
+  if (personaErr) return fail(personaErr);
   // Expulsado por el organizador: mensaje genérico (mismo criterio que join_event → 'banned').
   if (state.event_bans.some((b) => b.event_id === event.id && b.user_id === userId)) return fail("No podés entrar a este evento.");
   // Borrador: el evento existe pero todavía no está publicado (mismo criterio que join_event → 'event_draft').
@@ -371,7 +502,7 @@ export function joinEvent(
   if (existing) {
     next = {
       ...next,
-      event_attendees: next.event_attendees.map((a) => (a.id === existing.id ? { ...a, mood_tag: mood, last_active_at: iso(now) } : a)),
+      event_attendees: next.event_attendees.map((a) => (a.id === existing.id ? { ...a, mood_tag: mood, persona_id: personaId, last_active_at: iso(now) } : a)),
     };
   } else {
     const count = state.event_attendees.filter((a) => a.event_id === event.id).length;
@@ -383,13 +514,15 @@ export function joinEvent(
       event_id: event.id,
       user_id: userId,
       mood_tag: mood,
-      ghost_mode: false,
+      persona_id: personaId,
+      // Ajustes de privacidad: entrar en modo incógnito (fuera de la grilla) si la persona lo eligió.
+      ghost_mode: privacyOf(state, userId).incognito_default,
       visited_sectors: [],
       only_liked_can_icebreak: false,
       icebreaker_used: false,
       total_spent: 0,
       joined_via: via,
-      referred_by: promoter && promoter.user_id !== userId ? promoter.user_id : null,
+      referred_by: promoter && promoter.user_id !== userId && vertical(event.kind).features.promoters ? promoter.user_id : null,
       checked_in_at: null,
       last_active_at: iso(now),
       joined_at: iso(now),
@@ -421,6 +554,11 @@ export function updateAttendeeSettings(
   now = Date.now(),
 ): Result {
   if (!getAttendee(state, eventId, userId)) return fail("No estás en este evento.");
+  const ev = getEvent(state, eventId);
+  if (patch.mood_tag && ev) {
+    const err = checkMoodForEvent(ev, patch.mood_tag);
+    if (err) return fail(err);
+  }
   return ok(
     {
       ...state,
@@ -445,8 +583,13 @@ function validatePair(state: RougeState, eventId: UUID, senderId: UUID, receiver
   if (sender.ghost_mode) return fail("Estás en Modo Solo Amigos. Desactivalo para conectar con gente nueva.");
   const receiver = getAttendee(state, eventId, receiverId);
   if (!receiver || isBlockedBetween(state, senderId, receiverId)) return fail(UNAVAILABLE);
+  // Networking solo para acreditados (si el evento lo pide) y solo con quien puedo ver (⇔ checkin_required / unavailable).
+  if (!networkingOpenFor(state, eventId, senderId)) return fail(CHECKIN_REQUIRED);
+  if (!canSeeAttendee(state, eventId, senderId, receiverId)) return fail(UNAVAILABLE);
   return null;
 }
+
+export const CHECKIN_REQUIRED = "En este evento el networking es para quienes ya se acreditaron en la puerta.";
 
 export function sendConnection(
   state: RougeState,
@@ -584,6 +727,7 @@ export function sendIcebreaker(
   let drinkPerkId: UUID | null = null;
 
   if (input.giftDrinkItemId) {
+    if (!hasFeature(state, eventId, "icebreakerGift")) return fail(NOT_IN_VERTICAL);
     const item = state.bar_menu.find((i) => i.id === input.giftDrinkItemId);
     if (!item || item.is_available === false) return fail("Ese trago no está disponible.");
     if (!GIFTABLE_CATEGORIES.includes(item.category)) return fail("Solo se pueden regalar tragos individuales.");
@@ -859,6 +1003,7 @@ export function dropPin(state: RougeState, eventId: UUID, userId: UUID, input: D
   if (input.x < 0 || input.x > 100 || input.y < 0 || input.y > 100) return fail("Ubicación fuera del plano.");
   const sq = squadOf(state, eventId, userId);
   const shareWithSquad = input.shareWithSquad && !!sq;
+  if (input.matchIds.length && !privacyOf(state, userId).pin_share_matches) return fail(PIN_SQUAD_ONLY);
   const matchIds = [...new Set(input.matchIds)].filter((id) => isMatch(state, eventId, userId, id) && !isBlockedBetween(state, userId, id));
   if (!shareWithSquad && matchIds.length === 0) return fail("Elegí con quién compartir tu pin.");
 
@@ -1045,6 +1190,7 @@ export function createRaffle(state: RougeState, eventId: UUID, prizeTitle: strin
   const disabled = off(state, eventId, "enablePerks");
   if (disabled) return disabled;
   if (!prizeTitle.trim()) return fail("Definí el premio.");
+  if (filter === "female" && !hasFeature(state, eventId, "genderRaffle")) return fail(NOT_IN_VERTICAL);
   const raffle: Raffle = {
     id: uid(),
     event_id: eventId,
@@ -1265,6 +1411,7 @@ export function setOrderStatus(state: RougeState, orderId: UUID, status: BarOrde
 // ═════════════════════════════════════════════════════════════════════
 
 export function requestSong(state: RougeState, eventId: UUID, userId: UUID, title: string, artist: string, now = Date.now()): Result<SongRequest> {
+  if (!hasFeature(state, eventId, "songRequests")) return fail(NOT_IN_VERTICAL);
   const t = title.trim();
   if (!t) return fail("¿Qué tema querés pedir?");
   const key = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
@@ -1277,6 +1424,7 @@ export function requestSong(state: RougeState, eventId: UUID, userId: UUID, titl
 export function toggleSongVote(state: RougeState, requestId: UUID, userId: UUID, forceOn = false): Result<SongRequest> {
   const r = state.song_requests.find((x) => x.id === requestId);
   if (!r) return fail("Pedido inexistente.");
+  if (!hasFeature(state, r.event_id, "songRequests")) return fail(NOT_IN_VERTICAL);
   const has = r.voter_ids.includes(userId);
   const voter_ids = has && !forceOn ? r.voter_ids.filter((v) => v !== userId) : has ? r.voter_ids : [...r.voter_ids, userId];
   const updated = { ...r, voter_ids };
@@ -1306,6 +1454,10 @@ export function upsertEvent(state: RougeState, input: Partial<RougeEvent> & Pick
   if (slug.length < 3) return fail("El link del evento necesita al menos 3 caracteres.");
   if (state.events.some((e) => e.slug === slug && e.id !== input.id)) return fail("Ya existe un evento con ese link.");
   const existing = input.id ? getEvent(state, input.id) : undefined;
+  // Vertical: no cambia una vez que entró alguien (⇔ trigger events_kind_locked): moods y perfiles ya elegidos.
+  if (input.kind !== undefined && !EVENT_KINDS.includes(input.kind)) return fail("Tipo de evento inválido.");
+  if (existing && input.kind && input.kind !== existing.kind && state.event_attendees.some((a) => a.event_id === existing.id))
+    return fail("No se puede cambiar el tipo de evento: ya entró gente con perfiles y moods de este tipo.");
   const brandError = checkEventBranding(state, existing?.created_by ?? state.current_user_id, input);
   if (brandError) return fail(brandError);
   const theme: Partial<RougeEvent> = {};
@@ -1313,12 +1465,15 @@ export function upsertEvent(state: RougeState, input: Partial<RougeEvent> & Pick
   if (input.theme_accent !== undefined) theme.theme_accent = normalizeHex(input.theme_accent);
   const base: RougeEvent = existing ?? {
     id: uid(),
+    kind: "nightlife",
+    networking_checkin_only: false,
     slug,
     name: input.name,
     description: "",
     venue_name: "",
     venue_map_url: null,
-    venue_layout_json: state.events[0]?.venue_layout_json ?? VENUE_LAYOUT,
+    // Plano base según la vertical (el organizador puede subir el suyo).
+    venue_layout_json: input.kind === "corporate" ? PRO_VENUE_LAYOUT : (state.events.find((e) => e.kind !== "corporate")?.venue_layout_json ?? VENUE_LAYOUT),
     lineup_json: [],
     cover_url: null,
     starts_at: input.starts_at,

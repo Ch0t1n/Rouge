@@ -17,6 +17,11 @@ import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
+import { privacyOf, profileHref } from "@/lib/engine/privacy";
+import { displayStatus, meetingPlace, meetingPoint, meetingsOf, otherOf } from "@/lib/engine/meetings";
+import { faceOf } from "@/lib/engine/verticals";
+import type { MapMark } from "@/components/venue/VenueMap";
+import { formatTime } from "@/lib/utils";
 
 export default function MapPage() {
   const me = useRequireProfile();
@@ -42,6 +47,27 @@ function LiveMap() {
   const myPin = activePinOf(state, event.id, meId, now);
   const pins = useMemo(() => visiblePins(state, event.id, meId, now), [state, event.id, meId, now]);
   const matches = useMemo(() => matchesOf(state, meId, event.id), [state, meId, event.id]);
+  // Reuniones aceptadas (y pendientes) con lugar en el plano: solo las mías. ?meeting=<id> la resalta.
+  const focusMeeting = params.get("meeting");
+  const meetingMarks: MapMark[] = meetingsOf(state, meId, event.id)
+    .filter((m) => ["accepted", "pending", "rescheduled"].includes(displayStatus(m, now)))
+    .flatMap((m) => {
+      const pt = meetingPoint(state, m);
+      if (!pt) return [];
+      const other = faceOf(state, otherOf(m, meId), event.id);
+      return [{
+        key: `meeting-${m.id}`,
+        x: pt.x,
+        y: pt.y,
+        icon: "📅",
+        tone: m.status === "accepted" ? ("squad" as const) : ("muted" as const),
+        label: `${formatTime(m.starts_at)} · ${other?.full_name.split(" ")[0] ?? ""} · ${meetingPlace(state, m)}`,
+        emphasis: m.id === focusMeeting,
+        onClick: () => router.push(`/meetings#${m.id}`),
+      }];
+    });
+  // Privacidad: si elegí "solo mi Squad", el pin nunca se comparte con matches.
+  const squadOnly = !privacyOf(state, meId).pin_share_matches;
 
   const initialMode: Mode = params.get("mode") === "base" && mine ? "base" : params.get("rescue") ? "rescue" : "pin";
   const [mode, setMode] = useState<Mode>(initialMode);
@@ -79,7 +105,7 @@ function LiveMap() {
 
   const confirmPin = async () => {
     if (!draft) return;
-    const r = await exec(C.dropPin(event.id, meId, { x: draft.x, y: draft.y, shareWithSquad: shareSquad && !!mine, matchIds: shareMatches ? selected : [], note }));
+    const r = await exec(C.dropPin(event.id, meId, { x: draft.x, y: draft.y, shareWithSquad: shareSquad && !!mine, matchIds: shareMatches && !squadOnly ? selected : [], note }));
     if (!r.ok) return;
     setDraft(null);
     setNote("");
@@ -171,6 +197,7 @@ function LiveMap() {
           basePin={mine?.squad.base_pin_x != null ? { x: mine.squad.base_pin_x, y: mine.squad.base_pin_y!, label: mine.squad.base_pin_label ?? "Punto Base" } : null}
           onTap={onTap}
           onPinClick={setInspect}
+          marks={meetingMarks}
         />
         </div>
 
@@ -203,8 +230,8 @@ function LiveMap() {
             <Switch tone="squad" id="share-squad" checked={shareSquad && !!mine} disabled={!mine} onCheckedChange={setShareSquad} label="Mi Squad de amigos" description={mine ? `${mine.squad.name} · pin cian` : "Todavía no tenés Squad"} />
           </div>
           <div className={cn("rounded-2xl border px-3", shareMatches ? "border-rouge/50 bg-rouge/[0.07]" : "border-white/10")}>
-            <Switch tone="rouge" id="share-matches" checked={shareMatches} disabled={!matches.length} onCheckedChange={setShareMatches} label="Matches específicos de esta noche" description={matches.length ? "Solo los que selecciones · pin rouge" : "Todavía no tenés matches esta noche"} />
-            {shareMatches && (
+            <Switch tone="rouge" id="share-matches" checked={shareMatches && !squadOnly} disabled={!matches.length || squadOnly} onCheckedChange={setShareMatches} label="Matches específicos de esta noche" description={squadOnly ? "Desactivado en tu Privacidad: tu ubicación es solo para tu Squad" : matches.length ? "Solo los que selecciones · pin rouge" : "Todavía no tenés matches esta noche"} />
+            {shareMatches && !squadOnly && (
               <ul className="space-y-1 pb-3">
                 {matches.map(({ profile: p }) => {
                   const on = selected.includes(p.id);
@@ -293,7 +320,7 @@ function PinDetail({ vp, onClose, go }: { vp: VisiblePin; onClose: () => void; g
               <MessageCircle /> Escribile
             </Button>
           ) : null}
-          <Button variant="glass" onClick={() => { onClose(); go(`/u/${vp.profile.username}`); }}>
+          <Button variant="glass" onClick={() => { onClose(); go(profileHref(vp.profile, vp.pin.event_id)); }}>
             Ver perfil
           </Button>
         </div>

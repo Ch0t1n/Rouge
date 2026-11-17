@@ -23,15 +23,72 @@ export const MUSIC_GENRES = [
 ] as const;
 export type MusicGenre = (typeof MUSIC_GENRES)[number];
 
+/**
+ * Verticales de ROUGE (columna `events.kind`, enum `event_kind_t`):
+ *  - "nightlife": fiestas y boliches (ROUGE).
+ *  - "corporate": eventos de empresas, pymes y networking (ROUGE Pro).
+ * Lo que cambia por vertical (moods, campos del perfil, vocabulario, funciones) vive en `engine/verticals.ts`.
+ */
+export const EVENT_KINDS = ["nightlife", "corporate"] as const;
+export type EventKind = (typeof EVENT_KINDS)[number];
+
+/** Mood de la noche / "¿a qué venís?": cada uno pertenece a UNA vertical (espejo de `mood_kind()` en SQL). */
 export const MOOD_TAGS = [
-  { id: "with_friends", label: "Voy con amigos", emoji: "👯" },
-  { id: "lost_group", label: "Perdí a mi grupo", emoji: "🧭" },
-  { id: "at_bar", label: "En la barra", emoji: "🍸" },
-  { id: "open_to_meet", label: "Abierto a conocer gente", emoji: "✨" },
-  { id: "just_dance", label: "Solo vengo a bailar", emoji: "💃" },
-  { id: "after_hunt", label: "Buscando after", emoji: "🌅" },
+  { id: "with_friends", label: "Voy con amigos", emoji: "👯", kind: "nightlife" },
+  { id: "lost_group", label: "Perdí a mi grupo", emoji: "🧭", kind: "nightlife" },
+  { id: "at_bar", label: "En la barra", emoji: "🍸", kind: "nightlife" },
+  { id: "open_to_meet", label: "Abierto a conocer gente", emoji: "✨", kind: "nightlife" },
+  { id: "just_dance", label: "Solo vengo a bailar", emoji: "💃", kind: "nightlife" },
+  { id: "after_hunt", label: "Buscando after", emoji: "🌅", kind: "nightlife" },
+  { id: "pro_networking", label: "Haciendo networking", emoji: "🤝", kind: "corporate" },
+  { id: "pro_selling", label: "Busco clientes", emoji: "💼", kind: "corporate" },
+  { id: "pro_buying", label: "Busco proveedores", emoji: "🛒", kind: "corporate" },
+  { id: "pro_partners", label: "Busco socios o alianzas", emoji: "🧩", kind: "corporate" },
+  { id: "pro_funding", label: "Busco inversión", emoji: "🚀", kind: "corporate" },
+  { id: "pro_hiring", label: "Estoy contratando", emoji: "🧑‍💼", kind: "corporate" },
+  { id: "pro_learning", label: "Vengo a aprender", emoji: "📚", kind: "corporate" },
+  { id: "pro_coffee", label: "En el coffee break", emoji: "☕", kind: "corporate" },
 ] as const;
 export type MoodTag = (typeof MOOD_TAGS)[number]["id"];
+
+/** Rubro de una persona en eventos corporativos (perfil profesional). */
+export const INDUSTRIES = [
+  { id: "retail", label: "Comercio" },
+  { id: "manufacturing", label: "Industria" },
+  { id: "services", label: "Servicios profesionales" },
+  { id: "tech", label: "Tecnología" },
+  { id: "food", label: "Gastronomía y alimentos" },
+  { id: "agro", label: "Agro" },
+  { id: "construction", label: "Construcción" },
+  { id: "health", label: "Salud" },
+  { id: "education", label: "Educación" },
+  { id: "tourism", label: "Turismo" },
+  { id: "fashion", label: "Moda y textil" },
+  { id: "logistics", label: "Logística y transporte" },
+  { id: "finance", label: "Finanzas y seguros" },
+  { id: "other", label: "Otro rubro" },
+] as const;
+export type Industry = (typeof INDUSTRIES)[number]["id"];
+
+/**
+ * Lo que una persona BUSCA u OFRECE en un evento corporativo. El mismo catálogo para las dos listas:
+ * la afinidad de negocio cruza lo que uno busca con lo que el otro ofrece (complementariedad).
+ */
+export const BUSINESS_NEEDS = [
+  { id: "clients", label: "Clientes", emoji: "💼" },
+  { id: "suppliers", label: "Proveedores e insumos", emoji: "📦" },
+  { id: "partners", label: "Socios y alianzas", emoji: "🧩" },
+  { id: "investment", label: "Inversión", emoji: "🚀" },
+  { id: "financing", label: "Financiamiento y crédito", emoji: "🏦" },
+  { id: "talent", label: "Talento y empleo", emoji: "🧑‍💼" },
+  { id: "mentoring", label: "Mentoría", emoji: "🧭" },
+  { id: "software", label: "Software y tecnología", emoji: "💻" },
+  { id: "marketing", label: "Marketing y ventas", emoji: "📣" },
+  { id: "logistics", label: "Logística", emoji: "🚚" },
+  { id: "export", label: "Distribución y exportación", emoji: "🌎" },
+  { id: "advisory", label: "Asesoría contable o legal", emoji: "⚖️" },
+] as const;
+export type BusinessNeed = (typeof BUSINESS_NEEDS)[number]["id"];
 
 export type Gender = "female" | "male" | "non_binary" | "undisclosed";
 
@@ -49,7 +106,10 @@ export interface Profile {
   id: UUID;
   username: string;
   full_name: string;
-  birth_date: string; // YYYY-MM-DD
+  /** YYYY-MM-DD. Solo la propia cuenta (y el Modo Demo): de otras personas el servidor manda `age`, nunca la fecha. */
+  birth_date: string | null;
+  /** Edad calculada por el servidor en la tarjeta pública (profile_cards). */
+  age?: number | null;
   gender: Gender;
   phone_normalized: string | null; // E.164: +5491122334455
   bio: string;
@@ -64,6 +124,35 @@ export interface Profile {
   is_verified: boolean;
   /** Aceptó Términos y Privacidad y declaró ser mayor de 18 (onboarding). */
   terms_accepted_at?: ISODate | null;
+  created_at: ISODate;
+}
+
+/**
+ * Perfil adicional de una cuenta (tabla `profile_personas`). Una persona puede tener varios y elige con cuál
+ * mostrarse al entrar a cada evento (`event_attendees.persona_id`). El perfil de la cuenta (`Profile`) es el
+ * "Perfil principal" de la noche; para eventos corporativos hace falta un perfil `corporate`.
+ * Regla: en un evento solo se ve la cara con la que la persona entró (`faceOf`), nunca la de otra vertical.
+ */
+export interface ProfilePersona {
+  id: UUID;
+  user_id: UUID;
+  kind: EventKind;
+  /** Nombre interno para elegirlo (solo lo ve su dueño/a): "Trabajo", "Mi pyme", "Noche techno". */
+  label: string;
+  /** Nombre que ven los demás en ese evento. */
+  display_name: string;
+  bio: string; // ≤160
+  photos: ProfilePhoto[]; // ≤4
+  // Noche
+  music_genres: MusicGenre[];
+  spotify_embed_url: string | null;
+  // Corporativo
+  job_title: string; // cargo ≤60
+  company: string; // empresa ≤60
+  industry: Industry | null;
+  looking_for: BusinessNeed[]; // ≤3
+  offering: BusinessNeed[]; // ≤3
+  linkedin_url: string | null;
   created_at: ISODate;
 }
 
@@ -98,7 +187,8 @@ export interface LineupSlot {
 export interface VenueSector {
   id: string;
   name: string;
-  kind: "dancefloor" | "bar" | "vip" | "outdoor" | "entrance" | "booth" | "restroom" | "lounge";
+  /** stage / stand / meeting: sectores de eventos corporativos (escenario, stands de expositores, salas). */
+  kind: "dancefloor" | "bar" | "vip" | "outdoor" | "entrance" | "booth" | "restroom" | "lounge" | "stage" | "stand" | "meeting";
   x: number;
   y: number;
   w: number;
@@ -143,6 +233,10 @@ export interface BrandPaymentAccount {
 
 export interface RougeEvent {
   id: UUID;
+  /** Vertical del evento: noche (ROUGE) o corporativo (ROUGE Pro). No cambia una vez que entró alguien. */
+  kind: EventKind;
+  /** Networking (grilla, conectar, reuniones) solo entre quienes ya pasaron por la puerta. */
+  networking_checkin_only: boolean;
   slug: string;
   name: string;
   description: string;
@@ -403,6 +497,8 @@ export interface EventAttendee {
   event_id: UUID;
   user_id: UUID;
   mood_tag: MoodTag | null;
+  /** Perfil con el que se muestra en este evento (null = Perfil principal; obligatorio en eventos corporativos). */
+  persona_id: UUID | null;
   ghost_mode: boolean;
   only_liked_can_icebreak: boolean;
   icebreaker_used: boolean;
@@ -413,10 +509,72 @@ export interface EventAttendee {
   visited_sectors: string[];
   /** RRPP por cuyo link entró (primer contacto). */
   referred_by: UUID | null;
-  /** Escaneado en la puerta con su pase de la app o su entrada. */
+  /** Escaneado en la puerta con su pase de la app o su entrada. Privado: solo la persona y el equipo. */
   checked_in_at: ISODate | null;
   checked_in_terminal?: string | null;
+  /** Lo que ven los demás asistentes: si está acreditado/a, sin la hora (columna generada en SQL). */
+  is_checked_in?: boolean;
   joined_at: ISODate;
+}
+
+// ── Privacidad ───────────────────────────────────────────────────────
+
+/** Ajustes de privacidad de la cuenta (tabla `privacy_settings`). Sin fila = DEFAULT_PRIVACY. */
+export interface PrivacySettings {
+  user_id: UUID;
+  /** Entrar a cada evento en Modo Solo Amigos / Contactos (fuera de la grilla). */
+  incognito_default: boolean;
+  /** false: el pin del plano solo se comparte con el Squad, nunca con matches. */
+  pin_share_matches: boolean;
+  /** Empresa y cargo ocultos hasta aceptar una reunión o un contacto (LinkedIn siempre oculto hasta entonces). */
+  pro_details_after_meeting: boolean;
+  updated_at: ISODate;
+}
+
+// ── Reuniones y puntos de encuentro ──────────────────────────────────
+
+export type VenueSpotKind = "room" | "table" | "point";
+
+/** Sala, mesa o punto de encuentro del evento (tabla `venue_spots`), cargado por el organizador. */
+export interface VenueSpot {
+  id: UUID;
+  event_id: UUID;
+  name: string;
+  kind: VenueSpotKind;
+  /** Reuniones a la vez (null = sin límite). */
+  capacity: number | null;
+  coord_x: number | null;
+  coord_y: number | null;
+  is_active: boolean;
+  created_at: ISODate;
+}
+
+export type MeetingStatus = "pending" | "accepted" | "rescheduled" | "declined" | "cancelled";
+/** Estado que se muestra: "completed" = aceptada y ya terminó (derivado, no se guarda). */
+export type MeetingDisplayStatus = MeetingStatus | "completed";
+export type MeetingLocationKind = "spot" | "pin" | "tbd";
+
+/** Reunión 1 a 1 dentro de un evento (tabla `meetings`). */
+export interface Meeting {
+  id: UUID;
+  event_id: UUID;
+  requester_id: UUID;
+  invitee_id: UUID;
+  topic: string;
+  starts_at: ISODate;
+  duration_min: 15 | 30;
+  location_kind: MeetingLocationKind;
+  spot_id: UUID | null;
+  pin_x: number | null;
+  pin_y: number | null;
+  pin_label: string | null;
+  status: MeetingStatus;
+  /** Quién hizo la última propuesta: responde la otra persona. */
+  proposed_by: UUID;
+  /** Chat que se abre al aceptar. */
+  connection_id: UUID | null;
+  created_at: ISODate;
+  updated_at: ISODate;
 }
 
 // ── Conexiones ───────────────────────────────────────────────────────
@@ -729,6 +887,9 @@ export interface AdminStats {
   icebreakers_sent: number;
   matches_last_hour: number;
   matches_by_user: Record<UUID, number>;
+  active_pins?: number;
+  meetings_requested?: number;
+  meetings_accepted?: number;
 }
 
 export interface RougeState {
@@ -738,6 +899,14 @@ export interface RougeState {
   current_user_id: UUID;
   active_event_id: UUID;
   profiles: Profile[];
+  /** Perfiles adicionales (los míos y los que otros usan en mis eventos, saneados por persona_cards). */
+  profile_personas: ProfilePersona[];
+  /** Ajustes de privacidad (Supabase: solo los míos; demo: los de todas las personas). */
+  privacy_settings: PrivacySettings[];
+  /** Salas, mesas y puntos de encuentro de los eventos cargados. */
+  venue_spots: VenueSpot[];
+  /** Reuniones (Supabase: solo las mías). */
+  meetings: Meeting[];
   /** Cuentas de Instagram conectadas (demo: todas las personas; Supabase: solo la mía). */
   instagram_links: InstagramLink[];
   user_blocks: UserBlock[];
@@ -771,6 +940,9 @@ export interface RougeState {
   payout_aliases: PayoutAlias[];
   /** Supabase: números por RRPP calculados en el servidor (RPC promoter_stats). El RRPP no ve a los asistentes. */
   promoter_stats?: { user_id: UUID; link_id: UUID | null; code: string | null; commission_per_entry: number; entries: number; checked_in: number; billable: number; to_pay: number; bar_spend?: number }[] | null;
+  /** Modo Demo: evento al que pertenece `bar_menu` y menús de los otros eventos (en Supabase se carga el del activo). */
+  bar_menu_event_id?: UUID;
+  demo_menus?: Record<UUID, BarMenuItem[]>;
   /** Solo staff en Modo Supabase: conteos de conexiones (que son privadas por RLS). */
   admin_stats?: AdminStats | null;
   /** Staff de MI organización (dueño/a) o mis propias asignaciones (staff). */

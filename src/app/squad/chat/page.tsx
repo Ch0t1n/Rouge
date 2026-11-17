@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { SquadChatPanel } from "@/components/squad/SquadChatPanel";
 import { Avatar } from "@/components/ui/avatar";
 import { buttonVariants } from "@/components/ui/button";
+import { faceOf } from "@/lib/engine/verticals";
 
 export default function SquadChatPage() {
   const me = useRequireProfile();
@@ -22,7 +23,8 @@ function SquadChat() {
   const event = activeEvent(state)!;
   const meId = state.current_user_id;
   const mine = squadOf(state, event.id, meId);
-  const members = useMemo(() => (mine ? squadMembers(state, mine.squad.id).map((m) => getProfile(state, m.user_id)!).filter(Boolean) : []), [state, mine]);
+  const members = useMemo(() => (mine ? squadMembers(state, mine.squad.id).map((m) => faceOf(state, m.user_id)!).filter(Boolean) : []), [state, mine]);
+  const profiles = useMemo(() => new Map(members.map((p) => [p.id, p])), [members]);
 
   if (!mine) {
     return (

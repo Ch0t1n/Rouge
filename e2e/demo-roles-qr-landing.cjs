@@ -178,6 +178,11 @@ const assert = (c, m) => { if (!c) throw new Error("✘ " + m); log("✔ " + m);
   await ig.goto(`${B}/profile`, { waitUntil: "networkidle" });
   assert(await ig.isVisible(`text=@${sug}`) && await ig.isVisible("text=Cuenta conectada"), "demo: el perfil muestra el Instagram verificado");
   await ig.screenshot({ path: `${SP}/ig-demo-profile.png` });
+  // [v1.8] Los perfiles ajenos solo se ven compartiendo un evento: primero entra a la fiesta.
+  await ig.goto(`${B}/join/BRESH26`, { waitUntil: "networkidle" });
+  await ig.click('button[role="radio"]:has-text("Voy con amigos")');
+  await ig.click("text=Entrar a la fiesta");
+  await ig.waitForURL("**/lobby");
   // Perfil de otra persona con Instagram conectado y una con el @ escrito a mano
   await ig.goto(`${B}/u/cami.beats`, { waitUntil: "networkidle" });
   assert(await ig.isVisible("text=@cami.beats"), "demo: el Instagram aparece en el perfil de los demás");

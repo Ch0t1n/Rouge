@@ -9,7 +9,7 @@
  */
 import type { RougeState, UUID } from "@/lib/types";
 import { sha256Hex } from "@/lib/crypto/sha256";
-import { ageFrom } from "@/lib/utils";
+import { ageOf } from "./privacy";
 import { parseDoorValue, PASS_PREFIX, type DoorResult, type DoorStatus } from "./door";
 import { eventQrSecret, isDynamicQr, verifyDynamicQr } from "./qr";
 
@@ -32,7 +32,7 @@ export interface RosterPerson {
   name: string;
   username: string;
   photo: string | null;
-  age: number;
+  age: number | null;
   checked_in_at: string | null;
   banned: boolean;
 }
@@ -87,7 +87,7 @@ export function buildRoster(s: RougeState, eventId: UUID, now = Date.now()): Doo
       .filter((a) => a.event_id === eventId)
       .map((a) => {
         const p = s.profiles.find((x) => x.id === a.user_id);
-        const row: RosterPerson | null = p ? { user_id: a.user_id, name: p.full_name, username: p.username, photo: p.photos[0]?.url ?? null, age: ageFrom(p.birth_date), checked_in_at: a.checked_in_at, banned: banned.has(a.user_id) } : null;
+        const row: RosterPerson | null = p ? { user_id: a.user_id, name: p.full_name, username: p.username, photo: p.photos[0]?.url ?? null, age: ageOf(p), checked_in_at: a.checked_in_at, banned: banned.has(a.user_id) } : null;
         return row;
       })
       .filter((x): x is RosterPerson => x !== null),

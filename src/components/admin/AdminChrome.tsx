@@ -13,6 +13,7 @@ import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { isPathEnabled } from "@/lib/engine/features";
 import { useEventFeatures } from "@/lib/store/hooks";
 import { Wordmark } from "@/components/brand/Wordmark";
+import { hasFeature } from "@/lib/engine/verticals";
 
 export const ADMIN_NAV = [
   { href: "/admin", label: "Resumen", icon: BarChart3 },
@@ -37,7 +38,8 @@ export function AdminChrome({ children }: { children: ReactNode }) {
   // su permiso (misma regla que canAccessPath y que has_staff_role en el servidor).
   const access = (href: string) => canAccessPath(state, state.active_event_id, state.current_user_id, href);
   const allowed = signedIn && access(pathname).ok;
-  const nav = ADMIN_NAV.filter((n) => can(permissionForPath(n.href)!) && access(n.href).ok);
+  // RRPP es solo de la noche: en eventos corporativos (ROUGE Pro) no aparece.
+  const nav = ADMIN_NAV.filter((n) => can(permissionForPath(n.href)!) && access(n.href).ok && (n.href !== "/admin/rrpp" || hasFeature(state, state.active_event_id, "promoters")));
   // Módulos del evento activo (v1.8): las secciones de un módulo apagado se ven atenuadas y no se abren.
   const features = useEventFeatures();
   const moduleOn = (href: string) => isPathEnabled(features, href);
@@ -62,6 +64,7 @@ export function AdminChrome({ children }: { children: ReactNode }) {
       >
         {state.events.map((e) => (
           <option key={e.id} value={e.id} className="bg-surface">
+            {e.kind === "corporate" ? "💼 " : "🌙 "}
             {e.name}
           </option>
         ))}

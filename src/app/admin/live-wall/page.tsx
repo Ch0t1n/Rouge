@@ -11,6 +11,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { BrandLogo } from "@/components/brand/BrandTheme";
 import { eventTheme } from "@/lib/engine/branding";
 import { Wordmark } from "@/components/brand/Wordmark";
+import { verticalOf } from "@/lib/engine/verticals";
 
 /** Número que "cuenta" hasta el valor nuevo (efecto marcador). */
 function useCountUp(value: number, ms = 900) {
@@ -44,6 +45,10 @@ export default function LiveWallPage() {
   const { event, metrics, lineup, flash, lastRaffle } = data;
   const joinUrl = `${origin}/join/${event.slug}`;
   const theme = eventTheme(state, event.id);
+  // Vertical: en corporativo la LED habla de contactos, agenda y equipos (sin pista, DJ ni tragos de bienvenida).
+  const v = verticalOf(state, event.id);
+  const pro = v.kind === "corporate";
+  const upcoming = [...event.lineup_json].filter((sl) => +new Date(sl.ends_at) > now).sort((a, b) => +new Date(a.starts_at) - +new Date(b.starts_at)).slice(0, 3);
 
   useEffect(() => {
     setOrigin(window.location.origin);
@@ -68,8 +73,12 @@ export default function LiveWallPage() {
         </div>
       ),
     },
-    { key: "squad", node: <Announcement tone="squad" kicker="👯 Armá tu Squad" title="Squads de 4+ = trago de bienvenida" text="Encontrá a tus amigas en el plano y usá el Botón de Rescate si lo necesitás." /> },
-    { key: "bar", node: <Announcement tone="rouge" kicker="🍸 Barra Express" title="Pedí sin hacer fila" text="Desde la app: delivery a tu pin o retiro por QR en la ventanilla rápida." /> },
+    pro
+      ? { key: "squad", node: <Announcement tone="squad" kicker="🤝 Networking" title="Mirá tus recomendados" text="La app cruza lo que buscás con lo que ofrecen los demás. Pedí un café o una reunión desde su perfil." /> }
+      : { key: "squad", node: <Announcement tone="squad" kicker="👯 Armá tu Squad" title="Squads de 4+ = trago de bienvenida" text="Encontrá a tus amigas en el plano y usá el Botón de Rescate si lo necesitás." /> },
+    pro
+      ? { key: "bar", node: <Announcement tone="rouge" kicker={`☕ ${v.copy.bar}`} title="Pedí sin hacer fila" text="Café y catering desde la app: retiro por QR en la barra." /> }
+      : { key: "bar", node: <Announcement tone="rouge" kicker="🍸 Barra Express" title="Pedí sin hacer fila" text="Desde la app: delivery a tu pin o retiro por QR en la ventanilla rápida." /> },
   ].filter(Boolean) as { key: string; node: React.ReactNode }[];
 
   useEffect(() => {
@@ -119,18 +128,18 @@ export default function LiveWallPage() {
 
         {/* Matches */}
         <section className="col-span-5 flex min-h-0 flex-col justify-center overflow-hidden rounded-[2vw] border border-rouge/40 bg-rouge/[0.07] p-[2.4vw] shadow-[0_0_80px_rgb(var(--c-rouge)/0.25)]">
-          <p className="font-display text-[1.6vw] font-bold uppercase tracking-[0.3em] text-rouge">Matches de la noche</p>
+          <p className="font-display text-[1.6vw] font-bold uppercase tracking-[0.3em] text-rouge">{pro ? "Contactos del evento" : "Matches de la noche"}</p>
           <p className="font-display text-[min(13vw,24vh)] font-bold leading-[0.85] tabular-nums text-glow-rouge">{matches}</p>
           <p className="mt-[1vw] text-[1.6vw] text-primary/85">
-            🔥 +{data.matchesLastHour} en la última hora · {attendees} personas en el lobby
+            {pro ? "🤝" : "🔥"} +{data.matchesLastHour} en la última hora · {attendees} personas {pro ? "haciendo networking" : "en el lobby"}
           </p>
         </section>
 
         {/* DJ + Squad */}
         <section className="col-span-4 grid min-h-0 grid-rows-2 gap-[min(1.6vw,2.4vh)]">
           <div className="flex min-h-0 flex-col justify-center overflow-hidden rounded-[2vw] border border-white/10 bg-surface/80 px-[2vw] py-[min(1.6vw,2.4vh)]">
-            <p className="font-display text-[1.2vw] font-bold uppercase tracking-[0.3em] text-muted">🔊 En cabina</p>
-            <p className="mt-[0.4vh] truncate font-display text-[min(2.4vw,4.4vh)] font-bold leading-[1.15]">{lineup.current?.artist ?? "Cabina en pausa"}</p>
+            <p className="font-display text-[1.2vw] font-bold uppercase tracking-[0.3em] text-muted">{pro ? "🎤 Ahora" : "🔊 En cabina"}</p>
+            <p className="mt-[0.4vh] truncate font-display text-[min(2.4vw,4.4vh)] font-bold leading-[1.15]">{lineup.current?.artist ?? (pro ? "Networking libre" : "Cabina en pausa")}</p>
             {lineup.next && <p className="mt-[0.5vw] text-[1.4vw] text-muted">Sigue: {lineup.next.artist} · {formatTime(lineup.next.starts_at)}</p>}
             <div className="mt-[1.2vh] flex h-[min(2.5vw,3.5vh)] shrink-0 items-end gap-[0.4vw]" aria-hidden>
               {Array.from({ length: 18 }, (_, i) => (
@@ -139,26 +148,36 @@ export default function LiveWallPage() {
             </div>
           </div>
           <div className="flex min-h-0 flex-col justify-center overflow-hidden rounded-[2vw] border border-squad/40 bg-squad/[0.07] p-[2vw]">
-            <p className="font-display text-[1.2vw] font-bold uppercase tracking-[0.3em] text-squad">👑 Squad más grande</p>
+            <p className="font-display text-[1.2vw] font-bold uppercase tracking-[0.3em] text-squad">👑 {v.copy.squad} más grande</p>
             <p className="mt-[0.5vw] truncate font-display text-[2.6vw] font-bold leading-tight text-glow-squad">{metrics.biggestSquad?.name ?? "¡Armá el tuyo!"}</p>
-            <p className="text-[1.6vw] text-primary/85">{metrics.biggestSquad ? `${metrics.biggestSquad.size} integrantes · ${metrics.squads} squads en total` : "Squads de 4+ desbloquean tragos"}</p>
+            <p className="text-[1.6vw] text-primary/85">{metrics.biggestSquad ? `${metrics.biggestSquad.size} integrantes · ${metrics.squads} ${pro ? (metrics.squads === 1 ? "equipo" : "equipos") : "squads"} en total` : pro ? "Armá tu equipo para la ronda de negocios" : "Squads de 4+ desbloquean tragos"}</p>
           </div>
         </section>
 
         {/* QR */}
         <section className="col-span-3 row-span-2 flex min-h-0 flex-col items-center justify-center overflow-hidden rounded-[2vw] border border-vip/40 bg-vip/[0.06] p-[2vw] text-center shadow-[0_0_80px_rgb(var(--c-vip)/0.18)]">
-          <p className="font-display text-[1.6vw] font-bold leading-tight">Escaneá y entrá al lobby</p>
+          <p className="font-display text-[1.6vw] font-bold leading-tight">{pro ? "Escaneá y sumate al networking" : "Escaneá y entrá al lobby"}</p>
           <div className="mt-[1.2vw] rounded-[1.4vw] bg-white p-[1vw]">
             {origin && <QRCodeSVG value={joinUrl} size={512} level="M" bgColor="#FFFFFF" fgColor="#070709" className="size-[min(17vw,38vh)]" aria-label="QR para entrar al lobby" />}
           </div>
           <p className="mt-[1vw] font-display text-[1.3vw] font-semibold text-vip">{joinUrl.replace(/^https?:\/\//, "")}</p>
-          <p className="mt-[0.4vw] text-[1.1vw] text-muted">Conectá con gente afín · encontrá a tu Squad · pedí sin fila</p>
+          <p className="mt-[0.4vw] text-[1.1vw] text-muted">{pro ? "Encontrá clientes, proveedores y socios · pedí sin fila" : "Conectá con gente afín · encontrá a tu Squad · pedí sin fila"}</p>
         </section>
 
         {/* Temas */}
         <section className="col-span-4 min-h-0 overflow-hidden rounded-[2vw] border border-white/10 bg-surface/80 p-[2vw]">
-          <p className="font-display text-[1.2vw] font-bold uppercase tracking-[0.3em] text-muted">🎶 Lo que pide la pista</p>
-          <ol className="mt-[1.2vh] space-y-[1vh]">
+          <p className="font-display text-[1.2vw] font-bold uppercase tracking-[0.3em] text-muted">{pro ? "🗓️ Agenda" : "🎶 Lo que pide la pista"}</p>
+          {pro && (
+            <ol className="mt-[1.2vh] space-y-[1vh]">
+              {upcoming.map((sl) => (
+                <li key={sl.id} className="flex items-center gap-[1vw]">
+                  <span className="w-[5vw] font-display text-[min(1.5vw,2.8vh)] font-bold tabular-nums text-rouge">{formatTime(sl.starts_at)}</span>
+                  <span className="min-w-0 flex-1 truncate font-display text-[min(1.6vw,3vh)] font-bold">{sl.artist}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+          <ol className={cn("mt-[1.2vh] space-y-[1vh]", pro && "hidden")}>
             {metrics.topSongs.slice(0, 3).map((s, i) => (
               <li key={s.id} className="flex items-center gap-[1vw]">
                 <span className={cn("w-[2vw] font-display text-[min(2.2vw,4vh)] font-bold leading-none", i === 0 ? "text-rouge text-glow-rouge" : "text-muted")}>{i + 1}</span>

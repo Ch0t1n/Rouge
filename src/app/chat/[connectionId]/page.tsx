@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { UserX } from "lucide-react";
 import { sendMessage } from "@/lib/engine/actions";
-import { directMessages, getEvent, getProfile, isBlockedBetween } from "@/lib/engine/selectors";
+import { directMessages, getEvent, isBlockedBetween } from "@/lib/engine/selectors";
+import { faceOf, verticalOf } from "@/lib/engine/verticals";
 import { useRouge } from "@/lib/store/RougeContext";
 import { useRequireProfile } from "@/lib/store/hooks";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -18,6 +19,9 @@ import { GiftDrinkButton } from "@/components/monetization/GiftDrinkButton";
 import { isLobbyInteractive } from "@/lib/engine/selectors";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
+import { profileHref } from "@/lib/engine/privacy";
+import { displayStatus, meetingPlace, meetingPoint, meetingsOf } from "@/lib/engine/meetings";
+import { formatTime } from "@/lib/utils";
 
 /** Chat 1:1 entre matches. Sigue abierto aunque el lobby haya cerrado. */
 export default function ChatPage() {
@@ -36,7 +40,9 @@ function Chat() {
   const meId = state.current_user_id;
   const conn = state.connections.find((c) => c.id === connectionId);
   const otherId = conn ? (conn.sender_id === meId ? conn.receiver_id : conn.sender_id) : null;
-  const other = getProfile(state, otherId);
+  // La cara de la otra persona en el evento donde se conocieron (perfil profesional en corporativo).
+  const other = conn ? faceOf(state, otherId, conn.event_id) : undefined;
+  const v = verticalOf(state, conn?.event_id);
   const msgs = conn ? directMessages(state, conn.id) : [];
 
   const params = useSearchParams();
@@ -63,16 +69,30 @@ function Chat() {
       <PageHeader
         backHref="/inbox"
         title={
-          <Link href={`/u/${other.username}`} className="flex items-center gap-2">
+          <Link href={profileHref(other, conn.event_id)} className="flex items-center gap-2">
             <Avatar profile={other} size={32} ring="rouge" /> {other.full_name.split(" ")[0]}
           </Link>
         }
-        subtitle={`Match en ${getEvent(state, conn.event_id)?.name ?? "un evento"}`}
+        subtitle={`${v.copy.match} en ${getEvent(state, conn.event_id)?.name ?? "un evento"}`}
         action={giftable ? <GiftDrinkButton connectionId={conn.id} toName={other.full_name.split(" ")[0]} autoOpen={params.get("regalo") === "1"} /> : undefined}
       />
       <div className="flex-1 px-4 pb-4 pt-2">
+        {/* Reunión aceptada entre los dos: fijada arriba del chat con link al plano */}
+        {meetingsOf(state, meId, conn.event_id)
+          .filter((m) => m.connection_id === conn.id && displayStatus(m, Date.now()) === "accepted")
+          .slice(0, 1)
+          .map((m) => (
+            <Link key={m.id} href={meetingPoint(state, m) ? `/map?meeting=${m.id}` : "/meetings"} className="mb-3 flex items-center gap-3 rounded-2xl border border-squad/40 bg-squad/[0.07] px-3 py-2.5 text-sm">
+              <span className="text-xl" aria-hidden>📅</span>
+              <span className="min-w-0 flex-1">
+                <span className="block font-semibold">Reunión {formatTime(m.starts_at)} · {m.duration_min} min</span>
+                <span className="block truncate text-xs text-muted">{meetingPlace(state, m)} · {m.topic}</span>
+              </span>
+              <span className="shrink-0 text-xs font-semibold text-squad">{meetingPoint(state, m) ? "Ver en el plano" : "Ver"}</span>
+            </Link>
+          ))}
         <p className="mx-auto mb-4 w-fit rounded-full bg-white/[0.05] px-3 py-1 text-center text-[11px] text-muted">
-          {conn.type === "icebreaker" ? "⚡ Empezó con un Rompehielos" : "💘 Hicieron Match"} · este chat no se borra al cerrar el lobby
+          {conn.type === "icebreaker" ? `⚡ Empezó con un${v.kind === "corporate" ? "a" : ""} ${v.copy.icebreaker}` : v.kind === "corporate" ? "🤝 Son contactos" : "💘 Hicieron Match"} · este chat no se borra al cerrar el lobby
         </p>
         <MessageList messages={msgs} meId={meId} profiles={new Map([[other.id, other]])} />
       </div>

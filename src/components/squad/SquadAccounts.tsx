@@ -8,7 +8,8 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ArrowRight, Check, Copy, Plus, Receipt, Trash2, Wallet, X } from "lucide-react";
 import type { SettlementMethod, UUID } from "@/lib/types";
-import { activeEvent, getProfile, squadMembers, squadOf } from "@/lib/engine/selectors";
+import { activeEvent, squadMembers, squadOf } from "@/lib/engine/selectors";
+import { faceOf } from "@/lib/engine/verticals";
 import { EXPENSE_DESCRIPTION_MAX, aliasOf, parsePayoutAlias, squadAccount, type Transfer } from "@/lib/engine/settle";
 import { useRouge } from "@/lib/store/RougeContext";
 import { cn, formatDateTime } from "@/lib/utils";
@@ -63,7 +64,7 @@ export function SquadAccounts({ embedded = false }: { embedded?: boolean }) {
   }
 
   const squadId = mine.squad.id;
-  const name = (id: UUID) => (id === meId ? "Vos" : (getProfile(state, id)?.full_name.split(" ")[0] ?? "Alguien"));
+  const name = (id: UUID) => (id === meId ? "Vos" : (faceOf(state, id)?.full_name.split(" ")[0] ?? "Alguien"));
   const net = acc.mine.net;
 
   return (
@@ -109,8 +110,8 @@ export function SquadAccounts({ embedded = false }: { embedded?: boolean }) {
           ) : (
             <ul className="space-y-2">
               {acc.transfers.map((t) => {
-                const from = getProfile(state, t.from);
-                const to = getProfile(state, t.to);
+                const from = faceOf(state, t.from);
+                const to = faceOf(state, t.to);
                 const alias = aliasOf(state, t.to);
                 const minePay = t.from === meId;
                 return (
@@ -169,7 +170,7 @@ export function SquadAccounts({ embedded = false }: { embedded?: boolean }) {
           ) : (
             <ul className="divide-y divide-white/5 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
               {acc.ledger.map((e) => {
-                const payer = getProfile(state, e.payer);
+                const payer = faceOf(state, e.payer);
                 return (
                   <li key={e.id} className="flex items-center gap-3 p-3">
                     {payer && <Avatar profile={payer} size={36} />}
@@ -212,7 +213,7 @@ export function SquadAccounts({ embedded = false }: { embedded?: boolean }) {
           <h2 id="balances" className="mb-2 text-lg">Saldos</h2>
           <ul className="grid grid-cols-2 gap-2">
             {acc.balances.map((b) => {
-              const p = getProfile(state, b.user_id);
+              const p = faceOf(state, b.user_id);
               return (
                 <li key={b.user_id} className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
                   {p && <Avatar profile={p} size={32} />}
@@ -274,7 +275,7 @@ function AddExpenseSheet({ open, onClose, squadId }: { open: boolean; onClose: (
           <legend className="mb-2 text-sm font-semibold">¿Entre quiénes?</legend>
           <ul className="flex flex-wrap gap-2">
             {members.map((m) => {
-              const p = getProfile(state, m.user_id);
+              const p = faceOf(state, m.user_id);
               const on = who.includes(m.user_id);
               return (
                 <li key={m.id}>
@@ -304,7 +305,7 @@ function PaySheet({ transfer, onClose, squadId }: { transfer: Transfer | null; o
   const [amount, setAmount] = useState("");
   useEffect(() => setAmount(transfer ? String(transfer.amount) : ""), [transfer]);
   if (!transfer) return null;
-  const to = getProfile(state, transfer.to);
+  const to = faceOf(state, transfer.to);
   const value = Number(amount.replace(",", "."));
 
   const save = async () => {

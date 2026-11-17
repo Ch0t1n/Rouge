@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ChevronDown, Ghost, Inbox, MapPin, Moon, Search, SlidersHorizontal, X } from "lucide-react";
 import { MOOD_TAGS, MUSIC_GENRES, type MoodTag } from "@/lib/types";
+import { OFFERABLE_NEEDS, moodsFor, personasOf, verticalOf } from "@/lib/engine/verticals";
 import { updateAttendeeSettings } from "@/lib/engine/actions";
 import { activeFilterCount, EMPTY_FILTERS, lobbyGrid, type GridFilters } from "@/lib/engine/grid";
 import { activeEvent, getAttendee, inboxOf, lobbyPhase } from "@/lib/engine/selectors";
@@ -49,20 +50,23 @@ function Lobby() {
   const pending = inboxOf(state, meId, event.id).length;
   const mood = MOOD_TAGS.find((m) => m.id === attendee?.mood_tag);
   const nFilters = activeFilterCount(filters);
+  const v = verticalOf(state, event.id);
+  const pro = v.kind === "corporate";
+  const myPersona = attendee?.persona_id ? personasOf(state, meId).find((p) => p.id === attendee.persona_id) : null;
 
   // ── Estados sin grilla ────────────────────────────────────────────
   if (phase === "expired") {
     return (
-      <Empty icon={<Moon className="size-7" />} title="El lobby cerró 🌙" text="La grilla y el plano se apagaron, pero tus matches y chats siguen abiertos para siempre.">
+      <Empty icon={<Moon className="size-7" />} title={pro ? "El networking cerró" : "El lobby cerró 🌙"} text={`La grilla y el plano se apagaron, pero tus ${v.copy.matches.toLowerCase()} y chats siguen abiertos para siempre.`}>
         <Link href="/inbox" className={buttonVariants({ size: "lg" })}>
-          Ver mis matches
+          Ver mis {v.copy.matches.toLowerCase()}
         </Link>
       </Empty>
     );
   }
   if (!attendee) {
     return (
-      <Empty icon={<Inbox className="size-7" />} title="Todavía no entraste" text={`Usá el link o el código de tu entrada para entrar al lobby de ${event.name}.`}>
+      <Empty icon={<Inbox className="size-7" />} title="Todavía no entraste" text={`Usá el link o el código de tu entrada para entrar a ${event.name}.`}>
         <Link href={`/join/${event.slug}`} className={buttonVariants({ size: "lg" })}>
           Entrar al lobby
         </Link>
@@ -100,13 +104,13 @@ function Lobby() {
 
   const setSetting = (patch: Parameters<typeof updateAttendeeSettings>[3]) => exec(C.updateAttendeeSettings(event.id, meId, patch));
 
-  const toggleGhost = async (v: boolean) => {
-    const r = await setSetting({ ghost_mode: v });
+  const toggleGhost = async (on: boolean) => {
+    const r = await setSetting({ ghost_mode: on });
     if (r.ok)
       notify({
-        tone: v ? "squad" : "rouge",
-        title: v ? "👻 Modo Solo Amigos activado" : "✨ Volviste a la grilla",
-        description: v ? "Nadie nuevo te ve en la grilla. Tu Squad, tus matches, el plano, la barra y los sorteos siguen funcionando." : "Ya aparecés para conectar.",
+        tone: on ? "squad" : "rouge",
+        title: on ? `👻 ${v.copy.ghost} activado` : "✨ Volviste a la grilla",
+        description: on ? `Nadie nuevo te ve en la grilla. Tu ${v.copy.squad}, tus ${v.copy.matches.toLowerCase()}, el plano, la barra y los sorteos siguen funcionando.` : "Ya aparecés para conectar.",
       });
   };
 
@@ -117,7 +121,7 @@ function Lobby() {
         <div className="flex items-center gap-2">
           <div className="min-w-0 flex-1">
             <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-rouge">
-              {phase === "live" && <LiveDot />} {phase === "live" ? "En vivo" : phase === "afterglow" ? "After · lobby abierto" : "Lobby abierto"}
+              {phase === "live" && <LiveDot />} {phase === "live" ? "En vivo" : phase === "afterglow" ? (pro ? "Después del evento · networking abierto" : "After · lobby abierto") : pro ? "Networking abierto" : "Lobby abierto"}
             </p>
             <h1 className="truncate text-xl leading-tight">{event.name}</h1>
           </div>
@@ -144,13 +148,13 @@ function Lobby() {
         {/* Switch rápido de privacidad */}
         <div className={cn("flex items-center gap-3 rounded-2xl border px-3 py-1.5 transition", attendee.ghost_mode ? "border-squad/40 bg-squad/[0.07]" : "border-white/10 bg-white/[0.03]")}>
           <Ghost className={cn("size-5 shrink-0", attendee.ghost_mode ? "text-squad" : "text-muted")} />
-          <Switch tone="squad" checked={attendee.ghost_mode} onCheckedChange={toggleGhost} id="ghost" label="Modo Solo Amigos" description={attendee.ghost_mode ? "No aparecés en la grilla" : "Ocultarme de la grilla de conexiones"} className="flex-1" />
+          <Switch tone="squad" checked={attendee.ghost_mode} onCheckedChange={toggleGhost} id="ghost" label={v.copy.ghost} description={attendee.ghost_mode ? "No aparecés en la grilla" : "Ocultarme de la grilla de conexiones"} className="flex-1" />
         </div>
         {!attendee.ghost_mode && (
           <div className="hidden space-y-2 lg:block">
             {filterRow}
             <div className="flex flex-wrap gap-1.5" aria-label="Filtrar por género musical">
-              {MUSIC_GENRES.map((g) => (
+              {!pro && MUSIC_GENRES.map((g) => (
                 <Chip key={g} small on={filters.genres.includes(g)} onClick={() => setFilters((f) => ({ ...f, genres: f.genres.includes(g) ? f.genres.filter((x) => x !== g) : [...f.genres, g] }))}>
                   {g}
                 </Chip>
@@ -163,16 +167,25 @@ function Lobby() {
       <div className="space-y-4 px-4 pb-8">
         <LineupBanner event={event} />
 
+        {/* Con qué perfil me ven en este evento (se cambia desde el ingreso) */}
+        <Link href={`/join/${event.slug}`} className="glass flex min-h-touch items-center justify-between gap-3 rounded-2xl px-4 py-2 text-sm">
+          <span className="min-w-0 truncate">
+            <span className="text-muted">Te ven con: </span>
+            <span className="font-semibold">{myPersona ? myPersona.label : "Perfil principal"}</span>
+          </span>
+          <span className="shrink-0 text-xs text-rouge">Cambiar</span>
+        </Link>
+
         {attendee.ghost_mode ? (
           <section className="rounded-3xl border border-squad/25 bg-squad/[0.05] p-6 text-center">
             <span className="mx-auto grid size-14 place-items-center rounded-full bg-squad/15 text-squad shadow-glow-squad">
               <Ghost className="size-7" />
             </span>
-            <h2 className="mt-4 text-xl">Estás en Modo Solo Amigos</h2>
-            <p className="mt-2 text-sm text-muted">Nadie nuevo te ve en la grilla y no recibís conexiones nuevas. Ideal si estás en pareja o venís a bailar con tu Squad.</p>
+            <h2 className="mt-4 text-xl">Estás en {v.copy.ghost}</h2>
+            <p className="mt-2 text-sm text-muted">{pro ? "Nadie nuevo te ve en la grilla y no recibís pedidos de contacto nuevos." : "Nadie nuevo te ve en la grilla y no recibís conexiones nuevas. Ideal si estás en pareja o venís a bailar con tu Squad."}</p>
             <ul className="mt-4 space-y-1 text-left text-sm text-primary/85">
-              <li>✓ Tu Squad y tus matches te siguen viendo</li>
-              <li>✓ Plano, Barra Express, perks y sorteos activos</li>
+              <li>✓ Tu {v.copy.squad} y tus {v.copy.matches.toLowerCase()} te siguen viendo</li>
+              <li>✓ Plano, {v.copy.bar}, perks y sorteos activos</li>
               <li>✓ Podés aceptar solicitudes que ya tenías</li>
             </ul>
             <Button variant="glass" className="mt-5" onClick={() => toggleGhost(false)}>
@@ -185,7 +198,7 @@ function Lobby() {
             <div className="lg:hidden">{filterRow}</div>
 
             <div className="flex items-baseline justify-between">
-              <h2 className="text-lg">{phase === "afterglow" ? "Los que vibraron con vos" : "Afines a vos esta noche"}</h2>
+              <h2 className="text-lg">{pro ? "Recomendados para tu negocio" : phase === "afterglow" ? "Los que vibraron con vos" : "Afines a vos esta noche"}</h2>
               <span className="text-xs text-muted">{grid.length} personas</span>
             </div>
 
@@ -211,7 +224,7 @@ function Lobby() {
                 ))}
               </div>
             )}
-            <p className="pt-2 text-center text-[11px] text-muted/70">Ordenado por afinidad musical, mood y actividad reciente.</p>
+            <p className="pt-2 text-center text-[11px] text-muted/70">{pro ? "Ordenado por lo que buscás y lo que ofrecen, a qué vienen y actividad reciente." : "Ordenado por afinidad musical, mood y actividad reciente."}</p>
           </>
         )}
 
@@ -222,15 +235,16 @@ function Lobby() {
             id="only-liked"
             checked={attendee.only_liked_can_icebreak}
             onCheckedChange={(v) => setSetting({ only_liked_can_icebreak: v })}
-            label="Rompehielos solo de quien conecté"
-            description="Solo te pueden escribir sin match las personas a las que les diste Conectar."
+            label={`${v.copy.icebreaker} solo de quien conecté`}
+            description={`Solo te pueden escribir sin ${v.copy.match.toLowerCase()} las personas a las que les diste Conectar.`}
           />
         </section>
       </div>
 
       {/* Mood */}
-      <BottomSheet open={moodOpen} onClose={() => setMoodOpen(false)} title="¿Cómo venís ahora?" description="Tu mood se ve en tu tarjeta y ajusta la afinidad.">
+      <BottomSheet open={moodOpen} onClose={() => setMoodOpen(false)} title={pro ? "¿A qué venís ahora?" : "¿Cómo venís ahora?"} description="Se ve en tu tarjeta y ajusta las recomendaciones.">
         <MoodPicker
+          kind={v.kind}
           value={attendee.mood_tag}
           onChange={(m: MoodTag) => {
             setSetting({ mood_tag: m });
@@ -254,15 +268,25 @@ function Lobby() {
         }
       >
         <div className="space-y-5">
-          <FilterGroup title="Género musical">
-            {MUSIC_GENRES.map((g) => (
-              <Chip key={g} on={filters.genres.includes(g)} onClick={() => setFilters((f) => ({ ...f, genres: f.genres.includes(g) ? f.genres.filter((x) => x !== g) : [...f.genres, g] }))}>
-                {g}
-              </Chip>
-            ))}
-          </FilterGroup>
-          <FilterGroup title="Mood de la noche">
-            {MOOD_TAGS.map((m) => (
+          {pro ? (
+            <FilterGroup title="Que ofrezcan">
+              {OFFERABLE_NEEDS.map((n) => (
+                <Chip key={n.id} on={filters.needs.includes(n.id)} onClick={() => setFilters((f) => ({ ...f, needs: f.needs.includes(n.id) ? f.needs.filter((x) => x !== n.id) : [...f.needs, n.id] }))}>
+                  {n.emoji} {n.label}
+                </Chip>
+              ))}
+            </FilterGroup>
+          ) : (
+            <FilterGroup title="Género musical">
+              {!pro && MUSIC_GENRES.map((g) => (
+                <Chip key={g} on={filters.genres.includes(g)} onClick={() => setFilters((f) => ({ ...f, genres: f.genres.includes(g) ? f.genres.filter((x) => x !== g) : [...f.genres, g] }))}>
+                  {g}
+                </Chip>
+              ))}
+            </FilterGroup>
+          )}
+          <FilterGroup title={v.copy.moodTitle}>
+            {moodsFor(v.kind).map((m) => (
               <Chip key={m.id} on={filters.moods.includes(m.id)} onClick={() => setFilters((f) => ({ ...f, moods: f.moods.includes(m.id) ? f.moods.filter((x) => x !== m.id) : [...f.moods, m.id] }))}>
                 {m.emoji} {m.label}
               </Chip>

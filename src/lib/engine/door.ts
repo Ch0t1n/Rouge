@@ -16,9 +16,9 @@
  * Contraparte SQL: door_scan (dueño/a, producción y seguridad) y door_settle_late.
  */
 import type { LatePaymentMethod, RougeState, TicketList, UUID } from "@/lib/types";
-import { ageFrom } from "@/lib/utils";
 import { eventQrSecret, isDynamicQr, verifyDynamicQr } from "./qr";
 import { featureOn } from "./features";
+import { ageOf } from "./privacy";
 
 export type DoorStatus = "ok" | "already" | "invalid" | "revoked" | "banned" | "other_event" | "not_attendee" | "general_link" | "static_qr" | "expired_qr" | "late_free" | "module_off";
 
@@ -101,7 +101,7 @@ export function doorCheckIn(state: RougeState, eventId: UUID, raw: string, now =
   const iso = new Date(now).toISOString();
   const person = (userId: UUID | null) => {
     const p = userId ? state.profiles.find((x) => x.id === userId) : undefined;
-    return { user_id: p?.id ?? null, name: p?.full_name ?? null, username: p?.username ?? null, photo: p?.photos?.[0]?.url ?? null, age: p ? ageFrom(p.birth_date) : null };
+    return { user_id: p?.id ?? null, name: p?.full_name ?? null, username: p?.username ?? null, photo: p?.photos?.[0]?.url ?? null, age: p ? ageOf(p) : null };
   };
   const banned = (userId: UUID | null) => !!userId && state.event_bans.some((b) => b.event_id === eventId && b.user_id === userId);
 
@@ -164,7 +164,7 @@ export function doorSettleLate(state: RougeState, eventId: UUID, codeId: UUID, m
   if (!code) return { ok: false, error: "Esa entrada no existe." };
   if (!LATE_METHODS.some((m) => m.id === method)) return { ok: false, error: "Elegí cómo pagó." };
   const p = code.used_by_user_id ? state.profiles.find((x) => x.id === code.used_by_user_id) : undefined;
-  const who = { user_id: p?.id ?? null, name: p?.full_name ?? code.holder_name ?? null, username: p?.username ?? null, photo: p?.photos?.[0]?.url ?? null, age: p ? ageFrom(p.birth_date) : null };
+  const who = { user_id: p?.id ?? null, name: p?.full_name ?? code.holder_name ?? null, username: p?.username ?? null, photo: p?.photos?.[0]?.url ?? null, age: p ? ageOf(p) : null };
   if (code.checked_in_at) return { ok: true, state, data: { ...empty("already", "code"), ...who, label: code.label, checked_in_at: code.checked_in_at, terminal: code.checked_in_terminal ?? null } };
   const late = lateFreeFor(state, code, now);
   if (!late) return { ok: false, error: "Esta entrada no tiene diferencial para cobrar." };
