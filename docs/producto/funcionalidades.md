@@ -179,8 +179,8 @@ invitación al Squad, perfil e invitación al evento desde el inicio. `/admin/pr
 procedural de fondo que cambia con cada sección (núcleo de cromo → anillos de conexiones → grilla holográfica del
 plano con pines → cierre dorado/carmesí). Secciones:
 
-1. **Hero** "No vayas a ciegas. Domina la noche." con CTAs *Tengo una entrada* (`/join`, o tu pantalla si ya entraste)
-   y *Soy Organizador / Dueño de Club* (login de equipo → panel).
+1. **Hero**: H1 "App para fiestas y boliches" (la frase que se busca) y el eslogan gigante "No vayas a ciegas. Dominá
+   la noche." con CTAs *Tengo una entrada* (`/join`, o tu pantalla si ya entraste) y *¿Cómo funciona?*.
 2. **Marquesina** doble que acelera y cambia de sentido con el scroll.
 3. **Los 4 pilares** (lobby previo, Squads y seguridad, Pin-Drop 15 min, caducidad y privacidad) con un iPhone fijo
    que cambia de pantalla al bajar (en mobile, cada bloque trae su pantalla).
@@ -196,6 +196,15 @@ plano con pines → cierre dorado/carmesí). Secciones:
 La pantalla principal es para el público real: **no tiene nada de la demo** (ni atajos para entrar como un rol ni la
 fiesta de ejemplo); eso vive en [`/demo`](#18-demo-en-vivo-para-anfitriones). En desktop hay cursor propio magnético; respeta
 "reducir movimiento" (sin Lenis ni animaciones pesadas) y, si el dispositivo no tiene WebGL, queda el fondo CSS.
+
+**SEO.** La landing llega renderizada desde el servidor (el texto completo está en el HTML que leen Google, Bing y
+los bots de IA, sin depender de JavaScript). Título, descripción, canonical, Open Graph e imagen para compartir
+(`/opengraph-image`, 1200×630) salen de `src/components/landing/content.ts` y `src/app/page.tsx`, junto con los datos
+estructurados (schema.org: `Organization`, `WebSite`, `WebApplication` gratuita y `FAQPage` con las preguntas
+frecuentes). `robots.txt` deja fuera del rastreo la app privada, el panel y la API; `sitemap.xml` lista solo `/`.
+`/organizadores`, `/demo`, `/join` y `/login` llevan `noindex` (los links de ingreso nunca aparecen en buscadores).
+El dominio sale de `NEXT_PUBLIC_APP_URL`. Palabras clave: app para fiestas / boliches, conocer gente en una fiesta,
+no perder a tus amigos en el boliche, pedir tragos sin fila, dividir la cuenta.
 
 ## 15. PWA y mala señal
 

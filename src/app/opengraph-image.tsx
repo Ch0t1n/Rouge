@@ -1,36 +1,40 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { ImageResponse } from "next/og";
-import { APP_NAME, APP_TAGLINE } from "@/lib/brand";
+import { APP_NAME } from "@/lib/brand";
 
-/** Imagen al compartir el sitio (WhatsApp, Instagram, X…) y en resultados enriquecidos. */
-export const alt = `${APP_NAME} — ${APP_TAGLINE}`;
+/** Imagen para compartir (WhatsApp, Instagram, X, buscadores): 1200×630, se genera en el build. */
+export const alt = `${APP_NAME} — La app de tu fiesta: conocé gente, no pierdas a tu grupo y pedí sin filas`;
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
-export default function OpengraphImage() {
+export default async function OpengraphImage() {
+  // Space Grotesk Bold (OFL), la tipografía display de la marca. Satori no lee woff2: va el .ttf local.
+  const display = await readFile(join(process.cwd(), "src/app/_og/SpaceGrotesk-Bold.ttf"));
   return new ImageResponse(
     (
-      <div
-        style={{
-          width: "100%",
-          height: "100%",
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "center",
-          padding: "0 96px",
-          background: "radial-gradient(circle at 18% 20%, rgba(255,30,86,0.45), transparent 55%), radial-gradient(circle at 85% 85%, rgba(0,240,255,0.25), transparent 50%), #070709",
-          color: "#F8FAFC",
-        }}
-      >
-        <div style={{ display: "flex", fontSize: 132, fontWeight: 800, letterSpacing: -4, lineHeight: 1 }}>
-          <span style={{ color: "#FF1E56" }}>ROUGE</span>
-          <span style={{ marginLeft: 28 }}>PASS</span>
+      <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", justifyContent: "space-between", padding: 72, background: "#070709", color: "#F8FAFC", fontFamily: "Space Grotesk" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 18, fontSize: 30, letterSpacing: 6, color: "#94A3B8" }}>
+          <div style={{ width: 18, height: 18, borderRadius: 9, background: "#FF1E56", boxShadow: "0 0 30px #FF1E56" }} />
+          APP PARA FIESTAS Y BOLICHES · +18
         </div>
-        <div style={{ marginTop: 36, fontSize: 52, fontWeight: 600 }}>{APP_TAGLINE}</div>
-        <div style={{ marginTop: 20, fontSize: 32, color: "#94A3B8", maxWidth: 900 }}>
-          Conectá con gente afín, no pierdas a tu Squad y pedí en la barra sin filas.
+        <div style={{ display: "flex", flexDirection: "column", fontSize: 112, fontWeight: 700, lineHeight: 0.9, letterSpacing: -5 }}>
+          <span>NO VAYAS A CIEGAS.</span>
+          <span style={{ color: "#FF1E56" }}>DOMINÁ LA NOCHE.</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", fontSize: 30 }}>
+          <div style={{ display: "flex", gap: 14, color: "#94A3B8" }}>
+            <span>Conocé gente ·</span>
+            <span style={{ color: "#00F0FF" }}>tu grupo en el plano ·</span>
+            <span style={{ color: "#FFB800" }}>tragos sin fila</span>
+          </div>
+          <span style={{ display: "flex", fontSize: 56, fontWeight: 700, letterSpacing: -2 }}>
+            <span style={{ color: "#FF1E56" }}>ROUGE</span>
+            <span style={{ marginLeft: 14 }}>PASS</span>
+          </span>
         </div>
       </div>
     ),
-    size,
+    { ...size, fonts: [{ name: "Space Grotesk", data: display, weight: 700, style: "normal" }] },
   );
 }

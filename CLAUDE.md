@@ -196,7 +196,10 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
    (simula Realtime). El `PersonaSwitcher` permite "actuar como" cualquier asistente.
    Si cambiás el formato del estado, subí `STATE_VERSION` en `seed.ts` (fuerza re-siembra).
 4. **Hidratación solo en cliente.** La semilla depende de `Date.now()`; el provider muestra
-   un BootScreen hasta montar. Las páginas de usuario son Client Components.
+   un BootScreen hasta montar. Las páginas de usuario son Client Components. **Excepción: la landing** (`/`,
+   `/organizadores`) se renderiza en el servidor con un estado vacío (SEO). Textos SEO y FAQ en `landing/content.ts`
+   (módulo plano: lo usa también el JSON-LD de `app/page.tsx`); `robots.ts`, `sitemap.ts` y `opengraph-image.tsx` en
+   `src/app`; dominio e indexación en `SITE_URL` / `SITE_INDEXABLE` (`lib/brand.ts`).
 5. **Una sola interfaz, responsiva.** En móvil (< md) `AppShell` muestra el contenedor tipo teléfono
    (`max-w-md`) con `BottomNav`. En tablet/PC (≥ md) usa `DesktopSidebar` (riel en md, expandible en lg; estado en
    `localStorage`) y contenido fluido (`max-w-7xl` en rutas `WIDE`, `max-w-3xl` en lectura). El ancho del sidebar es

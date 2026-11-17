@@ -28,7 +28,7 @@ export const metadata: Metadata = {
   openGraph: { type: "website", siteName: APP_NAME, locale: "es_AR" },
   twitter: { card: "summary_large_image" },
   title: { default: "Rouge Pass — La noche, conectada", template: "%s · Rouge Pass" },
-  description: "Lobby privado de tu fiesta: conectá con gente afín, no pierdas a tu Squad y pedí en la barra sin filas.",
+  description: "La app para fiestas y boliches: conocé gente afín, no pierdas a tu grupo y pedí tragos sin hacer fila. Entrás con tu entrada.",
   applicationName: "Rouge Pass",
   manifest: "/manifest.json",
   appleWebApp: { capable: true, title: "Rouge Pass", statusBarStyle: "black-translucent" },

@@ -143,6 +143,19 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
   salen sin query ni fragmento y con los segmentos privados ocultos (`/join/[code]`, `/u/[username]`,
   `/chat/[connectionId]`). Se activa en Vercel → Analytics.
 
+### Agregado
+- **SEO de la landing pública:** título y descripción con las búsquedas reales ("app para fiestas y boliches",
+  "conocer gente", "pedir tragos sin fila"), canonical, Open Graph / X con imagen propia (`/opengraph-image`),
+  datos estructurados schema.org (`Organization`, `WebSite`, `WebApplication` gratuita, `FAQPage`), `robots.txt` y
+  `sitemap.xml`. `/join`, `/login` y `/offline` no se indexan (los links de ingreso nunca aparecen en Google).
+- Preguntas frecuentes nuevas: ¿Qué es Rouge Pass?, ¿Es una app de citas?, ¿En qué fiestas funciona?
+
+### Cambiado
+- Textos de la landing reescritos para buscadores sin perder el tono: H1 "App para fiestas y boliches" (el eslogan
+  gigante queda igual, ahora con voseo: "Dominá la noche"), títulos y bajadas con las palabras clave, estados del
+  pedido en castellano en vez de identificadores técnicos, menú con anclas reales y respuestas de las preguntas
+  frecuentes siempre en el HTML.
+
 ## [1.6.0] — 2026-11-16
 
 ### Agregado

@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import { ArrowRight, Check, Plus } from "lucide-react";
 import { useEntry } from "../core/entry";
 import { SplitReveal } from "../fx/SplitReveal";
 import { cn } from "@/lib/utils";
+import { FAQ_PUBLIC } from "../content";
 
 const PLANS = [
   {
@@ -36,17 +37,6 @@ const PLANS = [
   },
 ];
 
-/** Preguntas del público (landing "/"): nada de planes, CRM ni ventas. */
-export const FAQ_PUBLIC = [
-  { q: "¿Tengo que descargar una app?", a: "No. Rouge Pass funciona en el navegador: abrís el link o el QR de tu entrada y listo. Si querés, la agregás a la pantalla de inicio." },
-  { q: "¿Cuánto me cuesta?", a: "Nada. Rouge Pass lo pone la fiesta. Solo pagás lo que pidas en la barra, como siempre (y sin hacer fila)." },
-  { q: "¿Quién ve mi número de teléfono?", a: "Ningún otro asistente. Y si bloqueás un número, nunca te revelamos si esa persona tiene cuenta." },
-  { q: "¿Qué pasa cuando termina la fiesta?", a: "Efecto Cenicienta: el lobby, el plano y los Squads se cierran a la hora que fija la fiesta. Tus Matches y sus chats quedan para siempre." },
-  { q: "¿Cómo me ubican si adentro no hay GPS?", a: "Con el Pin-Drop: tocás el plano real del lugar y tu pin dura 15 minutos. Lo ven solo tu Squad y los Matches que elijas." },
-  { q: "¿Puedo ir sin que me vean en la grilla?", a: "Sí: con el Modo Solo Amigos desaparecés de la grilla y te siguen viendo solo tu Squad y tus Matches." },
-  { q: "¿Cómo divido la cuenta con mi grupo?", a: "Lo que comparten en la barra se suma solo a las Cuentas de la mesa; la mesa, las entradas o el taxi los cargás a mano. Al final te decimos cuánto le pasás a quién." },
-];
-
 /** Preguntas de organizadores (página oculta "/organizadores"). */
 const FAQ = [
   { q: "¿Tengo que descargar una app?", a: "No. Rouge Pass es una PWA: abrís el link o el QR de tu entrada y funciona en el navegador. Si querés, la agregás a la pantalla de inicio." },
@@ -72,20 +62,24 @@ export function Faq({ items = FAQ }: { items?: { q: string; a: string }[] }) {
         const isOpen = open === i;
         return (
           <div key={f.q}>
-            <button type="button" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : i)} className="flex min-h-[72px] w-full items-center gap-4 py-4 text-left">
+            <button type="button" aria-expanded={isOpen} aria-controls={`faq-${i}`} onClick={() => setOpen(isOpen ? null : i)} className="flex min-h-[72px] w-full items-center gap-4 py-4 text-left">
               <span className="font-mono text-xs text-muted">{String(i + 1).padStart(2, "0")}</span>
               <span className="flex-1 font-display text-lg font-semibold sm:text-2xl">{f.q}</span>
               <motion.span animate={{ rotate: isOpen ? 45 : 0 }} transition={{ duration: 0.3 }} className={cn("grid size-10 shrink-0 place-items-center rounded-full border", isOpen ? "border-rouge bg-rouge text-white" : "border-white/20")}>
                 <Plus className="size-4" />
               </motion.span>
             </button>
-            <AnimatePresence initial={false}>
-              {isOpen && (
-                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.35, ease: [0.32, 0.72, 0, 1] }} className="overflow-hidden">
-                  <p className="max-w-2xl pb-6 pl-9 text-muted">{f.a}</p>
-                </motion.div>
-              )}
-            </AnimatePresence>
+            {/* La respuesta queda siempre en el DOM (la leen buscadores y lectores de pantalla); solo se anima la altura. */}
+            <motion.div
+              id={`faq-${i}`}
+              initial={false}
+              animate={{ height: isOpen ? "auto" : 0, opacity: isOpen ? 1 : 0 }}
+              transition={{ duration: 0.35, ease: [0.32, 0.72, 0, 1] }}
+              className="overflow-hidden"
+              aria-hidden={!isOpen}
+            >
+              <p className="max-w-2xl pb-6 pl-9 text-muted">{f.a}</p>
+            </motion.div>
           </div>
         );
       })}
@@ -150,8 +144,9 @@ export function PublicFaq() {
     <section id="preguntas" data-stage="3" className="relative scroll-mt-20 px-4 py-28 sm:px-8">
       <div className="grid gap-10 lg:grid-cols-[0.8fr_1.2fr]">
         <div>
-          <p className="font-mono text-xs uppercase tracking-[0.25em] text-muted">[ 05 {"//"} PREGUNTAS ]</p>
+          <p className="font-mono text-xs uppercase tracking-[0.25em] text-muted">[ 05 {"//"} PREGUNTAS FRECUENTES ]</p>
           <h2 className="mt-4 font-display text-5xl font-bold uppercase leading-[0.9] tracking-tighter sm:text-6xl">Preguntas de la noche.</h2>
+          <p className="mt-6 max-w-sm text-muted">Todo lo que querés saber antes de salir: cómo entrar, cuánto cuesta y quién ve tus datos.</p>
         </div>
         <Faq items={FAQ_PUBLIC} />
       </div>

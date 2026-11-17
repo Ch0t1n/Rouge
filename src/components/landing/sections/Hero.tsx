@@ -14,17 +14,19 @@ import { SplitReveal } from "../fx/SplitReveal";
 
 const COPY = {
   public: {
-    aria: "No vayas a ciegas. Domina la noche.",
+    // H1 = la frase que se busca (línea chica de arriba); el titular gigante es el eslogan.
+    h1: "App para fiestas y boliches",
+    aria: "No vayas a ciegas. Dominá la noche.",
     title: [
       { text: "NO VAYAS", className: "" },
       { text: "A CIEGAS.", className: "text-outline pl-[4vw] sm:pl-[8vw]" },
-      { text: "DOMINA", className: "" },
+      { text: "DOMINÁ", className: "" },
       { text: "LA NOCHE.", className: "pl-[2vw] sm:pl-[14vw] text-rouge text-glow-rouge" },
     ],
-    eyebrow: "LA NOCHE, CONECTADA",
     tag: "+18",
   },
   organizers: {
+    h1: "App para organizadores de fiestas y boliches",
     aria: "Llená la pista. Medí la noche.",
     title: [
       { text: "LLENÁ", className: "" },
@@ -32,7 +34,6 @@ const COPY = {
       { text: "MEDÍ", className: "" },
       { text: "LA NOCHE.", className: "pl-[2vw] sm:pl-[14vw] text-rouge text-glow-rouge" },
     ],
-    eyebrow: "PARA ORGANIZADORES",
     tag: "B2B2C",
   },
 };
@@ -76,18 +77,18 @@ export function Hero() {
   return (
     <section ref={root} data-stage="0" className="relative flex min-h-[100svh] flex-col justify-end px-4 pb-10 pt-28 sm:px-8 lg:pb-14">
       {/* En celular, dos renglones alineados (sin sangría ni "B2B2C ]" huérfano); desde sm, en una línea. */}
-      <p data-hero-fade className="flex flex-col items-start gap-1.5 font-mono text-[11px] uppercase tracking-[0.18em] text-muted sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:text-xs sm:tracking-[0.25em]">
-        <span className="[text-wrap:balance]">
-          [ {copy.eyebrow} <span className="text-rouge">{"//"}</span> {copy.tag} ]
-        </span>
+      <div data-hero-fade className="flex flex-col items-start gap-1.5 font-mono text-[11px] uppercase tracking-[0.18em] text-muted sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:text-xs sm:tracking-[0.25em]">
+        <div className="[text-wrap:balance]">
+          [ <h1 className="inline font-mono font-normal tracking-[inherit]">{copy.h1}</h1> <span className="text-rouge">{"//"}</span> {copy.tag} ]
+        </div>
         {eventName && !org && (
           <span className="inline-flex items-center gap-1.5 text-squad">
             <span className="size-1.5 animate-pulse rounded-full bg-squad" /> EN VIVO: {eventName.toUpperCase()}
           </span>
         )}
-      </p>
+      </div>
 
-      <h1 aria-label={copy.aria} className="mt-6">
+      <p role="heading" aria-level={2} aria-label={copy.aria} className="mt-6">
         {TITLE.map((line, i) => (
           <span key={line.text} aria-hidden className="block" data-speed={[0.15, 0.32, 0.22, 0.45][i]}>
             <SplitReveal
@@ -100,7 +101,7 @@ export function Hero() {
             />
           </span>
         ))}
-      </h1>
+      </p>
 
       <div className="mt-10 grid gap-8 lg:grid-cols-[1.1fr_1fr] lg:items-end">
         {org ? (
@@ -110,8 +111,9 @@ export function Hero() {
           </p>
         ) : (
           <p data-hero-fade className="max-w-xl text-base text-muted sm:text-lg">
-            El link de tu entrada desbloquea el <span className="text-primary">lobby privado de la fiesta</span>: conectás con gente que escucha lo mismo, ves a{" "}
-            <span className="text-squad">tu grupo en el plano</span> y pedís en la <span className="text-vip">barra sin filas</span>. Sin descargar nada.
+            Rouge Pass es la app de tu fiesta. El link de tu entrada abre el <span className="text-primary">lobby privado del evento</span>: conocés gente que escucha tu
+            misma música, ves a <span className="text-squad">tu grupo en el plano del boliche</span> y pedís tragos <span className="text-vip">sin hacer fila</span>. Sin
+            descargar nada.
           </p>
         )}
         <div data-hero-fade className="flex flex-wrap gap-3 lg:justify-end">

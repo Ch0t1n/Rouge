@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Menu, X } from "lucide-react";
 import { scrollToId } from "../core/scrollStore";
@@ -11,8 +11,8 @@ import { cn } from "@/lib/utils";
 
 export const NAV_LINKS = {
   public: [
-    { id: "experiencia", label: "La Experiencia" },
-    { id: "plano", label: "Squads & Mapa" },
+    { id: "experiencia", label: "Cómo funciona" },
+    { id: "plano", label: "Squads y plano" },
     { id: "barra", label: "Barra Express" },
     { id: "ventajas", label: "Ventajas" },
     { id: "preguntas", label: "Preguntas" },
@@ -40,7 +40,9 @@ export function Nav() {
     return () => window.removeEventListener("scroll", on);
   }, []);
 
-  const go = (id: string) => {
+  // Anclas reales (enlaces internos que siguen los buscadores) con el scroll suave de Lenis.
+  const go = (e: MouseEvent, id: string) => {
+    e.preventDefault();
     setOpen(false);
     scrollToId(id);
   };
@@ -63,9 +65,9 @@ export function Nav() {
         </Link>
         <div className="ml-6 hidden items-center gap-1 lg:flex">
           {links.map((l) => (
-            <button key={l.id} type="button" onClick={() => go(l.id)} className="rounded-lg px-3 py-2 text-sm text-muted transition hover:text-primary">
+            <a key={l.id} href={`#${l.id}`} onClick={(e) => go(e, l.id)} className="rounded-lg px-3 py-2 text-sm text-muted transition hover:text-primary">
               {l.label}
-            </button>
+            </a>
           ))}
         </div>
         <div className="ml-auto flex items-center gap-2">
@@ -80,7 +82,7 @@ export function Nav() {
             </>
           ) : (
             <Link href={appHref} className="inline-flex min-h-[40px] items-center rounded-xl bg-rouge px-3 font-display text-sm font-semibold text-white shadow-glow-rouge transition hover:bg-rouge-hover">
-              Entrar a un Evento
+              Entrar a la fiesta
             </Link>
           )}
           <button type="button" aria-label={open ? "Cerrar menú" : "Abrir menú"} aria-expanded={open} onClick={() => setOpen((o) => !o)} className="grid size-10 place-items-center rounded-xl text-primary lg:hidden">
@@ -98,9 +100,9 @@ export function Nav() {
             className="glass mx-auto mt-2 max-w-7xl rounded-2xl p-2 lg:hidden"
           >
             {links.map((l) => (
-              <button key={l.id} type="button" onClick={() => go(l.id)} className="flex min-h-touch w-full items-center rounded-xl px-3 text-left font-display font-semibold hover:bg-white/5">
+              <a key={l.id} href={`#${l.id}`} onClick={(e) => go(e, l.id)} className="flex min-h-touch w-full items-center rounded-xl px-3 text-left font-display font-semibold hover:bg-white/5">
                 {l.label}
-              </button>
+              </a>
             ))}
             {org && (
               <a href={DEMO_HREF} className="flex min-h-touch items-center rounded-xl px-3 font-display font-semibold text-vip hover:bg-white/5">
