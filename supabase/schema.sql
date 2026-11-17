@@ -610,6 +610,37 @@ create table if not exists public.withdrawal_requests (
   created_at   timestamptz not null default now()
 );
 
+
+-- ════════════════════════════════════════════════════════════════════════
+-- [v1.7] QR DINÁMICOS, LISTAS FREE Y PUERTA SIN CONEXIÓN
+-- ════════════════════════════════════════════════════════════════════════
+-- Secreto de los QR TOTP de cada evento. Ningún cliente lo lee (RLS sin políticas): el asistente recibe solo el de SUS
+-- credenciales (my_qr_secrets) y la puerta/barra el del evento (event_qr_secret) para validar sin conexión.
+create table if not exists public.event_secrets (
+  event_id   uuid primary key references public.events(id) on delete cascade,
+  qr_secret  text not null default encode(gen_random_bytes(32), 'hex')
+);
+
+-- Listas / lotes: free hasta `free_until`; después se cobra `late_price` en la puerta (conversión tardía).
+create table if not exists public.ticket_lists (
+  id          uuid primary key default gen_random_uuid(),
+  event_id    uuid not null references public.events(id) on delete cascade,
+  name        text not null check (char_length(name) between 1 and 60),
+  free_until  timestamptz,
+  late_price  numeric(12,2) not null default 0 check (late_price >= 0),
+  created_at  timestamptz not null default now()
+);
+create index if not exists idx_ticket_lists_event on public.ticket_lists (event_id);
+
+alter table public.event_invite_codes add column if not exists list_id uuid references public.ticket_lists(id) on delete set null;
+alter table public.event_invite_codes add column if not exists late_paid_at timestamptz;
+alter table public.event_invite_codes add column if not exists late_payment_method text check (late_payment_method is null or late_payment_method in ('cash','mercadopago','transfer'));
+alter table public.event_invite_codes add column if not exists holder_name text check (holder_name is null or char_length(holder_name) <= 80);
+alter table public.event_invite_codes add column if not exists holder_dni text check (holder_dni is null or char_length(holder_dni) <= 20);
+alter table public.event_invite_codes add column if not exists holder_email text check (holder_email is null or char_length(holder_email) <= 160);
+alter table public.event_invite_codes add column if not exists checked_in_terminal text check (checked_in_terminal is null or char_length(checked_in_terminal) <= 40);
+alter table public.event_attendees add column if not exists checked_in_terminal text check (checked_in_terminal is null or char_length(checked_in_terminal) <= 40);
+
 -- ════════════════════════════════════════════════════════════════════════
 -- ÍNDICES
 -- ════════════════════════════════════════════════════════════════════════
@@ -2065,28 +2096,90 @@ $$;
 
 -- [v1.6] Puerta (espejo de doorCheckIn): entrada (código de 1 uso o su URL /join/<código>) o pase de la app
 -- (ROUGE:PASS:<evento>:<usuario>). Devuelve nombre, foto y edad para comparar con quien entra. Dueño/a, producción y seguridad.
-create or replace function public.door_check_in(p_event uuid, p_value text)
+-- [v1.7] QR dinámico (espejo de engine/qr.ts): firma = primeros 10 hex de HMAC(secreto credencial, 'KIND:ref:paso'),
+-- secreto credencial = HMAC(secreto del evento, 'KIND:ref'). Paso de 20 s, tolerancia ±1.
+create or replace function public.event_qr_secret_of(p_event uuid) returns text language plpgsql security definer set search_path = public, extensions as $$
+declare v text;
+begin
+  select qr_secret into v from public.event_secrets where event_id = p_event;
+  if v is null then
+    insert into public.event_secrets (event_id) values (p_event) on conflict (event_id) do nothing;
+    select qr_secret into v from public.event_secrets where event_id = p_event;
+  end if;
+  return v;
+end $$;
+
+create or replace function public.qr_credential_secret(p_event uuid, p_kind text, p_ref text) returns text language sql security definer set search_path = public, extensions as $$
+  select encode(hmac(p_kind || ':' || p_ref, public.event_qr_secret_of(p_event), 'sha256'), 'hex');
+$$;
+
+create or replace function public.verify_dynamic_qr(p_event uuid, p_value text)
+returns table (status text, kind text, ref text) language plpgsql security definer set search_path = public, extensions as $$
+declare m text[]; v_step bigint; v_now bigint := floor(extract(epoch from clock_timestamp()) * 1000 / 20000);
+begin
+  m := regexp_match(trim(coalesce(p_value, '')), '^ROUGE:T1:(PASS|PERK|ORDER):([A-Za-z0-9-]{4,64}):([0-9]{1,12}):([0-9A-Fa-f]{10})$');
+  if m is null then return query select 'format'::text, null::text, null::text; return; end if;
+  v_step := m[3]::bigint;
+  if upper(left(encode(hmac(m[1] || ':' || m[2] || ':' || m[3], public.qr_credential_secret(p_event, m[1], m[2]), 'sha256'), 'hex'), 10)) <> upper(m[4]) then
+    return query select 'forged'::text, m[1], m[2]; return;
+  end if;
+  if abs(v_now - v_step) > 1 then return query select 'expired'::text, m[1], m[2]; return; end if;
+  return query select 'ok'::text, m[1], m[2];
+end $$;
+
+-- Secretos de MIS credenciales en el evento (pase, perks y pedidos). Nunca el del evento.
+create or replace function public.my_qr_secrets(p_event uuid)
+returns table (event_id uuid, kind text, ref text, secret text) language sql security definer set search_path = public, extensions as $$
+  select p_event, 'PASS', auth.uid()::text, public.qr_credential_secret(p_event, 'PASS', auth.uid()::text)
+   where public.is_event_attendee(p_event)
+  union all
+  select p_event, 'PERK', q.id::text, public.qr_credential_secret(p_event, 'PERK', q.id::text)
+    from public.user_perks_qrs q where q.event_id = p_event and q.user_id = auth.uid() and q.status = 'available'
+  union all
+  select p_event, 'ORDER', o.id::text, public.qr_credential_secret(p_event, 'ORDER', o.id::text)
+    from public.bar_orders o where o.event_id = p_event and o.user_id = auth.uid() and o.pickup_code is not null and o.status <> 'completed';
+$$;
+
+-- Clave del evento para la puerta y la barra (validación sin conexión). Nadie más la recibe.
+create or replace function public.event_qr_secret(p_event uuid) returns text language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if not public.has_staff_role(p_event, array['owner','manager','security','bartender','waiter']::staff_role_t[]) then raise exception 'forbidden'; end if;
+  return public.event_qr_secret_of(p_event);
+end $$;
+
+-- [v1.7] Puerta (espejo de engine/door.ts doorCheckIn): pase dinámico TOTP, entrada de 1 uso o su URL. Atómico
+-- (FOR UPDATE): el primer escaneo gana y el resto ve "already" con la hora y la terminal. Listas free fuera de
+-- horario quedan en 'late_free' hasta cobrar el diferencial (door_settle_late). El pase fijo viejo → 'static_qr'.
+create or replace function public.door_scan(p_event uuid, p_value text, p_terminal text default null)
 returns jsonb language plpgsql security definer set search_path = public, extensions as $$
 declare
-  v_raw text := trim(coalesce(p_value, '')); v_code text; v_ev public.events; v_c public.event_invite_codes;
-  v_att public.event_attendees; v_user uuid; v_p public.profiles; v_parts text[]; v_status text; v_kind text; v_at timestamptz;
+  v_raw text := trim(coalesce(p_value, '')); v_code text; v_ev public.events; v_c public.event_invite_codes; v_l public.ticket_lists;
+  v_att public.event_attendees; v_user uuid; v_p public.profiles; v_status text; v_kind text; v_at timestamptz; v_term text := left(nullif(trim(p_terminal), ''), 40);
+  v_chk record; v_late jsonb;
 begin
   if not public.has_staff_role(p_event, array['owner','manager','security']::staff_role_t[]) then raise exception 'forbidden'; end if;
   select * into v_ev from public.events where id = p_event;
-  if upper(v_raw) like 'ROUGE:PASS:%' then
+  if upper(v_raw) like 'ROUGE:T1:%' then
     v_kind := 'pass';
-    v_parts := string_to_array(substr(v_raw, 12), ':');
-    if coalesce(array_length(v_parts, 1), 0) < 2 then return jsonb_build_object('status', 'invalid', 'kind', v_kind); end if;
-    if v_parts[1] <> p_event::text then return jsonb_build_object('status', 'other_event', 'kind', v_kind); end if;
-    begin v_user := v_parts[2]::uuid; exception when others then return jsonb_build_object('status', 'invalid', 'kind', v_kind); end;
+    select * into v_chk from public.verify_dynamic_qr(p_event, v_raw);
+    if v_chk.status <> 'ok' then return jsonb_build_object('status', case when v_chk.status = 'format' then 'invalid' else 'expired_qr' end, 'kind', v_kind); end if;
+    if v_chk.kind <> 'PASS' then return jsonb_build_object('status', 'invalid', 'kind', v_kind); end if;
+    v_user := v_chk.ref::uuid;
     select * into v_att from public.event_attendees where event_id = p_event and user_id = v_user for update;
+    select * into v_c from public.event_invite_codes where event_id = p_event and used_by_user_id = v_user and revoked_at is null limit 1 for update;
+    select * into v_l from public.ticket_lists where id = v_c.list_id;
     if exists (select 1 from public.event_bans where event_id = p_event and user_id = v_user) then v_status := 'banned';
     elsif v_att.id is null then v_status := 'not_attendee';
-    elsif v_att.checked_in_at is not null then v_status := 'already'; v_at := v_att.checked_in_at;
+    elsif v_att.checked_in_at is not null then v_status := 'already'; v_at := v_att.checked_in_at; v_term := v_att.checked_in_terminal;
+    elsif v_c.id is not null and v_c.late_paid_at is null and v_l.free_until is not null and now() > v_l.free_until and v_l.late_price > 0 then
+      v_status := 'late_free'; v_late := jsonb_build_object('code_id', v_c.id, 'list', v_l.name, 'price', v_l.late_price, 'free_until', v_l.free_until);
     else
-      update public.event_attendees set checked_in_at = now() where id = v_att.id returning checked_in_at into v_at;
+      update public.event_attendees set checked_in_at = now(), checked_in_terminal = v_term where id = v_att.id returning checked_in_at into v_at;
+      if v_c.id is not null then update public.event_invite_codes set checked_in_at = coalesce(checked_in_at, now()), checked_in_by = coalesce(checked_in_by, auth.uid()), checked_in_terminal = coalesce(checked_in_terminal, v_term) where id = v_c.id; end if;
       v_status := 'ok';
     end if;
+  elsif upper(v_raw) like 'ROUGE:PASS:%' then
+    return jsonb_build_object('status', 'static_qr', 'kind', 'pass');
   else
     v_kind := 'code';
     v_code := upper(coalesce(substring(v_raw from '/join/([^/?#[:space:]]+)'), v_raw));
@@ -2096,22 +2189,144 @@ begin
     select * into v_c from public.event_invite_codes where upper(code) = v_code for update;
     if v_c.id is null then return jsonb_build_object('status', 'invalid', 'kind', v_kind); end if;
     if v_c.event_id <> p_event then return jsonb_build_object('status', 'other_event', 'kind', v_kind); end if;
+    select * into v_l from public.ticket_lists where id = v_c.list_id;
     v_user := v_c.used_by_user_id;
     if v_c.revoked_at is not null then v_status := 'revoked';
     elsif v_user is not null and exists (select 1 from public.event_bans where event_id = p_event and user_id = v_user) then v_status := 'banned';
-    elsif v_c.checked_in_at is not null then v_status := 'already'; v_at := v_c.checked_in_at;
+    elsif v_c.checked_in_at is not null then v_status := 'already'; v_at := v_c.checked_in_at; v_term := v_c.checked_in_terminal;
+    elsif v_c.late_paid_at is null and v_l.free_until is not null and now() > v_l.free_until and v_l.late_price > 0 then
+      v_status := 'late_free'; v_late := jsonb_build_object('code_id', v_c.id, 'list', v_l.name, 'price', v_l.late_price, 'free_until', v_l.free_until);
     else
-      update public.event_invite_codes set checked_in_at = now(), checked_in_by = auth.uid() where id = v_c.id returning checked_in_at into v_at;
-      if v_user is not null then update public.event_attendees set checked_in_at = coalesce(checked_in_at, now()) where event_id = p_event and user_id = v_user; end if;
+      update public.event_invite_codes set checked_in_at = now(), checked_in_by = auth.uid(), checked_in_terminal = v_term where id = v_c.id returning checked_in_at into v_at;
+      if v_user is not null then update public.event_attendees set checked_in_at = coalesce(checked_in_at, now()), checked_in_terminal = coalesce(checked_in_terminal, v_term) where event_id = p_event and user_id = v_user; end if;
       v_status := 'ok';
     end if;
   end if;
   select * into v_p from public.profiles where id = v_user;
   return jsonb_build_object(
-    'status', v_status, 'kind', v_kind, 'user_id', v_p.id, 'name', v_p.full_name, 'username', v_p.username,
+    'status', v_status, 'kind', v_kind, 'user_id', v_p.id, 'name', coalesce(v_p.full_name, v_c.holder_name), 'username', v_p.username,
     'photo', v_p.photos->0->>'url', 'age', case when v_p.id is null then null else date_part('year', age(v_p.birth_date))::int end,
-    'label', v_c.label, 'checked_in_at', v_at);
+    'label', v_c.label, 'checked_in_at', v_at, 'terminal', case when v_status in ('ok','already') then v_term end, 'late', v_late);
 end $$;
+
+-- Cobra el diferencial de una lista free fuera de horario y hace entrar en el mismo paso (atómico).
+create or replace function public.door_settle_late(p_event uuid, p_code uuid, p_method text, p_terminal text default null)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare v_c public.event_invite_codes; v_l public.ticket_lists; v_term text := left(nullif(trim(p_terminal), ''), 40); v_p public.profiles;
+begin
+  if not public.has_staff_role(p_event, array['owner','manager','security']::staff_role_t[]) then raise exception 'forbidden'; end if;
+  if p_method not in ('cash','mercadopago','transfer') then raise exception 'invalid_method'; end if;
+  select * into v_c from public.event_invite_codes where id = p_code and event_id = p_event for update;
+  if v_c.id is null then raise exception 'not_found'; end if;
+  select * into v_p from public.profiles where id = v_c.used_by_user_id;
+  if v_c.checked_in_at is not null then
+    return jsonb_build_object('status', 'already', 'kind', 'code', 'name', coalesce(v_p.full_name, v_c.holder_name), 'checked_in_at', v_c.checked_in_at, 'terminal', v_c.checked_in_terminal);
+  end if;
+  select * into v_l from public.ticket_lists where id = v_c.list_id;
+  if v_l.id is null or v_l.free_until is null or now() <= v_l.free_until or v_c.late_paid_at is not null then raise exception 'no_late_fee'; end if;
+  update public.event_invite_codes set late_paid_at = now(), late_payment_method = p_method, checked_in_at = now(), checked_in_by = auth.uid(), checked_in_terminal = v_term where id = p_code;
+  if v_c.used_by_user_id is not null then update public.event_attendees set checked_in_at = coalesce(checked_in_at, now()), checked_in_terminal = coalesce(checked_in_terminal, v_term) where event_id = p_event and user_id = v_c.used_by_user_id; end if;
+  perform public.write_audit((select created_by from public.events where id = p_event), p_event, 'courtesy.issued', p_code::text, jsonb_build_object('late_fee', v_l.late_price, 'method', p_method));
+  return jsonb_build_object('status', 'ok', 'kind', 'code', 'user_id', v_p.id, 'name', coalesce(v_p.full_name, v_c.holder_name), 'username', v_p.username,
+    'photo', v_p.photos->0->>'url', 'age', case when v_p.id is null then null else date_part('year', age(v_p.birth_date))::int end, 'label', v_c.label, 'checked_in_at', now(), 'terminal', v_term);
+end $$;
+
+-- Canje en la barra con QR dinámico (perk o voucher de pedido). Las RPCs de abajo ya bloquean la fila (FOR UPDATE).
+create or replace function public.redeem_dynamic_qr(p_event uuid, p_value text)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare v_chk record; v_perk public.user_perks_qrs; v_order public.bar_orders;
+begin
+  select * into v_chk from public.verify_dynamic_qr(p_event, p_value);
+  if v_chk.status = 'format' then raise exception 'invalid_qr'; end if;
+  if v_chk.status <> 'ok' then raise exception 'qr_expired'; end if;
+  if v_chk.kind = 'PERK' then
+    select * into v_perk from public.user_perks_qrs where id = v_chk.ref::uuid and event_id = p_event;
+    if v_perk.id is null then raise exception 'invalid_qr'; end if;
+    select * into v_perk from public.redeem_perk(v_perk.qr_code_string);
+    return jsonb_build_object('kind', 'PERK', 'id', v_perk.id);
+  elsif v_chk.kind = 'ORDER' then
+    select * into v_order from public.bar_orders where id = v_chk.ref::uuid and event_id = p_event;
+    if v_order.id is null or v_order.pickup_code is null then raise exception 'not_found'; end if;
+    select * into v_order from public.redeem_pickup_code(p_event, v_order.pickup_code);
+    return jsonb_build_object('kind', 'ORDER', 'id', v_order.id);
+  end if;
+  raise exception 'invalid_qr';
+end $$;
+
+-- Padrón para la puerta sin conexión (se guarda cifrado en el dispositivo). Dueño/a, producción y seguridad.
+create or replace function public.door_roster(p_event uuid)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if not public.has_staff_role(p_event, array['owner','manager','security']::staff_role_t[]) then raise exception 'forbidden'; end if;
+  return jsonb_build_object(
+    'event_id', p_event, 'built_at', now(), 'qr_secret', public.event_qr_secret_of(p_event),
+    'general', (select coalesce(jsonb_agg(encode(digest('rouge-door:' || p_event || ':' || upper(x), 'sha256'), 'hex')), '[]'::jsonb)
+                  from (select slug as x from public.events where id = p_event union all select master_invite_code from public.events where id = p_event
+                        union all select code from public.promoter_links where event_id = p_event) g),
+    'codes', (select coalesce(jsonb_agg(jsonb_build_object(
+                'id', c.id, 'hash', encode(digest('rouge-door:' || p_event || ':' || upper(c.code), 'sha256'), 'hex'), 'label', c.label, 'user_id', c.used_by_user_id,
+                'revoked', c.revoked_at is not null, 'checked_in_at', c.checked_in_at, 'holder', coalesce(c.holder_name, p.full_name),
+                'search', lower(concat_ws(' ', c.holder_name, c.holder_dni, c.holder_email, p.full_name, p.username, c.code)),
+                'late', case when l.free_until is not null and c.late_paid_at is null and l.late_price > 0
+                             then jsonb_build_object('price', l.late_price, 'free_until', l.free_until, 'list', l.name) end)), '[]'::jsonb)
+                from public.event_invite_codes c left join public.profiles p on p.id = c.used_by_user_id left join public.ticket_lists l on l.id = c.list_id
+               where c.event_id = p_event),
+    'people', (select coalesce(jsonb_agg(jsonb_build_object(
+                'user_id', a.user_id, 'name', p.full_name, 'username', p.username, 'photo', p.photos->0->>'url',
+                'age', date_part('year', age(p.birth_date))::int, 'checked_in_at', a.checked_in_at,
+                'banned', exists (select 1 from public.event_bans b where b.event_id = p_event and b.user_id = a.user_id))), '[]'::jsonb)
+                from public.event_attendees a join public.profiles p on p.id = a.user_id where a.event_id = p_event));
+end $$;
+
+-- Reconciliación de la puerta sin conexión (espejo de reconcileOffline): aplica los ingresos encolados con su hora y
+-- terminal; si otra terminal ya lo hizo entrar, lo devuelve como conflicto (doble uso).
+create or replace function public.door_reconcile(p_event uuid, p_items jsonb)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare it jsonb; v_at timestamptz; v_term text; v_applied int := 0; v_conf jsonb := '[]'::jsonb; v_att public.event_attendees; v_c public.event_invite_codes;
+begin
+  if not public.has_staff_role(p_event, array['owner','manager','security']::staff_role_t[]) then raise exception 'forbidden'; end if;
+  for it in select * from jsonb_array_elements(coalesce(p_items, '[]'::jsonb)) order by (value->>'at') loop
+    v_at := least(coalesce((it->>'at')::timestamptz, now()), now());
+    v_term := left(nullif(trim(it->>'terminal'), ''), 40);
+    if it->>'kind' = 'pass' then
+      select * into v_att from public.event_attendees where event_id = p_event and user_id = (it->>'ref')::uuid for update;
+      continue when v_att.id is null;
+      if v_att.checked_in_at is not null and v_att.checked_in_terminal is distinct from v_term then
+        v_conf := v_conf || jsonb_build_object('kind', 'pass', 'ref', it->>'ref', 'checked_in_at', v_att.checked_in_at, 'terminal', v_att.checked_in_terminal);
+      elsif v_att.checked_in_at is null then
+        update public.event_attendees set checked_in_at = v_at, checked_in_terminal = v_term where id = v_att.id; v_applied := v_applied + 1;
+      end if;
+    else
+      select * into v_c from public.event_invite_codes where event_id = p_event and (upper(code) = upper(it->>'ref') or id::text = it->>'ref') for update;
+      continue when v_c.id is null or v_c.revoked_at is not null;
+      if v_c.checked_in_at is not null and v_c.checked_in_terminal is distinct from v_term then
+        v_conf := v_conf || jsonb_build_object('kind', 'code', 'ref', it->>'ref', 'name', v_c.holder_name, 'checked_in_at', v_c.checked_in_at, 'terminal', v_c.checked_in_terminal);
+      elsif v_c.checked_in_at is null then
+        update public.event_invite_codes set checked_in_at = v_at, checked_in_by = auth.uid(), checked_in_terminal = v_term,
+               late_paid_at = case when it->>'late_method' in ('cash','mercadopago','transfer') then v_at else late_paid_at end,
+               late_payment_method = case when it->>'late_method' in ('cash','mercadopago','transfer') then it->>'late_method' else late_payment_method end
+         where id = v_c.id;
+        if v_c.used_by_user_id is not null then update public.event_attendees set checked_in_at = coalesce(checked_in_at, v_at), checked_in_terminal = coalesce(checked_in_terminal, v_term) where event_id = p_event and user_id = v_c.used_by_user_id; end if;
+        v_applied := v_applied + 1;
+      end if;
+    end if;
+  end loop;
+  return jsonb_build_object('applied', v_applied, 'conflicts', v_conf);
+end $$;
+
+-- RLS de listas: gestor (dueño/a, producción) administra; puerta las ve.
+alter table public.event_secrets enable row level security;
+alter table public.ticket_lists  enable row level security;
+drop policy if exists ticket_lists_select on public.ticket_lists;
+create policy ticket_lists_select on public.ticket_lists for select to authenticated using (public.has_staff_role(event_id, array['owner','manager','security']::staff_role_t[]));
+drop policy if exists ticket_lists_write on public.ticket_lists;
+create policy ticket_lists_write on public.ticket_lists for all to authenticated using (public.is_event_manager(event_id)) with check (public.is_event_manager(event_id));
+
+create or replace function public.door_check_in(p_event uuid, p_value text)
+returns jsonb language sql security definer set search_path = public, extensions as $$
+  -- [v1.7] Compatibilidad: la lógica vive en door_scan (QR dinámico, terminal, listas free).
+  select public.door_scan(p_event, p_value, null);
+$$;
 
 -- ════════════════════════════════════════════════════════════════════════
 -- [v1.7] SEGURIDAD OPERATIVA — RLS y RPCs (espejo de src/lib/engine/security.ts)
@@ -2336,6 +2551,12 @@ begin
   return v_code;
 end $$;
 
+-- Cada evento nuevo nace con su secreto de QR dinámicos.
+create or replace function public.event_secret_on_insert() returns trigger language plpgsql security definer set search_path = public, extensions as $$
+begin insert into public.event_secrets (event_id) values (new.id) on conflict do nothing; return new; end $$;
+drop trigger if exists events_qr_secret on public.events;
+create trigger events_qr_secret after insert on public.events for each row execute function public.event_secret_on_insert();
+
 -- Auditoría automática (no se puede saltear desde el cliente): cambios de precio y anulaciones de entradas.
 create or replace function public.audit_menu_price() returns trigger language plpgsql security definer set search_path = public, extensions as $$
 begin
@@ -2381,6 +2602,10 @@ revoke execute on function public.apply_order_spend(public.bar_orders) from publ
 grant execute on function public.resolve_access_code(text) to anon;
 grant execute on function public.request_withdrawal(text, text, text) to anon;
 revoke execute on function public.write_audit(uuid, uuid, text, text, jsonb, uuid) from public, anon, authenticated;
+-- Secretos de QR: internos (si fueran ejecutables, cualquiera podría fabricar el QR de otra persona).
+revoke execute on function public.event_qr_secret_of(uuid) from public, anon, authenticated;
+revoke execute on function public.qr_credential_secret(uuid, text, text) from public, anon, authenticated;
+revoke execute on function public.verify_dynamic_qr(uuid, text) from public, anon, authenticated;
 -- API v1: solo el servidor (route handlers con service role) usa estas funciones.
 do $$ declare f text; begin
   foreach f in array array['public.api_authorize(uuid, uuid, text)', 'public.api_key_events(uuid)',

@@ -236,6 +236,10 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
     `revoke_staff_access`; kiosco con `terminal_pins` (bcrypt) + `kiosk_unlock`/`kiosk_audit`; `audit_log` append-only
     (trigger). Reglas puras en `engine/security.ts`; hash/HMAC sincrónicos en `lib/crypto/sha256.ts`. Rate limiting en
     `src/proxy.ts` (Next 16, ex middleware) y cabeceras en `next.config.ts`.
+15c. **QR dinámicos (v1.7).** Pase/perk/voucher = `ROUGE:T1:…` (TOTP 20 s, `engine/qr.ts` ⇔ `verify_dynamic_qr`);
+    se dibujan con `DynamicQr` (nunca `QrBlock` para credenciales de la app). Secreto del evento en `event_secrets`
+    (sin RLS para clientes). Puerta: `door_scan` (terminal, listas free, atómico) y `door_reconcile` (offline,
+    `engine/doorOffline.ts` + `lib/offline/doorVault.ts`). Barra: `redeem_dynamic_qr`.
 16. **Todo link se comparte con QR.** Usar `useShare()` / `ShareButton` (`components/share`) para cualquier link
     nuevo (evento, códigos, Squad, perfil). Links relativos se completan con el dominio actual.
 17. **Login social.** Google = proveedor nativo de Supabase (`signInWithOAuth`, vuelve a `/login`). Instagram = OAuth

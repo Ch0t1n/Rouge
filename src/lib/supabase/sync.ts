@@ -115,6 +115,13 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
   const brands = [...new Map([...myBrands, ...eventBrands].map((b) => [b.id, b])).values()];
   // Seguridad: invitaciones y auditoría de MI organización (dueño/a; producción ve la auditoría), PINs sin hash,
   // reportes (RLS: los míos o los del evento para seguridad/dueño/producción) y si soy admin global.
+  // QR dinámicos: secretos de MIS credenciales; el del evento solo para puerta/barra (validación sin conexión).
+  const canScan = myRole === "owner" || myRole === "manager" || myRole === "security" || myRole === "bartender" || myRole === "waiter";
+  const [lists, qrSecrets, eventSecret] = await Promise.all([
+    byEvent<RougeState["ticket_lists"][number]>("ticket_lists").catch(() => []),
+    eventId ? q<NonNullable<RougeState["qr_secrets"]>[number]>(sb.rpc("my_qr_secrets", { p_event: eventId })).catch(() => []) : Promise.resolve([]),
+    eventId && canScan ? sb.rpc("event_qr_secret", { p_event: eventId }).then((r) => (r.data as string | null) ?? null, () => null) : Promise.resolve(null),
+  ]);
   const [invites, terminalPins, audit, reports, platformAdmin] = await Promise.all([
     q<RougeState["staff_invites"][number]>(sb.from("staff_invites").select("id,organization_id,role,scope,event_ids,access_window,expires_at,used_at,used_by,revoked_at,created_by,created_at").eq("organization_id", userId)).catch(() => []),
     q<{ organization_id: UUID; user_id: UUID; updated_at: string }>(sb.rpc("my_terminal_pins")).catch(() => []),
@@ -163,7 +170,7 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
     profiles: profiles.map((p) => ({ ...p, phone_normalized: phones.get(p.id) ?? null, photos: p.photos ?? [], music_genres: p.music_genres ?? [] })),
     instagram_links: igRows.map((r) => ({ user_id: userId, username: r.username, account_type: r.account_type, connected_at: r.connected_at })),
     user_blocks: blocks,
-    events: events.map((e) => ({ ...e, brand_id: e.brand_id ?? null, logo_url: e.logo_url ?? null, theme_primary: e.theme_primary ?? null, theme_accent: e.theme_accent ?? null })),
+    events: events.map((e) => ({ ...e, brand_id: e.brand_id ?? null, logo_url: e.logo_url ?? null, theme_primary: e.theme_primary ?? null, theme_accent: e.theme_accent ?? null, qr_secret: e.id === eventId ? eventSecret : null })),
     brands,
     brand_payment_accounts: payAccounts,
     event_staff: eventStaff,
@@ -197,6 +204,8 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
     audit_log: audit,
     user_reports: reports,
     platform_admin_ids: platformAdmin ? [userId] : [],
+    ticket_lists: lists.map((l) => ({ ...l, late_price: Number(l.late_price) })),
+    qr_secrets: qrSecrets,
   };
   return { state, isStaff };
 }

@@ -3,9 +3,11 @@
  * - Navegación: network-first (datos en vivo) con fallback a cache / offline.
  * - Estáticos (_next/static, íconos, avatares, fuentes): cache-first.
  * - Nunca cachea llamadas a Supabase ni POST.
+ * - Puerta sin conexión: /ops/door queda en caché; los datos (padrón) viven cifrados en IndexedDB, no acá.
  */
-const VERSION = "rouge-v3";
-const SHELL = ["/", "/app", "/offline", "/manifest.json", "/icons/icon-192.png", "/icons/icon.svg"];
+const VERSION = "rouge-v4";
+// /ops/door se precachea: si se corta el Wi-Fi del boliche, la puerta abre igual y valida contra el padrón cifrado.
+const SHELL = ["/", "/app", "/offline", "/ops/door", "/manifest.json", "/icons/icon-192.png", "/icons/icon.svg"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -34,7 +36,7 @@ self.addEventListener("fetch", (event) => {
           caches.open(VERSION).then((c) => c.put(req, copy));
           return res;
         })
-        .catch(async () => (await caches.match(req)) || (await caches.match("/offline")) || Response.error()),
+        .catch(async () => (await caches.match(req)) || (url.pathname.startsWith("/ops") ? await caches.match("/ops/door") : null) || (await caches.match("/offline")) || Response.error()),
     );
     return;
   }

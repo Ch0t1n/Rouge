@@ -64,6 +64,8 @@ export type Result<T = undefined> = { ok: true; state: RougeState; data: T } | {
 const ok = <T>(state: RougeState, data: T): Result<T> => ({ ok: true, state, data });
 const fail = (error: string): { ok: false; error: string } => ({ ok: false, error });
 const iso = (now: number) => new Date(now).toISOString();
+/** Hora local HH:MM (para avisar a qué hora se consumió un QR en un doble escaneo). */
+const formatHM = (at: string) => new Date(at).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false });
 
 export const PIN_TTL_MS = minutes(15);
 export { MAX_PHOTOS };
@@ -988,7 +990,7 @@ export function grantPerk(
 export function redeemPerk(state: RougeState, qrOrId: string, now = Date.now()): Result<UserPerkQR> {
   const perk = state.user_perks_qrs.find((p) => p.id === qrOrId || p.qr_code_string === qrOrId);
   if (!perk) return fail("QR inválido.");
-  if (perk.status === "redeemed") return fail("Este QR ya fue canjeado.");
+  if (perk.status === "redeemed") return fail(`Este QR ya fue canjeado${perk.redeemed_at ? ` a las ${formatHM(perk.redeemed_at)}` : ""}.`);
   const updated: UserPerkQR = { ...perk, status: "redeemed", redeemed_at: iso(now) };
   return ok({ ...state, user_perks_qrs: state.user_perks_qrs.map((p) => (p.id === perk.id ? updated : p)) }, updated);
 }
@@ -1367,7 +1369,7 @@ export function redeemPickupCode(state: RougeState, eventId: UUID, rawCode: stri
   const code = rawCode.trim().toUpperCase().replace(/^ROUGE:ORDER:[^:]+:/, "");
   const order = state.bar_orders.find((o) => o.event_id === eventId && o.pickup_code?.toUpperCase() === code);
   if (!order) return fail("No existe un pedido con ese código.");
-  if (order.status === "completed") return fail("Ese pedido ya fue entregado.");
+  if (order.status === "completed") return fail(`Ese pedido ya fue entregado a las ${formatHM(order.updated_at)}.`);
   if (!isPayable(order)) return fail(NOT_PAID);
   if (order.status !== "ready_qr") return fail("El pedido todavía no está listo para retirar.");
   return setOrderStatus(state, order.id, "completed", now);

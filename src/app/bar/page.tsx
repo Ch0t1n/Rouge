@@ -9,13 +9,13 @@ import type { BarMenuItem, BarOrder, DeliveryType } from "@/lib/types";
 import { ORDER_FLOW, nextOrderStatus } from "@/lib/engine/actions";
 import { eventChargesOnline } from "@/lib/engine/payments";
 import { MP_ENABLED, mpErrorMessage, payWithMercadoPago, syncOrderPayment } from "@/lib/payments/client";
-import { DELIVERY_META, orderQrValue, STATUS_META } from "@/lib/engine/bar";
+import { DELIVERY_META, STATUS_META } from "@/lib/engine/bar";
 import { activeEvent, activePinOf, getAttendee, getProfile, isLobbyInteractive, ordersOf, squadMembers, squadOf } from "@/lib/engine/selectors";
 import { useNow, useRouge } from "@/lib/store/RougeContext";
 import { useRequireProfile } from "@/lib/store/hooks";
 import { cn, formatMoney, formatTime } from "@/lib/utils";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { QrBlock } from "@/components/perks/QrCard";
+import { DynamicQr } from "@/components/perks/DynamicQr";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
@@ -294,7 +294,7 @@ function Bar() {
           {readyQr && (
             <section className="mt-5 rounded-2xl border border-squad/40 bg-squad/[0.06] p-4" aria-label="QR de retiro">
               <p className="mb-3 text-center font-display text-sm font-semibold text-squad">Retiro · código {readyQr.pickup_code}</p>
-              <QrBlock value={orderQrValue(readyQr)} size={180} label={`Pedido ${readyQr.pickup_code}`} />
+              <DynamicQr eventId={event.id} kind="ORDER" refId={readyQr.id} size={170} label={`Pedido ${readyQr.pickup_code}`} tone="squad" />
             </section>
           )}
         </div>
@@ -339,7 +339,7 @@ function Bar() {
       </BottomSheet>
 
       <BottomSheet open={!!qrOrder} onClose={() => setQrOrder(null)} title={`Retiro · código ${qrOrder?.pickup_code ?? ""}`} description="Mostralo en la ventanilla rápida cuando te avisemos.">
-        {qrOrder && <QrBlock value={orderQrValue(qrOrder)} label={`Pedido ${qrOrder.pickup_code}`} />}
+        {qrOrder && <DynamicQr eventId={event.id} kind="ORDER" refId={qrOrder.id} label={`Pedido ${qrOrder.pickup_code}`} tone="squad" />}
       </BottomSheet>
     </main>
   );

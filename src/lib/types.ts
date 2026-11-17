@@ -168,7 +168,27 @@ export interface RougeEvent {
   theme_accent: string | null;
   /** Privacidad: solo aparece en la grilla quien ya ingresó por la puerta (checked_in_at). */
   require_checkin_for_lobby?: boolean;
+  /**
+   * Secreto de los QR dinámicos del evento (TOTP). NUNCA llega a los asistentes: en Supabase solo lo reciben la puerta
+   * y la barra (RPC event_qr_secret) para validar sin conexión. En el Modo Demo vive en el estado.
+   */
+  qr_secret?: string | null;
 }
+
+/**
+ * Lista / lote de ingreso (ej. "Lista Free de Vicky"). Hasta `free_until` entra gratis; después, en la puerta se
+ * cobra `late_price` (conversión tardía) antes de dejar pasar.
+ */
+export interface TicketList {
+  id: UUID;
+  event_id: UUID;
+  name: string;
+  free_until: ISODate | null;
+  late_price: number;
+  created_at: ISODate;
+}
+
+export type LatePaymentMethod = "cash" | "mercadopago" | "transfer";
 
 /** Equipo del evento (tabla `event_staff`). Quien crea el evento es "owner" aunque no tenga fila. */
 export type StaffRole = "owner" | "manager" | "bartender" | "waiter" | "security" | "promoter";
@@ -299,6 +319,17 @@ export interface EventInviteCode {
   revoked_at: ISODate | null;
   /** Escaneado en la puerta (ingreso físico). Distinto de `is_used` (alguien lo usó para entrar a la app). */
   checked_in_at: ISODate | null;
+  /** Terminal (dispositivo) que lo escaneó: si otra terminal lo intenta, ve cuál y a qué hora. */
+  checked_in_terminal?: string | null;
+  /** Lista / lote (Free con conversión tardía). */
+  list_id?: UUID | null;
+  /** Diferencial cobrado en puerta por llegar después del horario free. */
+  late_paid_at?: ISODate | null;
+  late_payment_method?: LatePaymentMethod | null;
+  /** Titular (para la búsqueda manual en la puerta: nombre, DNI, email). Solo staff de puerta / gestor. */
+  holder_name?: string | null;
+  holder_dni?: string | null;
+  holder_email?: string | null;
   created_at: ISODate;
 }
 
@@ -356,6 +387,7 @@ export interface EventAttendee {
   referred_by: UUID | null;
   /** Escaneado en la puerta con su pase de la app o su entrada. */
   checked_in_at: ISODate | null;
+  checked_in_terminal?: string | null;
   joined_at: ISODate;
 }
 
@@ -669,4 +701,8 @@ export interface RougeState {
   user_reports: UserReport[];
   /** Administradores globales de ROUGE (consola /superadmin). */
   platform_admin_ids: UUID[];
+  /** Listas / lotes de ingreso del evento (free con horario límite). */
+  ticket_lists: TicketList[];
+  /** Secretos de MIS credenciales dinámicas (pase, perks, pedidos). Supabase: RPC my_qr_secrets. */
+  qr_secrets?: { event_id: UUID; kind: "PASS" | "PERK" | "ORDER"; ref: string; secret: string }[];
 }

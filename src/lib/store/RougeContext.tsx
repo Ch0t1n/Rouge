@@ -174,6 +174,7 @@ function emptyState(userId: UUID = ""): RougeState {
     audit_log: [],
     user_reports: [],
     platform_admin_ids: [],
+    ticket_lists: [],
   };
 }
 

@@ -6,7 +6,7 @@
  *   - Eliminar un evento (solo quien lo creó y si no tiene cobros registrados).
  * Contraparte SQL: bar_menu_items (RLS de staff), remove_attendee, event_bans, events_delete + trigger.
  */
-import type { BarMenuItem, EventBan, PerkRule, RougeEvent, RougeState, UUID } from "@/lib/types";
+import type { BarMenuItem, EventBan, PerkRule, RougeEvent, RougeState, TicketList, UUID } from "@/lib/types";
 import { addMs, uid } from "@/lib/utils";
 import { upsertEvent } from "./actions";
 import { staffRoleOf } from "./roles";
@@ -196,4 +196,48 @@ export function deleteEvent(state: RougeState, eventId: UUID, userId: UUID): R<u
     },
     data: undefined,
   };
+}
+
+// ── Listas free con conversión tardía ────────────────────────────────
+
+export interface TicketListInput {
+  id?: UUID;
+  name: string;
+  /** Hasta cuándo entra gratis (null = siempre free). */
+  free_until: string | null;
+  /** Diferencial a cobrar en la puerta después del horario. */
+  late_price: number;
+}
+
+/** Alta/edición de una lista de ingreso (dueño/a o producción). El horario tiene que caer dentro del evento. */
+export function upsertTicketList(state: RougeState, eventId: UUID, input: TicketListInput, now = Date.now()): R<TicketList> {
+  const ev = state.events.find((e) => e.id === eventId);
+  if (!ev) return fail("El evento no existe.");
+  const name = input.name.trim();
+  if (!name || name.length > 60) return fail("La lista necesita un nombre (máximo 60).");
+  if (!Number.isFinite(input.late_price) || input.late_price < 0 || input.late_price > MENU_PRICE_MAX) return fail("Ingresá un precio válido.");
+  if (input.free_until) {
+    const t = +new Date(input.free_until);
+    if (Number.isNaN(t)) return fail("Revisá el horario free.");
+    if (t < +new Date(ev.lobby_opens_at) || t > +new Date(ev.ends_at)) return fail("El horario free tiene que estar entre la apertura y el cierre del evento.");
+  }
+  const lists = state.ticket_lists ?? [];
+  const prev = input.id ? lists.find((l) => l.id === input.id && l.event_id === eventId) : undefined;
+  if (input.id && !prev) return fail("Esa lista no es de este evento.");
+  const list: TicketList = { id: prev?.id ?? uid(), event_id: eventId, name, free_until: input.free_until ? new Date(input.free_until).toISOString() : null, late_price: Math.round(input.late_price), created_at: prev?.created_at ?? iso(now) };
+  return { ok: true, state: { ...state, ticket_lists: prev ? lists.map((l) => (l.id === list.id ? list : l)) : [...lists, list] }, data: list };
+}
+
+/** Asigna entradas (no usadas para entrar todavía a la puerta) a una lista, o las saca (listId null). */
+export function assignCodesToList(state: RougeState, eventId: UUID, codeIds: UUID[], listId: UUID | null): R<number> {
+  if (listId && !(state.ticket_lists ?? []).some((l) => l.id === listId && l.event_id === eventId)) return fail("Esa lista no es de este evento.");
+  const ids = new Set(codeIds);
+  let n = 0;
+  const codes = state.event_invite_codes.map((c) => {
+    if (!ids.has(c.id) || c.event_id !== eventId || c.checked_in_at) return c;
+    n++;
+    return { ...c, list_id: listId };
+  });
+  if (!n) return fail("Elegí entradas que todavía no hayan ingresado.");
+  return { ok: true, state: { ...state, event_invite_codes: codes }, data: n };
 }

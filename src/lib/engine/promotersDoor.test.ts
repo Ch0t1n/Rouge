@@ -4,6 +4,7 @@ import type { RougeState } from "@/lib/types";
 import * as A from "./actions";
 import { ensurePromoterLink, promoterStats, setPromoterCommission } from "./promoters";
 import { doorCheckIn, doorCounts, parseDoorValue, passValue } from "./door";
+import { credentialSecret, dynamicQrValue } from "./qr";
 import { removeAttendee } from "./eventAdmin";
 import { can, roleHome } from "./roles";
 
@@ -85,13 +86,16 @@ describe("puerta", () => {
   it("pase de la app: registra el ingreso; otro evento, no asistente o expulsado se rechazan", () => {
     const s = createSeedState(NOW);
     const joaco = id(8); // todavía no pasó por la puerta
-    const r = doorCheckIn(s, EV, passValue(EV, joaco), NOW);
+    // El pase fijo ya no sirve (captura): ahora es un QR dinámico TOTP.
+    expect(doorCheckIn(s, EV, passValue(EV, joaco), NOW).data.status).toBe("static_qr");
+    const live = (u: string) => dynamicQrValue(credentialSecret(s.events[0].qr_secret!, "PASS", u), "PASS", u, NOW);
+    const r = doorCheckIn(s, EV, live(joaco), NOW);
     expect(r.data).toMatchObject({ status: "ok", kind: "pass", name: expect.any(String) });
     expect(r.state.event_attendees.find((a) => a.user_id === joaco)?.checked_in_at).toBeTruthy();
     expect(doorCounts(r.state, EV).inside).toBe(doorCounts(s, EV).inside + 1);
-    expect(doorCheckIn(s, EV, passValue("otro-evento", joaco), NOW).data.status).toBe("other_event");
-    expect(doorCheckIn(s, EV, passValue(EV, DEMO_IDS.bartender), NOW).data.status).toBe("not_attendee");
+    expect(doorCheckIn(s, EV, passValue("otro-evento", joaco), NOW).data.status).toBe("static_qr");
+    expect(doorCheckIn(s, EV, live(DEMO_IDS.bartender), NOW).data.status).toBe("not_attendee");
     const out = ok(removeAttendee(s, EV, joaco, true, ORG, null, NOW));
-    expect(doorCheckIn(out.state, EV, passValue(EV, joaco), NOW).data.status).toBe("banned");
+    expect(doorCheckIn(out.state, EV, live(joaco), NOW).data.status).toBe("banned");
   });
 });

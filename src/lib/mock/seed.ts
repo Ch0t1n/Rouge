@@ -7,6 +7,7 @@
  */
 import type {
   Brand,
+  TicketList,
   BrandPaymentAccount,
   PromoterLink,
   PayoutAlias,
@@ -39,7 +40,23 @@ import type {
 } from "@/lib/types";
 import { pinHash } from "@/lib/engine/security";
 
-export const STATE_VERSION = 9;
+export const STATE_VERSION = 10;
+
+/** Titulares de entradas (búsqueda manual en la puerta por nombre, DNI o email). */
+const HOLDERS: [string, string, string][] = [
+  ["Agustina Molina", "38451220", "agus.molina@mail.com"],
+  ["Federico Sosa", "36120998", "fede.sosa@mail.com"],
+  ["Lucía Fernández", "40112334", "lu.fernandez@mail.com"],
+  ["Martín Acosta", "35887001", "martin.acosta@mail.com"],
+  ["Rocío Díaz", "41230777", "ro.diaz@mail.com"],
+  ["Santiago Gil", "37654212", "santi.gil@mail.com"],
+  ["Valentina Ruiz", "39001876", "vale.ruiz@mail.com"],
+  ["Ignacio Pérez", "34567123", "nacho.perez@mail.com"],
+  ["Carla Romero", "42198003", "carla.romero@mail.com"],
+  ["Diego Torres", "33450091", "diego.torres@mail.com"],
+  ["Paula Benítez", "40988120", "pau.benitez@mail.com"],
+  ["Julián Castro", "38776540", "juli.castro@mail.com"],
+];
 
 // IDs estables → los links de demo (/join/..., /u/...) no cambian entre re-siembras.
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -259,6 +276,8 @@ export function createSeedState(now = Date.now()): RougeState {
   // ── Evento ───────────────────────────────────────────────────────
   const event: RougeEvent = {
     id: DEMO_IDS.event,
+    // Secreto de los QR dinámicos (demo). En Supabase vive solo en el servidor (y en los dispositivos de puerta/barra).
+    qr_secret: "demo-qr-secret-bresh-sabado-0000000000000000",
     slug: "bresh-sabado",
     name: "ROUGE Night × Bresh Sábado",
     description: "La noche más grande del mes. Line-up de house y techno, Mesa VIP, Barra Express y sorteos en vivo.",
@@ -314,9 +333,21 @@ export function createSeedState(now = Date.now()): RougeState {
       revoked_at: null,
       // Los primeros 5 ya se escanearon en la puerta.
       checked_in_at: i < 5 ? t(START - 20 + i * 6) : null,
+      checked_in_terminal: i < 5 ? (i % 2 ? "Puerta 2" : "Puerta 1") : null,
+      // 12–14: Lista Free de Vicky (ya pasó el horario free) · 15–17: Lista Cumple Meli (todavía free).
+      list_id: i >= 12 && i < 15 ? id(20001) : i >= 15 && i < 18 ? id(20002) : null,
+      late_paid_at: null,
+      late_payment_method: null,
+      holder_name: i >= 12 ? HOLDERS[i - 12][0] : null,
+      holder_dni: i >= 12 ? HOLDERS[i - 12][1] : null,
+      holder_email: i >= 12 ? HOLDERS[i - 12][2] : null,
       created_at: t(-60 * 24 * 3),
     };
   });
+  const ticket_lists: TicketList[] = [
+    { id: id(20001), event_id: event.id, name: "Lista Free · Vicky", free_until: t(-30), late_price: 8000, created_at: t(-60 * 24 * 4) },
+    { id: id(20002), event_id: event.id, name: "Lista Cumple Meli", free_until: t(90), late_price: 6000, created_at: t(-60 * 24 * 4) },
+  ];
 
   // ── RRPP: link propio de Vicky (entraron por él Mateo, Lucas, Bruno y Joaquín) ──
   const promoter_links: PromoterLink[] = [
@@ -649,5 +680,6 @@ export function createSeedState(now = Date.now()): RougeState {
       { id: id(19001), event_id: event.id, reporter_id: id(4), reported_user_id: id(11), reason: "harassment", details: "Insiste por chat después de que le dije que no.", status: "open", reviewed_by: null, created_at: t(-12) },
     ],
     platform_admin_ids: [DEMO_IDS.platformAdmin],
+    ticket_lists,
   };
 }

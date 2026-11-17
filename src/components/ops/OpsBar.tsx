@@ -11,6 +11,7 @@ import { useNow, useRouge } from "@/lib/store/RougeContext";
 import { cn, formatTime } from "@/lib/utils";
 import { QrScanner } from "@/components/scan/QrScanner";
 import { useKiosk } from "./Kiosk";
+import { isDynamicQr, isStaticAppQr, QR_REJECT_MESSAGES } from "@/lib/engine/qr";
 
 /**
  * Barra (plataforma operativa): ventanilla de retiro grande (código, QR o lector tipo teclado) y comandas en dos
@@ -35,6 +36,26 @@ export function OpsBar() {
     const raw = value.trim();
     if (!raw) return;
     kiosk.touch();
+    // QR dinámico (perk o voucher) → se verifica la firma y que esté vivo; se consume una sola vez.
+    if (isDynamicQr(raw)) {
+      const d = await exec(C.redeemDynamicQr(event.id, raw), { silent: true });
+      if (d.ok && d.data.kind === "PERK") {
+        setLast({ ok: true, title: `🎁 ${d.data.perk.title}`, detail: `Canjeado para ${getProfile(state, d.data.perk.user_id)?.full_name ?? "el asistente"}` });
+        kiosk.audit("perk.redeemed", d.data.perk.id);
+      } else if (d.ok && d.data.kind === "ORDER") {
+        setLast({ ok: true, title: `Entregar pedido ${d.data.order.pickup_code}`, detail: d.data.order.items_json.map((i) => `${i.qty}× ${i.name}`).join(", ") });
+        kiosk.audit("bar.delivered", d.data.order.pickup_code ?? d.data.order.id);
+      } else if (!d.ok) setLast({ ok: false, title: "No se puede canjear", detail: d.error });
+      navigator.vibrate?.(d.ok ? 80 : [60, 60, 60]);
+      setCode("");
+      return;
+    }
+    if (isStaticAppQr(raw)) {
+      setLast({ ok: false, title: "QR estático", detail: QR_REJECT_MESSAGES.static });
+      navigator.vibrate?.([60, 60, 60]);
+      setCode("");
+      return;
+    }
     if (/^ROUGE:/.test(raw) && !/^ROUGE:ORDER:/.test(raw) && can("perks.redeem")) {
       const p = await exec(C.redeemPerk(raw), { silent: true });
       setLast(p.ok ? { ok: true, title: `🎁 ${p.data.title}`, detail: `Canjeado para ${getProfile(state, p.data.user_id)?.full_name ?? "el asistente"}` } : { ok: false, title: "QR no válido", detail: p.error });

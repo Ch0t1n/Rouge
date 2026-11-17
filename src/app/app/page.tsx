@@ -35,9 +35,8 @@ import { ROLE_META, roleHome } from "@/lib/engine/roles";
 import { eventTheme } from "@/lib/engine/branding";
 import { squadAccount } from "@/lib/engine/settle";
 import { BrandLogo } from "@/components/brand/BrandTheme";
-import { QrBlock } from "@/components/perks/QrCard";
+import { DynamicQr } from "@/components/perks/DynamicQr";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
-import { passValue } from "@/lib/engine/door";
 
 const PHASE_LABEL: Record<LobbyPhase, string> = {
   upcoming: "Próximamente",
@@ -169,7 +168,7 @@ function Home() {
         )}
         <BottomSheet open={pass} onClose={() => setPass(false)} title="Mi entrada" description="Mostralo en la puerta: el personal ve tu foto y tu nombre.">
           <div className="space-y-3 text-center">
-            <QrBlock value={passValue(event.id, me.id)} label={`${me.full_name} · ${event.name}`} />
+            <DynamicQr eventId={event.id} kind="PASS" refId={me.id} label={`${me.full_name} · ${event.name}`} tone="squad" />
             <p className="text-xs text-muted">Si tenés la entrada de la ticketera, también sirve su QR.</p>
           </div>
         </BottomSheet>

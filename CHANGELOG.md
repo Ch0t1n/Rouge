@@ -52,6 +52,21 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 - Fotos: `preserveExif: false` explícito (la recodificación a WebP elimina EXIF/GPS).
 - Barra y mozo/a van a `/ops/bar`; seguridad a `/ops/door`.
 
+### Agregado — QR anti-fraude, listas free y puerta sin conexión
+- **QR dinámicos TOTP** para el pase de entrada, los perks y los vouchers de barra: rotan cada **20 s**
+  (`ROUGE:T1:<tipo>:<ref>:<paso>:<firma HMAC>`), con tolerancia de ±1 ciclo y un **anillo de cuenta regresiva** "EN
+  VIVO" para que se note que no es una captura. El asistente solo recibe el secreto de SUS credenciales
+  (`my_qr_secrets`); la puerta y la barra, el del evento (`event_qr_secret`). Los QR fijos viejos se rechazan.
+- **Escaneo atómico**: `door_scan` (FOR UPDATE) — con dos terminales a la vez solo entra el primero; el segundo ve
+  alerta roja "Ya entró" con la hora y la **terminal** que lo consumió. Barra: "ya canjeado/entregado a las HH:MM".
+- **Listas Free con conversión tardía**: listas con hora límite y precio diferencial (`ticket_lists`); pasada la hora,
+  la puerta muestra "Fuera de horario Free" con el monto y cobra en el acto (efectivo, Mercado Pago o transferencia)
+  antes de dejar pasar (`door_settle_late`). Panel para crear listas y generar sus entradas.
+- **Puerta sin conexión**: padrón del evento (hashes SHA-256 de entradas, quemadas, pases y listas) guardado **cifrado**
+  (AES-GCM, clave no exportable en IndexedDB); valida sin red, encola y **reconcilia** al volver la conexión
+  (`door_reconcile`, informa dobles usos). `/ops/door` queda en el Service Worker. **Búsqueda manual** por nombre, DNI,
+  email o @usuario para quien se quedó sin batería.
+
 ## [1.6.0] — 2026-11-16
 
 ### Agregado

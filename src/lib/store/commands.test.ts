@@ -12,6 +12,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSeedState, DEMO_IDS } from "@/lib/mock/seed";
 import type { RougeState } from "@/lib/types";
 import * as C from "./commands";
+import { credentialSecret, dynamicQrValue } from "@/lib/engine/qr";
 import type { Command } from "./commands";
 
 const SQL = readFileSync(path.resolve(__dirname, "../../../supabase/schema.sql"), "utf8");
@@ -219,6 +220,13 @@ describe("contrato comandos ↔ schema.sql", () => {
     ["kioskAudit", () => runRemote(C.kioskAudit(EV, DEMO_IDS.bartender, "bar.delivered", "ABCD"), { ...s0(), current_user_id: DEMO_IDS.manager })],
     ["reportUser", () => runRemote(C.reportUser(id(5), EV, "harassment", "insiste", true), s0(), { report_user: id(9) })],
     ["reviewReport", () => runRemote(C.reviewReport(s0().user_reports[0].id), { ...s0(), current_user_id: DEMO_IDS.security })],
+    // v1.7 · QR dinámicos, listas free
+    ["doorCheckIn (terminal)", () => runRemote(C.doorCheckIn(EV, s0().event_invite_codes[10].code, "Puerta 1"), { ...s0(), current_user_id: DEMO_IDS.security }, { door_scan: { status: "ok" } })],
+    ["doorSettleLate", () => { const s = { ...s0(), current_user_id: DEMO_IDS.security }; const c = s.event_invite_codes.find((x) => x.list_id && s.ticket_lists.some((l) => l.id === x.list_id && +new Date(l.free_until!) < Date.now()))!; return runRemote(C.doorSettleLate(EV, c.id, "cash", "Puerta 1"), s, { door_settle_late: { status: "ok" } }); }],
+    ["redeemDynamicQr", () => { const s = st(); const p = s.user_perks_qrs.find((x) => x.status === "available" && x.event_id === EV)!; const v = dynamicQrValue(credentialSecret(s.events[0].qr_secret!, "PERK", p.id), "PERK", p.id, Date.now()); return runRemote(C.redeemDynamicQr(EV, v), s, { redeem_dynamic_qr: { kind: "PERK", id: p.id } }); }],
+    ["doorReconcile", () => runRemote(C.doorReconcile(EV, [{ kind: "code", ref: s0().event_invite_codes[11].code, at: new Date().toISOString(), terminal: "Puerta 1" }]), { ...s0(), current_user_id: DEMO_IDS.security }, { door_reconcile: { applied: 1, conflicts: [] } })],
+    ["upsertTicketList", () => runRemote(C.upsertTicketList(EV, { name: "Lista Free", free_until: s0().events[0].starts_at, late_price: 8000 }), st())],
+    ["assignCodesToList", () => runRemote(C.assignCodesToList(EV, [s0().event_invite_codes[20].id], s0().ticket_lists[0].id), st())],
     ["deleteAccount", () => runRemote(C.deleteAccount("@" + s0().profiles.find((p) => p.id === ME)!.username), s0())],
   ];
 

@@ -361,3 +361,11 @@ cliente y para la barra. Es un comprobante interno: la factura la emite cada com
 - Asistentes: "Reportar" con bloqueo opcional (llega en vivo a seguridad), borrado real de la cuenta, +18 y términos al
   registrarse, Botón de arrepentimiento. Opción de lobby solo para quienes ya ingresaron por la puerta.
 
+## 29. QR anti-fraude y puerta a prueba de cortes
+
+- Pase, perks y vouchers con QR que cambia cada 20 s (anillo "EN VIVO"): una captura de pantalla no sirve.
+- Doble escaneo simultáneo: entra el primero; el segundo ve en rojo la hora y la terminal que ya lo usó.
+- Listas Free con hora límite: después de esa hora la puerta muestra el diferencial y lo cobra en el momento.
+- Sin Wi-Fi: la puerta sigue validando con un padrón cifrado en el dispositivo y sincroniza al volver la red.
+  Búsqueda manual por nombre, DNI o email.
+

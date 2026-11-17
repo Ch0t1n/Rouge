@@ -12,7 +12,7 @@ import { useNow, useRouge } from "@/lib/store/RougeContext";
 import { useRequireProfile } from "@/lib/store/hooks";
 import { cn, formatTime, timeAgo } from "@/lib/utils";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { QrBlock } from "@/components/perks/QrCard";
+import { DynamicQr } from "@/components/perks/DynamicQr";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { useIsDesktop } from "@/lib/hooks/useMediaQuery";
@@ -46,7 +46,7 @@ function Wallet() {
   const desktop = useIsDesktop();
 
   const qrsPane = (
-        <div className="space-y-3 px-4 pt-4 lg:grid lg:grid-cols-2 lg:gap-3 lg:space-y-0 lg:px-0 xl:grid-cols-3">
+        <div className="space-y-3 px-4 pt-4 lg:grid lg:grid-cols-2 lg:gap-3 lg:space-y-0 lg:px-0">
           {orders.map((o) => (
             <Link key={o.id} href="/bar" className={cn("flex items-center gap-3 rounded-3xl border p-4", o.status === "ready_qr" ? "border-squad bg-squad/10 shadow-glow-squad" : "border-white/10 bg-white/[0.04]")}>
               <span className="grid size-12 place-items-center rounded-2xl bg-white/10 text-2xl">🧾</span>
@@ -132,8 +132,7 @@ function Wallet() {
   );
   const qrDetail = live && (
           <div className="space-y-4 pb-2">
-            <QrBlock value={live.qr_code_string} dimmed={live.status === "redeemed"} label={live.title} />
-            <p className="text-center font-display text-xs tracking-widest text-muted">{live.qr_code_string}</p>
+            <DynamicQr eventId={live.event_id} kind="PERK" refId={live.id} dimmed={live.status === "redeemed"} label={live.title} size={desktop ? 200 : 232} />
             {mode === "demo" && live.status === "available" && (
               <Button
                 block

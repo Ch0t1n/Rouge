@@ -9,7 +9,7 @@
  * En Modo Demo solo corre `local`. Las pantallas siempre llaman `exec(C.algo(...))`.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { ApiKey, BarOrder, Connection, EventAttendee, EventInviteCode, MoodTag, PerkRule, Raffle, RaffleFilter, ReportReason, RougeEvent, RougeState, SongRequest, Squad, StaffRole, UUID } from "@/lib/types";
+import type { ApiKey, BarOrder, Connection, EventAttendee, EventInviteCode, LatePaymentMethod, MoodTag, PerkRule, Raffle, RaffleFilter, ReportReason, RougeEvent, RougeState, SongRequest, Squad, StaffRole, UUID } from "@/lib/types";
 import * as A from "@/lib/engine/actions";
 import type { Result } from "@/lib/engine/actions";
 import { can, NO_PERMISSION, type Permission } from "@/lib/engine/roles";
@@ -20,6 +20,8 @@ import * as E from "@/lib/engine/eventAdmin";
 import * as RP from "@/lib/engine/promoters";
 import * as D from "@/lib/engine/door";
 import * as S from "@/lib/engine/security";
+import * as SC from "@/lib/engine/scan";
+import * as DO from "@/lib/engine/doorOffline";
 
 export interface Command<T> {
   name: string;
@@ -494,6 +496,23 @@ export const generateInviteCodes = (eventId: UUID, count: number): Command<Event
   remote: async (sb) => rpc<EventInviteCode[]>(sb, "generate_invite_codes", { p_event: eventId, p_count: count }),
 });
 
+/** Lista free con horario límite y precio de conversión tardía (dueño/a o producción). */
+export const upsertTicketList = (eventId: UUID, input: E.TicketListInput): Command<RougeState["ticket_lists"][number]> => ({
+  name: "upsertTicketList",
+  local: guarded("admin.events", () => eventId, (s) => E.upsertTicketList(s, eventId, input)),
+  remote: async (sb, l) => {
+    must(await sb.from("ticket_lists").upsert({ id: l.id, event_id: l.event_id, name: l.name, free_until: l.free_until, late_price: l.late_price }));
+  },
+});
+
+export const assignCodesToList = (eventId: UUID, codeIds: UUID[], listId: UUID | null): Command<number> => ({
+  name: "assignCodesToList",
+  local: guarded("admin.events", () => eventId, (s) => E.assignCodesToList(s, eventId, codeIds, listId)),
+  remote: async (sb) => {
+    must(await sb.from("event_invite_codes").update({ list_id: listId }).eq("event_id", eventId).in("id", codeIds));
+  },
+});
+
 // ── Equipo del evento (solo dueño/a) ─────────────────────────────────
 
 /**
@@ -703,11 +722,47 @@ export const setPromoterCommission = (linkId: UUID, amount: number): Command<Rou
 });
 
 /** Escaneo en la puerta: el servidor decide (código anulado, ya entró, expulsado…) y devuelve quién es. */
-export const doorCheckIn = (eventId: UUID, value: string): Command<D.DoorResult> => ({
+/**
+ * Escaneo en la puerta. `terminal`: nombre del dispositivo (si otra terminal ya lo hizo entrar, se ve cuál).
+ * Atómico en el servidor (door_scan con FOR UPDATE): con dos escaneos simultáneos, solo el primero entra.
+ */
+export const doorCheckIn = (eventId: UUID, value: string, terminal: string | null = null): Command<D.DoorResult> => ({
   name: "doorCheckIn",
   optimistic: false,
-  local: guarded("door.scan", () => eventId, (s) => D.doorCheckIn(s, eventId, value)),
-  remote: async (sb) => rpc<D.DoorResult>(sb, "door_check_in", { p_event: eventId, p_value: value }),
+  local: guarded("door.scan", () => eventId, (s) => D.doorCheckIn(s, eventId, value, Date.now(), { terminal })),
+  remote: async (sb) => rpc<D.DoorResult>(sb, "door_scan", { p_event: eventId, p_value: value, p_terminal: terminal }),
+});
+
+/** Sube los ingresos registrados sin conexión; devuelve cuántos se aplicaron y los conflictos (doble uso). */
+export const doorReconcile = (eventId: UUID, items: DO.OfflineCheckIn[]): Command<DO.ReconcileResult> => ({
+  name: "doorReconcile",
+  optimistic: false,
+  local: guarded("door.scan", () => eventId, (s) => DO.reconcileOffline(s, eventId, items)),
+  remote: async (sb) => rpc<DO.ReconcileResult>(sb, "door_reconcile", { p_event: eventId, p_items: items }),
+});
+
+/** Lista free fuera de horario: cobra el diferencial (efectivo, Mercado Pago o transferencia) y deja pasar. */
+export const doorSettleLate = (eventId: UUID, codeId: UUID, method: LatePaymentMethod, terminal: string | null = null): Command<D.DoorResult> => ({
+  name: "doorSettleLate",
+  optimistic: false,
+  local: guarded("door.scan", () => eventId, (s) => D.doorSettleLate(s, eventId, codeId, method, Date.now(), { terminal })),
+  remote: async (sb) => rpc<D.DoorResult>(sb, "door_settle_late", { p_event: eventId, p_code: codeId, p_method: method, p_terminal: terminal }),
+});
+
+/** Canje en la barra con QR dinámico (perk o voucher de pedido). Un QR vencido o estático se rechaza. */
+export const redeemDynamicQr = (eventId: UUID, value: string): Command<SC.DynamicRedeem> => ({
+  name: "redeemDynamicQr",
+  optimistic: false,
+  local: guarded("bar.operate", () => eventId, (s) => {
+    const r = SC.redeemDynamicQr(s, eventId, value);
+    // Un perk lo canjea quien tenga perks.redeem (barra, gestores); mozo/a solo entrega pedidos.
+    if (r.ok && r.data.kind === "PERK" && !can(s, eventId, s.current_user_id, "perks.redeem")) return { ok: false, error: NO_PERMISSION };
+    return r;
+  }),
+  remote: async (sb, local) => {
+    await rpc(sb, "redeem_dynamic_qr", { p_event: eventId, p_value: value });
+    return local;
+  },
 });
 
 // ── Seguridad operativa (v1.7) ───────────────────────────────────────

@@ -17,6 +17,7 @@ import { useShare } from "@/components/share/ShareSheet";
 import { TeamPanel } from "@/components/admin/TeamPanel";
 import { OrgStaffPanel, TerminalPinPanel } from "@/components/admin/OrgStaffPanel";
 import { AuditPanel } from "@/components/admin/AuditPanel";
+import { TicketListsPanel } from "@/components/admin/TicketListsPanel";
 import { ApiKeysPanel } from "@/components/admin/ApiKeysPanel";
 import { EventLifecyclePanel } from "@/components/admin/EventLifecyclePanel";
 import { can } from "@/lib/engine/roles";
@@ -70,6 +71,7 @@ export default function AdminEventsPage() {
       </div>
       <EventEditor key={editing} event={event} onSaved={(id) => { setEditing(id); setActiveEvent(id); }} />
       {event && <AccessPanel event={event} />}
+      {event && can(state, event.id, state.current_user_id, "admin.events") && <TicketListsPanel event={event} />}
       {event && (
         <div className="grid gap-6 xl:grid-cols-3">
           <ApiKeysPanel event={event} />
