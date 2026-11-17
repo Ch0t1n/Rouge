@@ -10,6 +10,7 @@ import { cn, formatMoney, whatsappLink } from "@/lib/utils";
 import { AdminHeader, Panel } from "@/components/admin/AdminChrome";
 import { SecurityPanel } from "@/components/admin/SecurityPanel";
 import { ReportsPanel } from "@/components/admin/ReportsPanel";
+import { LiveCurvesPanel } from "@/components/admin/LiveCurvesPanel";
 import { permissionForPath } from "@/lib/engine/roles";
 import { Badge, LiveDot } from "@/components/ui/badge";
 
@@ -113,6 +114,8 @@ export default function AdminOverviewPage() {
           </div>
         ))}
       </section>
+
+      {!security && <LiveCurvesPanel event={event} />}
 
       <section className="grid gap-6 xl:grid-cols-3">
         <Panel title="Embudo de la noche" className="xl:col-span-2">

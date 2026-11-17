@@ -646,6 +646,46 @@ export interface PayoutAlias {
   alias: string;
 }
 
+// ── Campañas por WhatsApp (sin API paga) ────────────────────────────
+
+/** Cliente de la organización (asistió a alguno de sus eventos). El teléfono solo lo ve el staff gestor. */
+export interface OrgContact {
+  user_id: UUID;
+  full_name: string;
+  phone: string | null;
+  birth_date: string;
+  /** Consumo acumulado en la barra en todos los eventos de la organización. */
+  total_spent: number;
+  events_count: number;
+  last_event_at: ISODate;
+  /** RRPP por el que entró por primera vez. */
+  referred_by: UUID | null;
+}
+
+export type CampaignSegment = "birthdays_week" | "vip_spenders" | "inactive_30d" | "rrpp_guests" | "all";
+
+export interface Campaign {
+  id: UUID;
+  organization_id: UUID;
+  event_id: UUID | null;
+  name: string;
+  segment: CampaignSegment;
+  /** RRPP puntual para el segmento rrpp_guests (null = todos). */
+  promoter_id: UUID | null;
+  template: string;
+  benefit: string;
+  created_by: UUID;
+  created_at: ISODate;
+}
+
+/** Marca de "Contactado" (el mensaje se manda desde WhatsApp del organizador: wa.me). */
+export interface CampaignContact {
+  campaign_id: UUID;
+  user_id: UUID;
+  contacted_at: ISODate;
+  contacted_by: UUID;
+}
+
 // ── Estado global ────────────────────────────────────────────────────
 
 /** Métricas agregadas que el servidor calcula para el staff (Supabase: RPC event_stats). */
@@ -714,6 +754,12 @@ export interface RougeState {
   platform_admin_ids: UUID[];
   /** Listas / lotes de ingreso del evento (free con horario límite). */
   ticket_lists: TicketList[];
+  /** Base de clientes de MI organización (dueño/a, producción): CRM para campañas. Supabase: RPC org_contacts. */
+  org_contacts?: OrgContact[];
+  campaigns?: Campaign[];
+  campaign_contacts?: CampaignContact[];
+  /** Curvas de 15' de las últimas fechas de la organización (tablero minuto a minuto). Supabase: RPC org_event_curves. */
+  event_curves_history?: { event_id: UUID; name: string; starts_at: ISODate; points: { m: number; entries: number; sales: number }[] }[];
   /** Secretos de MIS credenciales dinámicas (pase, perks, pedidos). Supabase: RPC my_qr_secrets. */
   qr_secrets?: { event_id: UUID; kind: "PASS" | "PERK" | "ORDER"; ref: string; secret: string }[];
 }

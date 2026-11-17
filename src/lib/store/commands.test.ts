@@ -228,6 +228,8 @@ describe("contrato comandos ↔ schema.sql", () => {
     ["upsertTicketList", () => runRemote(C.upsertTicketList(EV, { name: "Lista Free", free_until: s0().events[0].starts_at, late_price: 8000 }), st())],
     ["assignCodesToList", () => runRemote(C.assignCodesToList(EV, [s0().event_invite_codes[20].id], s0().ticket_lists[0].id), st())],
     ["setPromoterScheme", () => runRemote(C.setPromoterScheme(s0().promoter_links[0].id, { ticket_price: 10000, tiers: [{ from: 1, percent: 15 }, { from: 31, percent: 20 }], bar_percent: 5 }), st())],
+    ["createCampaign", () => runRemote(C.createCampaign(EV, { name: "Cumples", segment: "birthdays_week", template: "Hola {nombre}", benefit: "un trago" }), st())],
+    ["markContacted", () => { const r = C.createCampaign(EV, { name: "VIP", segment: "vip_spenders", template: "Hola {nombre}", benefit: "" }).local(st()); const s = (r as { state: RougeState; data: { id: string } }); return runRemote(C.markContacted(s.data.id, ME, true), s.state); }],
     ["deleteAccount", () => runRemote(C.deleteAccount("@" + s0().profiles.find((p) => p.id === ME)!.username), s0())],
   ];
 

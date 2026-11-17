@@ -645,6 +645,28 @@ alter table public.event_invite_codes add column if not exists holder_email text
 alter table public.event_invite_codes add column if not exists checked_in_terminal text check (checked_in_terminal is null or char_length(checked_in_terminal) <= 40);
 alter table public.event_attendees add column if not exists checked_in_terminal text check (checked_in_terminal is null or char_length(checked_in_terminal) <= 40);
 
+-- [v1.7] Campañas por WhatsApp (sin API paga): se arman en el panel y se envían desde el WhatsApp del organizador
+-- (wa.me). Acá solo queda qué campaña se armó y a quién ya se contactó.
+create table if not exists public.campaigns (
+  id               uuid primary key default gen_random_uuid(),
+  organization_id  uuid not null references public.profiles(id) on delete cascade,
+  event_id         uuid references public.events(id) on delete set null,
+  name             text not null check (char_length(name) between 1 and 60),
+  segment          text not null check (segment in ('birthdays_week','vip_spenders','inactive_30d','rrpp_guests','all')),
+  promoter_id      uuid references public.profiles(id) on delete set null,
+  template         text not null check (char_length(template) between 1 and 600),
+  benefit          text not null default '' check (char_length(benefit) <= 80),
+  created_by       uuid references public.profiles(id) on delete set null,
+  created_at       timestamptz not null default now()
+);
+create table if not exists public.campaign_contacts (
+  campaign_id   uuid not null references public.campaigns(id) on delete cascade,
+  user_id       uuid not null references public.profiles(id) on delete cascade,
+  contacted_at  timestamptz not null default now(),
+  contacted_by  uuid references public.profiles(id) on delete set null,
+  primary key (campaign_id, user_id)
+);
+
 -- ════════════════════════════════════════════════════════════════════════
 -- ÍNDICES
 -- ════════════════════════════════════════════════════════════════════════
@@ -2337,6 +2359,51 @@ begin
   end loop;
   return jsonb_build_object('applied', v_applied, 'conflicts', v_conf);
 end $$;
+
+-- [v1.7] Tablero minuto a minuto: curvas de 15' (ingresos en puerta y ventas de barra) de las últimas 4 fechas YA
+-- terminadas de la misma organización, alineadas al inicio de cada evento (espejo de eventCurve). Dueño/a y producción.
+create or replace function public.org_event_curves(p_event uuid)
+returns jsonb language plpgsql stable security definer set search_path = public, extensions as $$
+declare v_org uuid;
+begin
+  if not public.is_event_manager(p_event) then raise exception 'forbidden'; end if;
+  select created_by into v_org from public.events where id = p_event;
+  return coalesce((
+    select jsonb_agg(jsonb_build_object('event_id', e.id, 'name', e.name, 'starts_at', e.starts_at, 'points', (
+      select coalesce(jsonb_agg(jsonb_build_object('m', g.m,
+        'entries', (select count(*) from public.event_attendees a where a.event_id = e.id and a.checked_in_at >= e.starts_at + make_interval(mins => g.m) and a.checked_in_at < e.starts_at + make_interval(mins => g.m + 15)),
+        'sales', (select coalesce(sum(o.total_amount), 0) from public.bar_orders o where o.event_id = e.id and o.payment_status <> 'awaiting_payment'
+                    and coalesce(o.paid_at, o.created_at) >= e.starts_at + make_interval(mins => g.m) and coalesce(o.paid_at, o.created_at) < e.starts_at + make_interval(mins => g.m + 15))
+      ) order by g.m), '[]'::jsonb)
+      from generate_series(-60, (extract(epoch from (e.ends_at - e.starts_at)) / 60)::int, 15) as g(m)))
+    order by e.starts_at desc)
+    from (select * from public.events where created_by = v_org and id <> p_event and ends_at < now() order by starts_at desc limit 4) e), '[]'::jsonb);
+end $$;
+
+-- [v1.7] Base de clientes de la organización (todas sus fechas) para campañas. Teléfonos: solo dueño/a y producción.
+create or replace function public.org_contacts(p_event uuid)
+returns table (user_id uuid, full_name text, phone text, birth_date date, total_spent numeric, events_count int, last_event_at timestamptz, referred_by uuid)
+language sql stable security definer set search_path = public, extensions as $$
+  select a.user_id, p.full_name, p.phone_normalized, p.birth_date, sum(a.total_spent), count(distinct a.event_id)::int, max(e.starts_at),
+         (array_agg(a.referred_by order by a.joined_at) filter (where a.referred_by is not null))[1]
+  from public.event_attendees a
+  join public.events e on e.id = a.event_id
+  join public.profiles p on p.id = a.user_id
+  where public.is_event_manager(p_event)
+    and e.created_by = (select created_by from public.events where id = p_event)
+  group by a.user_id, p.full_name, p.phone_normalized, p.birth_date;
+$$;
+
+alter table public.campaigns          enable row level security;
+alter table public.campaign_contacts  enable row level security;
+drop policy if exists campaigns_rw on public.campaigns;
+create policy campaigns_rw on public.campaigns for all to authenticated
+  using (event_id is not null and public.is_event_manager(event_id))
+  with check (event_id is not null and public.is_event_manager(event_id) and organization_id = (select created_by from public.events where id = event_id));
+drop policy if exists campaign_contacts_rw on public.campaign_contacts;
+create policy campaign_contacts_rw on public.campaign_contacts for all to authenticated
+  using (exists (select 1 from public.campaigns c where c.id = campaign_id and public.is_event_manager(c.event_id)))
+  with check (exists (select 1 from public.campaigns c where c.id = campaign_id and public.is_event_manager(c.event_id)));
 
 -- RLS de listas: gestor (dueño/a, producción) administra; puerta las ve.
 alter table public.event_secrets enable row level security;

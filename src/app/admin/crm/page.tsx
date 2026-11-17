@@ -12,7 +12,8 @@ import { useRouge } from "@/lib/store/RougeContext";
 import { cn, formatMoney, toCSV, whatsappLink } from "@/lib/utils";
 import { AdminHeader, downloadCSV } from "@/components/admin/AdminChrome";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import Link from "next/link";
 
 type SortKey = "total_spent" | "squad_size" | "matches" | "age" | "full_name";
 const GENDER: Record<CrmRow["gender"], string> = { female: "Mujer", male: "Hombre", non_binary: "No binarie", undisclosed: "—" };
@@ -88,9 +89,14 @@ export default function AdminCrmPage() {
         title="CRM de asistentes"
         subtitle={`${all.length} asistentes registrados · datos para remarketing y fidelización (con consentimiento del usuario).`}
         actions={
-          <Button variant="vip" onClick={exportCsv} disabled={!rows.length}>
-            <Download /> Exportar CSV ({rows.length})
-          </Button>
+          <>
+            <Link href="/admin/blasts#whatsapp" className={buttonVariants({ variant: "glass" })}>
+              <MessageCircle /> Campaña por WhatsApp
+            </Link>
+            <Button variant="vip" onClick={exportCsv} disabled={!rows.length}>
+              <Download /> Exportar CSV ({rows.length})
+            </Button>
+          </>
         }
       />
 

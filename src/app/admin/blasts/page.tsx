@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TextAreaField, TextField } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
+import { WhatsAppCampaigns } from "@/components/admin/WhatsAppCampaigns";
 
 type SegKind = BlastSegment["kind"];
 
@@ -203,6 +204,9 @@ export default function AdminBlastsPage() {
             </ul>
           </Panel>
         </div>
+      </div>
+      <div id="whatsapp">
+        <WhatsAppCampaigns event={event} />
       </div>
     </main>
   );

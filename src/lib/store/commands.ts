@@ -9,6 +9,7 @@
  * En Modo Demo solo corre `local`. Las pantallas siempre llaman `exec(C.algo(...))`.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Campaign, CampaignContact } from "@/lib/types";
 import type { ApiKey, BarOrder, Connection, EventAttendee, EventInviteCode, LatePaymentMethod, MoodTag, PerkRule, Raffle, RaffleFilter, ReportReason, RougeEvent, RougeState, SongRequest, Squad, StaffRole, UUID } from "@/lib/types";
 import * as A from "@/lib/engine/actions";
 import type { Result } from "@/lib/engine/actions";
@@ -22,6 +23,7 @@ import * as D from "@/lib/engine/door";
 import * as S from "@/lib/engine/security";
 import * as SC from "@/lib/engine/scan";
 import * as DO from "@/lib/engine/doorOffline";
+import * as CP from "@/lib/engine/campaigns";
 
 export interface Command<T> {
   name: string;
@@ -894,5 +896,25 @@ export const deleteAccount = (confirmUsername: string): Command<undefined> => ({
     const { data } = (await sb.auth?.getSession?.()) ?? { data: { session: null } };
     const token = data.session?.access_token;
     if (token && typeof fetch === "function") await fetch("/api/account", { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
+  },
+});
+
+// ── Campañas por WhatsApp (v1.7) ─────────────────────────────────────
+
+export const createCampaign = (eventId: UUID, input: Parameters<typeof CP.createCampaign>[2]): Command<Campaign> => ({
+  name: "createCampaign",
+  local: (s) => CP.createCampaign(s, eventId, input),
+  remote: async (sb, c) => {
+    must(await sb.from("campaigns").insert({ id: c.id, organization_id: c.organization_id, event_id: c.event_id, name: c.name, segment: c.segment, promoter_id: c.promoter_id, template: c.template, benefit: c.benefit, created_by: c.created_by }));
+  },
+});
+
+/** Marca a alguien como contactado (después de abrir su chat de WhatsApp con el mensaje). */
+export const markContacted = (campaignId: UUID, userId: UUID, contacted: boolean): Command<CampaignContact | null> => ({
+  name: "markContacted",
+  local: (s) => CP.markContacted(s, campaignId, userId, contacted),
+  remote: async (sb, row) => {
+    if (row) must(await sb.from("campaign_contacts").upsert({ campaign_id: row.campaign_id, user_id: row.user_id, contacted_at: row.contacted_at, contacted_by: row.contacted_by }));
+    else must(await sb.from("campaign_contacts").delete().eq("campaign_id", campaignId).eq("user_id", userId));
   },
 });

@@ -122,6 +122,15 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
     eventId ? q<NonNullable<RougeState["qr_secrets"]>[number]>(sb.rpc("my_qr_secrets", { p_event: eventId })).catch(() => []) : Promise.resolve([]),
     eventId && canScan ? sb.rpc("event_qr_secret", { p_event: eventId }).then((r) => (r.data as string | null) ?? null, () => null) : Promise.resolve(null),
   ]);
+  // Campañas: base de clientes de la organización (con teléfonos) solo para dueño/a y producción.
+  const [orgContacts, campaigns, campaignContacts] = eventId && isManager
+    ? await Promise.all([
+        q<NonNullable<RougeState["org_contacts"]>[number]>(sb.rpc("org_contacts", { p_event: eventId })).catch(() => []),
+        q<NonNullable<RougeState["campaigns"]>[number]>(sb.from("campaigns").select("*").eq("event_id", eventId)).catch(() => []),
+        q<NonNullable<RougeState["campaign_contacts"]>[number]>(sb.from("campaign_contacts").select("*")).catch(() => []),
+      ])
+    : [[], [], []];
+  const curves = eventId && isManager ? await q<NonNullable<RougeState["event_curves_history"]>[number]>(sb.rpc("org_event_curves", { p_event: eventId }).then((r) => ({ data: (r.data as unknown[]) ?? [], error: r.error }))).catch(() => []) : [];
   const [invites, terminalPins, audit, reports, platformAdmin] = await Promise.all([
     q<RougeState["staff_invites"][number]>(sb.from("staff_invites").select("id,organization_id,role,scope,event_ids,access_window,expires_at,used_at,used_by,revoked_at,created_by,created_at").eq("organization_id", userId)).catch(() => []),
     q<{ organization_id: UUID; user_id: UUID; updated_at: string }>(sb.rpc("my_terminal_pins")).catch(() => []),
@@ -206,6 +215,10 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
     platform_admin_ids: platformAdmin ? [userId] : [],
     ticket_lists: lists.map((l) => ({ ...l, late_price: Number(l.late_price) })),
     qr_secrets: qrSecrets,
+    org_contacts: orgContacts.map((c) => ({ ...c, total_spent: Number(c.total_spent) })),
+    campaigns,
+    campaign_contacts: campaignContacts,
+    event_curves_history: curves.map((c) => ({ ...c, points: c.points.map((p) => ({ m: Number(p.m), entries: Number(p.entries), sales: Number(p.sales) })) })),
   };
   return { state, isStaff };
 }

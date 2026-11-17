@@ -42,6 +42,24 @@ import { pinHash } from "@/lib/engine/security";
 
 export const STATE_VERSION = 10;
 
+/**
+ * Últimas 3 fechas de la organización (demo): curvas de 15' de ingresos en puerta y ventas de barra, alineadas al
+ * inicio de cada evento. Forma típica: pico de ingreso en la primera hora, pico de barra a la segunda.
+ */
+function pastCurves(now: number) {
+  const names = ["ROUGE Night × Bresh (sáb. pasado)", "ROUGE Night · Techno Club", "ROUGE Night · Aniversario"];
+  return names.map((name, i) => {
+    const scale = [1, 0.85, 1.2][i];
+    const points = [];
+    for (let m = -60; m <= 300; m += 15) {
+      const entryWave = Math.max(0, Math.exp(-(((m - 30) / 55) ** 2)) * 38 * scale + (m < 0 ? 4 : 0));
+      const barWave = Math.max(0, Math.exp(-(((m - 110) / 90) ** 2)) * 210_000 * scale);
+      points.push({ m, entries: Math.round(entryWave), sales: Math.round(barWave / 500) * 500 });
+    }
+    return { event_id: `00000000-0000-4000-8000-0000000210${i}0`, name, starts_at: new Date(now - (i + 1) * 7 * 86_400_000).toISOString(), points };
+  });
+}
+
 /** Titulares de entradas (búsqueda manual en la puerta por nombre, DNI o email). */
 const HOLDERS: [string, string, string][] = [
   ["Agustina Molina", "38451220", "agus.molina@mail.com"],
@@ -681,5 +699,37 @@ export function createSeedState(now = Date.now()): RougeState {
     ],
     platform_admin_ids: [DEMO_IDS.platformAdmin],
     ticket_lists,
+    event_curves_history: pastCurves(now),
+    // Base de clientes de la organización (las personas de esta fiesta + clientes de fechas anteriores).
+    org_contacts: [
+      ...PERSONAS.filter((p) => p.n !== 13).map((p) => ({
+        user_id: id(p.n),
+        full_name: p.full_name,
+        phone: p.phone,
+        birth_date: p.n === 4 ? `${new Date(now).getFullYear() - p.age}-${String(new Date(now + 2 * 86_400_000).getMonth() + 1).padStart(2, "0")}-${String(new Date(now + 2 * 86_400_000).getDate()).padStart(2, "0")}` : birth(p.age, p.n),
+        // Acumulado en todas las fechas (esta noche + históricas).
+        total_spent: p.spent * 4,
+        events_count: 4,
+        last_event_at: event.starts_at,
+        referred_by: attendees.find((a) => a.user_id === id(p.n))?.referred_by ?? null,
+      })),
+      ...[
+        ["Florencia Vidal", "+5491150002001", 62, 210_000, 3],
+        ["Ezequiel Romero", "+5491150002002", 45, 38_000, 1],
+        ["Micaela Suárez", "+5491150002003", 90, 95_000, 2],
+        ["Lautaro Méndez", "+5491150002004", 35, 12_000, 1],
+      ].map(([name, phone, daysAgo, spent, n], i) => ({
+        user_id: id(21_000 + i),
+        full_name: name as string,
+        phone: phone as string,
+        birth_date: `${new Date(now).getFullYear() - 28}-0${i + 3}-1${i}`,
+        total_spent: spent as number,
+        events_count: n as number,
+        last_event_at: t(-(daysAgo as number) * 24 * 60),
+        referred_by: i === 0 ? DEMO_IDS.promoter : null,
+      })),
+    ],
+    campaigns: [],
+    campaign_contacts: [],
   };
 }
