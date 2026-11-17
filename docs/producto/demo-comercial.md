@@ -1,6 +1,7 @@
 # Demo comercial y Modo Demo
 
 Cómo mostrarle Rouge Pass a dueños de boliches y productoras, y cómo usar el Modo Demo para redes.
+Checklist completo de una reunión: [Guía: demo gratuita para un cliente](guia-demo-manana.md).
 
 ## Qué es el Modo Demo
 
