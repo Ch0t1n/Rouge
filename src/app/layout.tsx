@@ -3,6 +3,7 @@ import { Plus_Jakarta_Sans, Space_Grotesk } from "next/font/google";
 import { AppShell } from "@/components/layout/AppShell";
 import { ServiceWorkerRegister } from "@/components/layout/ServiceWorkerRegister";
 import { RougeProvider } from "@/lib/store/RougeContext";
+import { APP_NAME, SITE_URL } from "@/lib/brand";
 import "./globals.css";
 
 const display = Space_Grotesk({
@@ -20,6 +21,11 @@ const body = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
+  // Por defecto nada se indexa (app, panel, login, links de entrada): solo la landing "/" lo habilita (src/app/page.tsx).
+  robots: { index: false, follow: false },
+  openGraph: { type: "website", siteName: APP_NAME, locale: "es_AR" },
+  twitter: { card: "summary_large_image" },
   title: { default: "Rouge Pass — La noche, conectada", template: "%s · Rouge Pass" },
   description: "Lobby privado de tu fiesta: conectá con gente afín, no pierdas a tu Squad y pedí en la barra sin filas.",
   applicationName: "Rouge Pass",

@@ -437,12 +437,18 @@ export function RougeProvider({ children }: { children: ReactNode }) {
     await loadRemote();
   }, [loadRemote]);
 
+  // La landing ("/", "/organizadores") no depende de la fiesta: se renderiza en el servidor con un estado vacío
+  // (así Google y la vista previa de los links ven el contenido, no el BootScreen). El estado real llega al montar.
+  const ssrPage = pathname === "/" || pathname === "/organizadores";
+  const placeholder = useMemo(() => emptyState(), []);
+  const stateValue = state;
   const value = useMemo<RougeContextValue | null>(() => {
+    const state = stateValue ?? (ssrPage ? placeholder : null);
     if (!state) return null;
     const role = signedIn ? roleOf(state, state.active_event_id, state.current_user_id) : "guest";
     const can = (perm: Permission) => signedIn && canDo(state, state.active_event_id, state.current_user_id, perm);
     return { ready: true, mode, demoVisible, state, signedIn, role, isStaff: isStaffRole(role), can, exec, refresh, setCurrentUser, setActiveEvent, startNewPersona, resetDemo, signOut, toasts, notify, dismiss };
-  }, [state, mode, demoVisible, signedIn, exec, refresh, setCurrentUser, setActiveEvent, startNewPersona, resetDemo, signOut, toasts, notify, dismiss]);
+  }, [stateValue, ssrPage, placeholder, mode, demoVisible, signedIn, exec, refresh, setCurrentUser, setActiveEvent, startNewPersona, resetDemo, signOut, toasts, notify, dismiss]);
 
   if (!value) return <BootScreen />;
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

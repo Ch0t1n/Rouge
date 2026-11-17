@@ -55,3 +55,12 @@ Marcar antes del primer evento real.
 - [ ] Exportar Resumen y CRM; medir: % que entró a la app, % en Squad, matches, ventas por la app, filas evitadas.
 - [ ] Recolectar feedback del dueño, del equipo y de 10 asistentes.
 - [ ] Priorizar la v1.1 con las [mejoras conocidas](../../CHANGELOG.md#pendientes-conocidos).
+
+## Google (SEO)
+
+- [ ] `https://www.rougepass.com/robots.txt` permite rastrear y apunta al sitemap; `/sitemap.xml` lista la home.
+- [ ] Dominio verificado en **Google Search Console** (propiedad de dominio, registro TXT en el DNS) y sitemap enviado.
+- [ ] "Inspección de URL" de `https://www.rougepass.com/` → **Solicitar indexación**.
+- [ ] `NEXT_PUBLIC_APP_URL` = `https://www.rougepass.com` (y redirect URIs de Instagram / Mercado Pago actualizadas).
+- [ ] `rouge-neon.vercel.app` redirige (301) a `www.rougepass.com` (Vercel → Domains) para no tener dos copias.
+- [ ] El sitio de demo (`demo.rougepass.com`) devuelve `Disallow: /` en su robots.txt (no debe aparecer en Google).

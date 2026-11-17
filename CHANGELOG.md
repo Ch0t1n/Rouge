@@ -5,6 +5,11 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 ## [Sin publicar]
 
 ### Cambiado
+- **SEO / Google:** la landing (`/`) se renderiza en el servidor (antes Google recibía solo la pantalla "Cargando").
+  Nuevos `robots.txt`, `sitemap.xml`, URL canónica `https://www.rougepass.com` (`SITE_URL`, pisable con
+  `NEXT_PUBLIC_SITE_URL`), Open Graph + Twitter con imagen generada (`opengraph-image`) y datos estructurados
+  (WebSite + Organization). Solo `/` se indexa: el resto lleva `noindex` desde el layout. El sitio de demostración
+  (sin Supabase) y los previews de Vercel piden no ser indexados (`SITE_INDEXABLE`).
 - **Fotos reales en el demo** para Sofía, Camila, Julieta, Mateo y Valentina (WebP 600×800 en
   `public/demo/avatars`, `src/lib/demo/photos.ts`); el resto sigue con retratos vectoriales. `STATE_VERSION` 9 (la demo
   se vuelve a sembrar). La maqueta del teléfono de la landing usa las mismas fotos.
