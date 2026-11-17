@@ -369,3 +369,18 @@ cliente y para la barra. Es un comprobante interno: la factura la emite cada com
 - Sin Wi-Fi: la puerta sigue validando con un padrón cifrado en el dispositivo y sincroniza al volver la red.
   Búsqueda manual por nombre, DNI o email.
 
+## 30. Consola global y herramientas B2B
+
+- `/superadmin` (equipo de ROUGE): todos los boliches en vivo, búsqueda de asistentes con acciones rápidas y la matriz
+  de staff de cada organización con baja remota.
+- RRPP con comisión escalonada por tramos y % sobre la barra de sus invitados; liquidación exportable.
+- Tablero minuto a minuto: ingresos y ventas cada 15' contra el promedio de las fechas anteriores.
+- Campañas por WhatsApp sin API paga: segmento + plantilla → bandeja con un botón por persona y estado Contactado.
+
+## 31. Monetización y post-fiesta
+
+- Invitar un trago desde el chat o al hacer match (QR en vivo para retirar).
+- Mesa VIP dividida entre el Squad: cada uno paga su parte; al 100 % se libera el QR de la mesa.
+- Cola virtual de la barra con aviso cuando el pedido está listo.
+- Rouge Wrapped: la noche en una tarjeta 9:16 para Stories.
+

@@ -67,6 +67,33 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
   (`door_reconcile`, informa dobles usos). `/ops/door` queda en el Service Worker. **Búsqueda manual** por nombre, DNI,
   email o @usuario para quien se quedó sin batería.
 
+### Agregado — Consola global, B2B y monetización
+- **Consola global `/superadmin`** (solo `platform_admins`): tablero de eventos y boliches (estado, ingresados/vendidos,
+  aforo, cobros en puerta, barra, staff, alertas), control transversal de asistentes (ver perfil, check-in manual,
+  anular/reenviar entrada, ocultar del lobby, expulsar) y matriz global de staff con baja remota. RPCs
+  `superadmin_snapshot`, `superadmin_search` y `sa_*`, todas auditadas.
+- **Liquidación escalonada de RRPP**: precio de entrada + tramos marginales por cantidad (ej. 1–30 al 15 %, desde la 31
+  al 20 %) + % sobre el consumo en barra de sus invitados; editor con vista previa y CSV de liquidación con desglose.
+- **Tablero minuto a minuto** en `/admin`: ingresos en puerta y ventas de barra cada 15' contra el promedio de las
+  últimas fechas de la organización (`org_event_curves`), ritmo de ingreso y ticket promedio, con tooltip y vista de tabla.
+- **Campañas por WhatsApp sin API paga**: segmentos (cumpleañeros de la semana, VIP de alto consumo, inactivos > 30 días,
+  invitados por RRPP), plantillas con `{nombre}`, `{evento}`, `{beneficio}`, `{link_qr}` y bandeja `wa.me` con estado
+  "Contactado" (`org_contacts`, `campaigns`, `campaign_contacts`).
+- **Invitar un trago desde el chat** (y desde la celebración del match): se paga con Mercado Pago y el QR le llega a la
+  otra persona al acreditarse (`gift_drink`).
+- **Mesa VIP dividida**: una cuota por integrante del Squad, cada uno paga la suya; al 100 % se libera el QR grupal
+  (`create_vip_reservation`; `confirm_order_payment` emite el QR una sola vez).
+- **Cola virtual**: posición en la cola de la barra y notificación del sistema (Service Worker) cuando el pedido está
+  listo. **Rouge Wrapped** (`/wrapped`): tarjeta 9:16 de la noche para compartir en Stories (PNG 1080×1920).
+
+### Pendientes conocidos
+- Web Push con la PWA cerrada necesita claves VAPID y un emisor en el servidor (hoy el aviso funciona con la app
+  abierta o minimizada).
+- Cobro del diferencial de listas free con Mercado Pago: se registra el método; el link/QR de cobro es el del local.
+- API v1: los datos del titular (nombre, DNI, email) para la búsqueda manual todavía no se reciben por la API.
+- `npm run test:integration` no se pudo correr en este entorno (requiere un Supabase de prueba): correrlo antes de
+  desplegar `schema.sql`.
+
 ## [1.6.0] — 2026-11-16
 
 ### Agregado

@@ -116,7 +116,13 @@ src/
       promoters.ts        # RRPP: link propio, comisión, promoterStats (⇔ ensure_promoter_link, promoter_stats)
       door.ts             # Puerta: parseDoorValue, doorCheckIn, pase ROUGE:PASS (⇔ door_check_in)
       profile.ts          # Validaciones de perfil, parser de Spotify, máscara de teléfono, completitud
-      analytics.ts        # Métricas B2B, CRM, Smart Tags, liveWallData()
+      analytics.ts        # Métricas B2B, CRM, Smart Tags, liveWallData(), curvas de 15' (eventCurve/liveComparison)
+      security.ts         # Staff por organización, invitaciones, kill switch, kiosco PIN, auditoría, reportes, borrado
+      qr.ts · scan.ts     # QR dinámicos TOTP y canje dinámico en barra
+      doorOffline.ts      # Padrón de puerta sin conexión, búsqueda manual y reconciliación
+      campaigns.ts        # Campañas por WhatsApp (segmentos, plantillas, bandeja wa.me)
+      superadmin.ts       # Consola global (tablero, asistentes, staff)
+      monetization.ts     # Trago desde el chat, Mesa VIP dividida, cola virtual, Wrapped
       engine.test.ts      # Tests de invariantes de negocio
     demo/script.ts        # Guion de la demo (7 pasos), roles demo y openAs(rol, ruta)
     mock/seed.ts          # Motor de Mock Data (fechas relativas a "ahora")
@@ -384,6 +390,9 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
 - [x] **Fase 9** — Marca (logo + colores) por evento, cobros con Mercado Pago por marca y cuentas de la mesa.
 - [x] **Fase 10** — Gestión completa del evento (menú, nueva edición, expulsar, eliminar) y ticket de comanda.
 - [x] **Fase 11** — RRPP con link y comisión, escáner de puerta y sitio público / organizadores separados.
+- [x] **Fase 12** — Experiencia de escritorio, plataformas aisladas (/ops, /superadmin), staff por organización con kiosco
+  y auditoría, QR dinámicos TOTP, listas free, puerta offline, RRPP escalonado, tablero 15', campañas WhatsApp y
+  monetización (trago en chat, Mesa VIP dividida, cola virtual, Wrapped).
 - [ ] **Próximo** — ver `docs/producto/competencia.md`: lista de espera, entradas propias, Mesa VIP con seña, facturación ARCA.
 
 ## Convenciones

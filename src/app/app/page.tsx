@@ -295,6 +295,16 @@ function Home() {
           <ArrowRight className="size-5 text-muted" />
         </Link>
 
+        {/* Rouge Wrapped: tu noche en una tarjeta para Stories */}
+        <Link href="/wrapped" className="glass flex min-h-touch items-center gap-3 rounded-2xl border-rouge/30 p-4 transition hover:bg-white/5">
+          <span className="grid size-10 place-items-center rounded-xl bg-rouge/15 text-xl">✨</span>
+          <div className="flex-1">
+            <p className="font-display font-semibold">Tu Rouge Wrapped</p>
+            <p className="text-xs text-muted">Tu noche en una tarjeta para Instagram Stories</p>
+          </div>
+          <ArrowRight className="size-5 text-muted" />
+        </Link>
+
         {isStaff && (
           <Link href={roleHome(role)} className="glass flex min-h-touch items-center gap-3 rounded-2xl p-4 transition hover:bg-white/5">
             <span className="grid size-10 place-items-center rounded-xl bg-vip/15 text-vip">

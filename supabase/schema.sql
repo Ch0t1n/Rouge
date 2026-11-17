@@ -667,6 +667,20 @@ create table if not exists public.campaign_contacts (
   primary key (campaign_id, user_id)
 );
 
+-- [v1.7] Monetización: trago regalado desde el chat y Mesa VIP dividida (una cuota por integrante del Squad).
+create table if not exists public.vip_reservations (
+  id            uuid primary key default gen_random_uuid(),
+  event_id      uuid not null references public.events(id) on delete cascade,
+  squad_id      uuid not null references public.squads(id) on delete cascade,
+  item_id       text not null,
+  label         text not null,
+  total_amount  numeric(12,2) not null check (total_amount >= 0),
+  created_by    uuid references public.profiles(id) on delete set null,
+  created_at    timestamptz not null default now()
+);
+alter table public.bar_orders add column if not exists gift_to uuid references public.profiles(id) on delete set null;
+alter table public.bar_orders add column if not exists vip_reservation_id uuid references public.vip_reservations(id) on delete cascade;
+
 -- ════════════════════════════════════════════════════════════════════════
 -- ÍNDICES
 -- ════════════════════════════════════════════════════════════════════════
@@ -1674,6 +1688,19 @@ begin
   update public.bar_orders set payment_status = 'paid', payment_ref = p_payment_ref, paid_at = now(), updated_at = now()
    where id = p_order returning * into v_o;
   perform public.apply_order_spend(v_o);
+  -- [v1.7] Trago regalado desde el chat: el QR le llega a quien lo recibe recién con el pago acreditado.
+  if v_o.gift_to is not null and not exists (select 1 from public.user_perks_qrs where source_ref_id = v_o.id) then
+    insert into public.user_perks_qrs (event_id, user_id, title, perk_type, source, source_ref_id)
+    values (v_o.event_id, v_o.gift_to, '🎁 ' || coalesce(v_o.items_json->0->>'name', 'Trago') || ' — regalo', 'gifted_drink', 'manual', v_o.id);
+  end if;
+  -- [v1.7] Mesa VIP dividida: con el 100 % pagado se libera el QR grupal (uno por integrante), una sola vez.
+  if v_o.vip_reservation_id is not null
+     and not exists (select 1 from public.bar_orders where vip_reservation_id = v_o.vip_reservation_id and payment_status <> 'paid')
+     and not exists (select 1 from public.user_perks_qrs where source_ref_id = v_o.vip_reservation_id) then
+    insert into public.user_perks_qrs (event_id, user_id, squad_id, title, perk_type, source, source_ref_id)
+    select o.event_id, o.user_id, o.squad_id, '🍾 Mesa VIP · ' || r.label || ' — acceso grupal', 'fast_pass', 'manual', r.id
+      from public.bar_orders o join public.vip_reservations r on r.id = o.vip_reservation_id where o.vip_reservation_id = v_o.vip_reservation_id;
+  end if;
   return v_o;
 end $$;
 
@@ -2495,6 +2522,67 @@ begin
   perform public.write_audit(p_org, null, 'staff.revoked', p_user::text, jsonb_build_object('by', 'superadmin', 'removed', v_a + v_s));
   return v_a + v_s;
 end $$;
+
+-- Invitar un trago desde el chat 1:1 (espejo de giftDrinkInChat). Precio del menú del servidor. Con cobro online el
+-- QR se emite al acreditarse el pago (confirm_order_payment); si no, al instante.
+create or replace function public.gift_drink(p_connection uuid, p_item text)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare v_c public.connections; v_to uuid; v_item public.bar_menu_items; v_online boolean; v_order uuid; v_perk uuid; v_name text;
+begin
+  select * into v_c from public.connections where id = p_connection and status = 'accepted' and (sender_id = auth.uid() or receiver_id = auth.uid());
+  if v_c.id is null then raise exception 'unavailable'; end if;
+  v_to := case when v_c.sender_id = auth.uid() then v_c.receiver_id else v_c.sender_id end;
+  if public.is_blocked(auth.uid(), v_to) then raise exception 'unavailable'; end if;
+  if not public.lobby_is_open(v_c.event_id) then raise exception 'lobby_closed'; end if;
+  if not public.is_event_attendee(v_c.event_id, v_to) then raise exception 'not_attendee'; end if;
+  select * into v_item from public.bar_menu_items where event_id = v_c.event_id and id = p_item and is_available and category in ('trago','cerveza','sin_alcohol');
+  if v_item.id is null then raise exception 'invalid_item'; end if;
+  select coalesce(b.payments_enabled, false) into v_online from public.events e left join public.brands b on b.id = e.brand_id where e.id = v_c.event_id;
+  select split_part(full_name, ' ', 1) into v_name from public.profiles where id = auth.uid();
+  insert into public.bar_orders (event_id, user_id, delivery_type, items_json, total_amount, status, payment_status, gift_to)
+  values (v_c.event_id, auth.uid(), 'icebreaker_gift', jsonb_build_array(jsonb_build_object('item_id', v_item.id, 'name', v_item.name, 'qty', 1, 'unit_price', v_item.price)),
+          v_item.price, 'completed', case when v_online then 'awaiting_payment' else 'pay_at_bar' end, v_to)
+  returning id into v_order;
+  if not v_online then
+    insert into public.user_perks_qrs (event_id, user_id, title, perk_type, source, source_ref_id)
+    values (v_c.event_id, v_to, v_item.emoji || ' ' || v_item.name || ' — te lo invitó ' || coalesce(v_name, 'tu match'), 'gifted_drink', 'manual', v_order) returning id into v_perk;
+    update public.event_attendees set total_spent = total_spent + v_item.price where event_id = v_c.event_id and user_id = auth.uid();
+  end if;
+  insert into public.messages (event_id, conversation_type, connection_id, sender_id, message_type, content)
+  values (v_c.event_id, 'direct', v_c.id, auth.uid(), 'system_alert',
+          case when v_online then '🎁 Te está invitando un ' || v_item.name || ' (se confirma con el pago).' else '🎁 Te invitó un ' || v_item.name || ': el QR está en tus Perks para retirarlo en la barra.' end);
+  return jsonb_build_object('order_id', v_order, 'perk_id', v_perk, 'awaiting_payment', v_online);
+end $$;
+
+-- Mesa VIP dividida: precio de una botella/mesa del menú, una cuota por integrante (los primeros absorben el resto).
+create or replace function public.create_vip_reservation(p_squad uuid, p_item text)
+returns uuid language plpgsql security definer set search_path = public, extensions as $$
+declare v_sq public.squads; v_item public.bar_menu_items; v_online boolean; v_res uuid; v_n int; v_base numeric; v_rest numeric; r record; i int := 0;
+begin
+  select * into v_sq from public.squads where id = p_squad;
+  if v_sq.id is null or not public.is_squad_member(p_squad) then raise exception 'not_member'; end if;
+  if not public.lobby_is_open(v_sq.event_id) then raise exception 'lobby_closed'; end if;
+  select count(*) into v_n from public.squad_members where squad_id = p_squad and status = 'joined';
+  if v_n < 2 then raise exception 'not_allowed'; end if;
+  select * into v_item from public.bar_menu_items where event_id = v_sq.event_id and id = p_item and is_available and category = 'botella';
+  if v_item.id is null then raise exception 'invalid_item'; end if;
+  select coalesce(b.payments_enabled, false) into v_online from public.events e left join public.brands b on b.id = e.brand_id where e.id = v_sq.event_id;
+  insert into public.vip_reservations (event_id, squad_id, item_id, label, total_amount, created_by)
+  values (v_sq.event_id, p_squad, v_item.id, v_item.name, v_item.price, auth.uid()) returning id into v_res;
+  v_base := floor(v_item.price / v_n); v_rest := v_item.price - v_base * v_n;
+  for r in select user_id from public.squad_members where squad_id = p_squad and status = 'joined' order by joined_at loop
+    i := i + 1;
+    insert into public.bar_orders (event_id, user_id, squad_id, delivery_type, items_json, total_amount, status, payment_status, vip_reservation_id)
+    values (v_sq.event_id, r.user_id, p_squad, 'squad_split',
+            jsonb_build_array(jsonb_build_object('item_id', v_item.id, 'name', v_item.name || ' · parte ' || i || '/' || v_n, 'qty', 1, 'unit_price', v_base + case when i <= v_rest then 1 else 0 end)),
+            v_base + case when i <= v_rest then 1 else 0 end, 'completed', case when v_online then 'awaiting_payment' else 'pay_at_bar' end, v_res);
+  end loop;
+  return v_res;
+end $$;
+
+alter table public.vip_reservations enable row level security;
+drop policy if exists vip_reservations_select on public.vip_reservations;
+create policy vip_reservations_select on public.vip_reservations for select to authenticated using (public.is_squad_member(squad_id) or public.is_event_staff(event_id));
 
 -- RLS de listas: gestor (dueño/a, producción) administra; puerta las ve.
 alter table public.event_secrets enable row level security;

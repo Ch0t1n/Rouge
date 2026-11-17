@@ -235,6 +235,8 @@ describe("contrato comandos ↔ schema.sql", () => {
     ["saRemoveAttendee", () => runRemote(C.saRemoveAttendee(EV, id(8), true), { ...s0(), current_user_id: DEMO_IDS.platformAdmin })],
     ["saRevokeCode", () => runRemote(C.saRevokeCode(s0().event_invite_codes[11].id), { ...s0(), current_user_id: DEMO_IDS.platformAdmin })],
     ["saRevokeStaff", () => runRemote(C.saRevokeStaff(DEMO_IDS.organizer, DEMO_IDS.doorScanner), { ...s0(), current_user_id: DEMO_IDS.platformAdmin }, { sa_revoke_staff: 1 })],
+    ["giftDrink", () => { const s = s0(); const c = s.connections.find((x) => x.status === "accepted" && (x.sender_id === ME || x.receiver_id === ME) && x.event_id === EV)!; return runRemote(C.giftDrink(c.id, "gin"), s, { gift_drink: { order_id: id(9) } }); }],
+    ["createVipReservation", () => runRemote(C.createVipReservation(DEMO_IDS.squadMain, s0().bar_menu.find((i) => i.category === "botella")!.id), s0(), { create_vip_reservation: id(9) })],
     ["deleteAccount", () => runRemote(C.deleteAccount("@" + s0().profiles.find((p) => p.id === ME)!.username), s0())],
   ];
 

@@ -14,12 +14,20 @@ import { MessageList } from "@/components/chat/MessageList";
 import { Composer } from "@/components/chat/Composer";
 import { ConversationList } from "@/components/chat/ConversationList";
 import { ProfileView } from "@/components/profile/ProfileView";
+import { GiftDrinkButton } from "@/components/monetization/GiftDrinkButton";
+import { isLobbyInteractive } from "@/lib/engine/selectors";
+import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 
 /** Chat 1:1 entre matches. Sigue abierto aunque el lobby haya cerrado. */
 export default function ChatPage() {
   const me = useRequireProfile();
   if (!me) return null;
-  return <Chat />;
+  return (
+    <Suspense>
+      <Chat />
+    </Suspense>
+  );
 }
 
 function Chat() {
@@ -31,6 +39,9 @@ function Chat() {
   const other = getProfile(state, otherId);
   const msgs = conn ? directMessages(state, conn.id) : [];
 
+  const params = useSearchParams();
+  const ev = conn ? getEvent(state, conn.event_id) : undefined;
+  const giftable = !!ev && isLobbyInteractive(ev, Date.now());
   const allowed = !!conn && conn.status === "accepted" && (conn.sender_id === meId || conn.receiver_id === meId) && !!other && !isBlockedBetween(state, meId, other.id);
   if (!allowed || !other) {
     return (
@@ -57,6 +68,7 @@ function Chat() {
           </Link>
         }
         subtitle={`Match en ${getEvent(state, conn.event_id)?.name ?? "un evento"}`}
+        action={giftable ? <GiftDrinkButton connectionId={conn.id} toName={other.full_name.split(" ")[0]} autoOpen={params.get("regalo") === "1"} /> : undefined}
       />
       <div className="flex-1 px-4 pb-4 pt-2">
         <p className="mx-auto mb-4 w-fit rounded-full bg-white/[0.05] px-3 py-1 text-center text-[11px] text-muted">

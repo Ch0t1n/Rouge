@@ -606,11 +606,27 @@ export interface BarOrder {
   /** Id del pago en Mercado Pago (o "demo-…" en el Modo Demo). */
   payment_ref: string | null;
   paid_at: ISODate | null;
+  /** Trago regalado desde el chat: a quién le llega el QR (se emite al acreditarse el pago). */
+  gift_to?: UUID | null;
+  /** Parte de una reserva de Mesa VIP dividida (Vaquita): el QR grupal se libera al 100 % pagado. */
+  vip_reservation_id?: UUID | null;
   created_at: ISODate;
   updated_at: ISODate;
 }
 
 // ── Cuentas de la mesa ───────────────────────────────────────────────
+
+/** Reserva de Mesa VIP dividida entre el Squad: una parte (pedido) por integrante, cada uno paga la suya. */
+export interface VipReservation {
+  id: UUID;
+  event_id: UUID;
+  squad_id: UUID;
+  item_id: string;
+  label: string;
+  total_amount: number;
+  created_by: UUID;
+  created_at: ISODate;
+}
 
 /** Gasto cargado a mano por un integrante del Squad (mesa, entradas, taxi…). */
 export interface SquadExpense {
@@ -759,6 +775,7 @@ export interface RougeState {
   /** Base de clientes de MI organización (dueño/a, producción): CRM para campañas. Supabase: RPC org_contacts. */
   org_contacts?: OrgContact[];
   campaigns?: Campaign[];
+  vip_reservations?: VipReservation[];
   campaign_contacts?: CampaignContact[];
   /** Curvas de 15' de las últimas fechas de la organización (tablero minuto a minuto). Supabase: RPC org_event_curves. */
   event_curves_history?: { event_id: UUID; name: string; starts_at: ISODate; points: { m: number; entries: number; sales: number }[] }[];

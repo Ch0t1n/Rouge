@@ -40,7 +40,7 @@ import type {
 } from "@/lib/types";
 import { pinHash } from "@/lib/engine/security";
 
-export const STATE_VERSION = 10;
+export const STATE_VERSION = 11;
 
 /**
  * Últimas 3 fechas de la organización (demo): curvas de 15' de ingresos en puerta y ventas de barra, alineadas al
@@ -52,8 +52,8 @@ function pastCurves(now: number) {
     const scale = [1, 0.85, 1.2][i];
     const points = [];
     for (let m = -60; m <= 300; m += 15) {
-      const entryWave = Math.max(0, Math.exp(-(((m - 30) / 55) ** 2)) * 38 * scale + (m < 0 ? 4 : 0));
-      const barWave = Math.max(0, Math.exp(-(((m - 110) / 90) ** 2)) * 210_000 * scale);
+      const entryWave = Math.max(0, Math.exp(-(((m - 30) / 55) ** 2)) * 3 * scale + (m < 0 ? 0.5 : 0));
+      const barWave = Math.max(0, Math.exp(-(((m - 110) / 90) ** 2)) * 32_000 * scale);
       points.push({ m, entries: Math.round(entryWave), sales: Math.round(barWave / 500) * 500 });
     }
     return { event_id: `00000000-0000-4000-8000-0000000210${i}0`, name, starts_at: new Date(now - (i + 1) * 7 * 86_400_000).toISOString(), points };
@@ -731,5 +731,6 @@ export function createSeedState(now = Date.now()): RougeState {
     ],
     campaigns: [],
     campaign_contacts: [],
+    vip_reservations: [],
   };
 }

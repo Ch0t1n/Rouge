@@ -61,3 +61,15 @@ self.addEventListener("fetch", (event) => {
     );
   }
 });
+
+// Cola virtual: tocar el aviso "Tu pedido está listo" abre (o enfoca) la Barra Express.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || "/bar";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      const open = list.find((c) => new URL(c.url).pathname === url);
+      return open ? open.focus() : self.clients.openWindow(url);
+    }),
+  );
+});

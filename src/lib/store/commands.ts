@@ -9,7 +9,7 @@
  * En Modo Demo solo corre `local`. Las pantallas siempre llaman `exec(C.algo(...))`.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Campaign, CampaignContact } from "@/lib/types";
+import type { Campaign, CampaignContact, VipReservation } from "@/lib/types";
 import type { ApiKey, BarOrder, Connection, EventAttendee, EventInviteCode, LatePaymentMethod, MoodTag, PerkRule, Raffle, RaffleFilter, ReportReason, RougeEvent, RougeState, SongRequest, Squad, StaffRole, UUID } from "@/lib/types";
 import * as A from "@/lib/engine/actions";
 import type { Result } from "@/lib/engine/actions";
@@ -25,6 +25,8 @@ import * as SC from "@/lib/engine/scan";
 import * as DO from "@/lib/engine/doorOffline";
 import * as CP from "@/lib/engine/campaigns";
 import * as SA from "@/lib/engine/superadmin";
+// Registra los efectos post-pago (regalo del chat y QR grupal de la Mesa VIP) en confirmOrderPayment.
+import * as MO from "@/lib/engine/monetization";
 
 export interface Command<T> {
   name: string;
@@ -953,4 +955,25 @@ export const saRevokeStaff = (orgId: UUID, userId: UUID): Command<{ removed: num
   name: "saRevokeStaff",
   local: (s) => SA.saRevokeStaff(s, s.current_user_id, orgId, userId),
   remote: async (sb) => ({ removed: await rpc<number>(sb, "sa_revoke_staff", { p_org: orgId, p_user: userId }) }),
+});
+
+// ── Monetización (v1.7) ──────────────────────────────────────────────
+
+/** Invitar un trago desde el chat 1:1 (el QR le llega a la otra persona; con cobro online, al acreditarse el pago). */
+export const giftDrink = (connectionId: UUID, itemId: string): Command<{ order: BarOrder; perk: RougeState["user_perks_qrs"][number] | null }> => ({
+  name: "giftDrink",
+  optimistic: false,
+  local: (s) => MO.giftDrinkInChat(s, s.current_user_id, connectionId, itemId),
+  remote: async (sb, local) => {
+    const r = await rpc<{ order_id: UUID }>(sb, "gift_drink", { p_connection: connectionId, p_item: itemId });
+    return { ...local, order: { ...local.order, id: r.order_id } };
+  },
+});
+
+/** Mesa VIP dividida entre el Squad: una cuota por integrante; al 100 % pagado se libera el QR grupal. */
+export const createVipReservation = (squadId: UUID, itemId: string): Command<VipReservation> => ({
+  name: "createVipReservation",
+  optimistic: false,
+  local: (s) => MO.createVipReservation(s, squadId, s.current_user_id, itemId),
+  remote: async (sb, local) => ({ ...local, id: await rpc<UUID>(sb, "create_vip_reservation", { p_squad: squadId, p_item: itemId }) }),
 });

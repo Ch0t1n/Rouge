@@ -10,6 +10,7 @@ import { useRouge } from "@/lib/store/RougeContext";
 import { Toaster } from "@/components/ui/toaster";
 import { BottomNav, NAV_ROUTES } from "./BottomNav";
 import { DesktopSidebar } from "./DesktopSidebar";
+import { ReadyAlerts } from "@/components/monetization/ReadyAlerts";
 import { LiveNotifications } from "./LiveNotifications";
 import { useBrandTheme } from "@/components/brand/BrandTheme";
 import { eventTheme } from "@/lib/engine/branding";
@@ -19,6 +20,7 @@ import { cn } from "@/lib/utils";
 const CHROMELESS = ["/login", "/onboarding", "/join", "/offline", "/legal", "/equipo"];
 /** Rutas de usuario que aprovechan todo el ancho en PC (grillas, vistas divididas, paneles laterales). */
 const WIDE = ["/app", "/lobby", "/inbox", "/chat", "/bar", "/perks", "/squad", "/map"];
+// /wrapped es de lectura (columna centrada).
 const SIDEBAR_KEY = "rouge:sidebar";
 
 /**
@@ -135,6 +137,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       {sidebar && <DesktopSidebar collapsed={collapsed} onToggle={toggleSidebar} />}
       {withNav && !missingEvent && !needsLogin && <BottomNav />}
       {!expanded && <LiveNotifications />}
+      {!expanded && <ReadyAlerts />}
       <Toaster />
     </>
   );

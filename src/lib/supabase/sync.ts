@@ -130,6 +130,7 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
         q<NonNullable<RougeState["campaign_contacts"]>[number]>(sb.from("campaign_contacts").select("*")).catch(() => []),
       ])
     : [[], [], []];
+  const vipReservations = await byEvent<NonNullable<RougeState["vip_reservations"]>[number]>("vip_reservations").catch(() => []);
   const curves = eventId && isManager ? await q<NonNullable<RougeState["event_curves_history"]>[number]>(sb.rpc("org_event_curves", { p_event: eventId }).then((r) => ({ data: (r.data as unknown[]) ?? [], error: r.error }))).catch(() => []) : [];
   const [invites, terminalPins, audit, reports, platformAdmin] = await Promise.all([
     q<RougeState["staff_invites"][number]>(sb.from("staff_invites").select("id,organization_id,role,scope,event_ids,access_window,expires_at,used_at,used_by,revoked_at,created_by,created_at").eq("organization_id", userId)).catch(() => []),
@@ -227,6 +228,7 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
     org_contacts: orgContacts.map((c) => ({ ...c, total_spent: Number(c.total_spent) })),
     campaigns,
     campaign_contacts: campaignContacts,
+    vip_reservations: vipReservations.map((r) => ({ ...r, total_amount: Number(r.total_amount) })),
     event_curves_history: curves.map((c) => ({ ...c, points: c.points.map((p) => ({ m: Number(p.m), entries: Number(p.entries), sales: Number(p.sales) })) })),
   };
   return { state, isStaff };

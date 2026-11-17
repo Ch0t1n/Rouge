@@ -16,6 +16,8 @@ import { useRequireProfile } from "@/lib/store/hooks";
 import { cn, formatMoney, formatTime } from "@/lib/utils";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { DynamicQr } from "@/components/perks/DynamicQr";
+import { queuePosition } from "@/lib/engine/monetization";
+import { EnableReadyAlerts } from "@/components/monetization/ReadyAlerts";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
@@ -218,6 +220,11 @@ function Bar() {
       <PageHeader title="Barra Express" subtitle={online ? "Pedí y pagá con Mercado Pago, sin fila" : "Pedí sin hacer fila"} backHref="/app" />
       <div className="lg:grid lg:grid-cols-[1fr_380px] lg:items-start lg:gap-6 lg:px-4">
       <div className="space-y-5 px-4 lg:px-0">
+        {active.some((o) => o.status === "pending" || o.status === "preparing") && (
+          <div className="flex justify-end">
+            <EnableReadyAlerts />
+          </div>
+        )}
         <div className="space-y-3 lg:grid lg:grid-cols-2 lg:gap-3 lg:space-y-0">
         {active.map((o) => (
           <OrderCard
@@ -228,6 +235,7 @@ function Bar() {
             onPay={() => pay(o)}
             onCancel={() => exec(C.cancelUnpaidOrder(o.id, meId))}
             payBusy={busy}
+            queue={queuePosition(state, o)}
             onSimulate={mode === "demo" ? () => {
               const next = nextOrderStatus(o);
               if (next) void exec(C.advanceOrder(o, { simulate: true }));
@@ -368,7 +376,7 @@ function useReturnFromCheckout(mode: string, notify: ReturnType<typeof useRouge>
   }, [params, router, mode, notify, refresh]);
 }
 
-function OrderCard({ order: o, meId, onQr, onPay, onCancel, payBusy, onSimulate }: { order: BarOrder; meId: string; onQr: () => void; onPay: () => void; onCancel: () => void; payBusy: boolean; onSimulate?: () => void }) {
+function OrderCard({ order: o, meId, onQr, onPay, onCancel, payBusy, onSimulate, queue }: { order: BarOrder; meId: string; onQr: () => void; onPay: () => void; onCancel: () => void; payBusy: boolean; onSimulate?: () => void; queue: number | null }) {
   const steps = ORDER_FLOW[o.delivery_type];
   const idx = steps.indexOf(o.status);
   const ready = o.status === "ready_qr" || o.status === "delivering";
@@ -406,6 +414,7 @@ function OrderCard({ order: o, meId, onQr, onPay, onCancel, payBusy, onSimulate 
             {o.user_id !== meId && " · compartido"}
             {o.payment_status === "paid" && " · pagado ✓"}
           </p>
+          {queue != null && <p className="mt-1 font-display text-sm font-semibold text-primary">Cola virtual: sos el #{queue}{queue === 1 ? " · el próximo" : ""}</p>}
         </div>
         <span className="metric text-vip">{formatMoney(o.total_amount)}</span>
       </div>

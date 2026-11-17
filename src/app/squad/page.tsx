@@ -45,6 +45,7 @@ import { Switch } from "@/components/ui/switch";
 import { SquadChatPanel } from "@/components/squad/SquadChatPanel";
 import { SquadMapPanel } from "@/components/squad/SquadMapPanel";
 import { SquadAccounts } from "@/components/squad/SquadAccounts";
+import { VipSplitPanel } from "@/components/monetization/VipSplitPanel";
 
 export default function SquadPage() {
   const me = useRequireProfile();
@@ -383,6 +384,8 @@ const meId = state.current_user_id;
       </Link>
 
       {/* Mesa VIP */}
+      <VipSplitPanel />
+
       <section className="glass rounded-3xl px-4 py-1">
         <Switch
           tone="vip"

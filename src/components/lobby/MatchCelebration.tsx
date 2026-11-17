@@ -48,6 +48,16 @@ function MatchOverlay({ connectionId, otherId, onClose }: { connectionId: UUID; 
         >
           <MessageCircle /> Escribile
         </Button>
+        <Button
+          block
+          variant="vip"
+          onClick={() => {
+            onClose();
+            router.push(`/chat/${connectionId}?regalo=1`);
+          }}
+        >
+          🍸 Invitale un trago
+        </Button>
         <Button block variant="ghost" onClick={onClose}>
           Seguir mirando
         </Button>
