@@ -516,7 +516,7 @@ create index if not exists idx_squad_settlements_squad on public.squad_settlemen
 -- [v1.7] SEGURIDAD OPERATIVA: staff por organización, kiosco, auditoría, reportes
 --   Organización = la cuenta del dueño/a (organization_id = su user id = events.created_by).
 -- ════════════════════════════════════════════════════════════════════════
-alter table public.events   add column if not exists require_checkin_for_lobby boolean not null default false;
+alter table public.events add column if not exists require_checkin_for_lobby boolean not null default false;
 alter table public.profiles add column if not exists terms_accepted_at timestamptz;
 -- Borrado de cuenta: los pedidos PAGADOS quedan anonimizados (user_id null) para la contabilidad de la barra.
 alter table public.bar_orders alter column user_id drop not null;

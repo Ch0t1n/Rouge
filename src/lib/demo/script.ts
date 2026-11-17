@@ -12,9 +12,9 @@ export const DEMO_ROLES: Record<DemoRole, { id: UUID; name: string; label: strin
   amiga: { id: "00000000-0000-4000-8000-000000000002", name: "Camila", label: "Otra asistente", emoji: "👯", home: "/app", side: "phone" },
   duena: { id: DEMO_IDS.organizer, name: "Paula", label: "Dueña", emoji: "👑", home: "/admin", side: "panel" },
   produccion: { id: DEMO_IDS.manager, name: "Luciano", label: "Producción", emoji: "🎛️", home: "/admin", side: "panel" },
-  barra: { id: DEMO_IDS.bartender, name: "Daniela", label: "Barra", emoji: "🍸", home: "/admin/bar-pos", side: "panel" },
-  mozo: { id: DEMO_IDS.waiter, name: "Tomás", label: "Mozo", emoji: "🛵", home: "/admin/bar-pos", side: "panel" },
-  seguridad: { id: DEMO_IDS.security, name: "Marta", label: "Seguridad", emoji: "🛡️", home: "/admin", side: "panel" },
+  barra: { id: DEMO_IDS.bartender, name: "Daniela", label: "Barra", emoji: "🍸", home: "/ops/bar", side: "panel" },
+  mozo: { id: DEMO_IDS.waiter, name: "Tomás", label: "Mozo", emoji: "🛵", home: "/ops/bar", side: "panel" },
+  seguridad: { id: DEMO_IDS.security, name: "Marta", label: "Seguridad", emoji: "🛡️", home: "/ops/door", side: "panel" },
   rrpp: { id: DEMO_IDS.promoter, name: "Victoria", label: "RRPP", emoji: "📣", home: "/admin/rrpp", side: "panel" },
 };
 
@@ -65,7 +65,7 @@ export const DEMO_SCRIPT: DemoStep[] = [
     do: ["Teléfono → Squad → 🚨 Rescate.", "Panel (Seguridad) → la alerta aparece con su ubicación en el plano."],
     phone: "/squad",
     panelRole: "seguridad",
-    panel: "/admin",
+    panel: "/ops/door",
   },
   {
     title: "La plata",
@@ -74,7 +74,7 @@ export const DEMO_SCRIPT: DemoStep[] = [
     do: ["Teléfono → Barra Express: pedí un trago para retirar.", "Panel (Barra) → Empezar a preparar → Listo: el aviso llega al teléfono."],
     phone: "/bar",
     panelRole: "barra",
-    panel: "/admin/bar-pos",
+    panel: "/ops/bar",
   },
   {
     title: "Fidelizar",

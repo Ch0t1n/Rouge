@@ -350,3 +350,14 @@ cliente y para la barra. Es un comprobante interno: la factura la emite cada com
   chat/cuentas); plano grande con la lista de pines visibles.
 - Panel del organizador con cabeceras y encabezados de tabla fijos y atajos de teclado (Alt + 1…9, /, ?).
 
+## 28. Plataformas separadas y staff seguro
+
+- Cuatro superficies: app del asistente, operación (`/ops/door`, `/ops/bar`), panel del organizador (`/admin`) y
+  consola global (`/superadmin`). Puerta y Barra en turno solo ven `/ops`.
+- El dueño/a invita staff con un link o QR de 1 uso (2 h), elige rol, alcance (todos sus eventos o algunos) y ventana
+  horaria automática (2 h antes → 1 h después). Revoca a cualquiera al instante (kill switch).
+- Modo Kiosco: una tablet fija en la barra o la puerta; cada integrante opera con su PIN y la auditoría registra quién
+  entregó o escaneó qué. Auditoría inmutable exportable a CSV.
+- Asistentes: "Reportar" con bloqueo opcional (llega en vivo a seguridad), borrado real de la cuenta, +18 y términos al
+  registrarse, Botón de arrepentimiento. Opción de lobby solo para quienes ya ingresaron por la puerta.
+

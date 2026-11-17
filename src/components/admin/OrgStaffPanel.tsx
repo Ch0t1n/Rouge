@@ -247,7 +247,7 @@ export function TerminalPinPanel({ orgId }: { orgId: string }) {
           }
         }}
       >
-        <input inputMode="numeric" autoComplete="off" pattern="\d{4,6}" maxLength={6} value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))} aria-label="PIN de 4 a 6 números" placeholder="4 a 6 números" className="min-h-touch w-40 rounded-xl border border-white/10 bg-white/[0.04] px-3 font-display tracking-[0.4em]" type="password" />
+        <input inputMode="numeric" autoComplete="off" pattern="\d{4,6}" maxLength={6} value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))} aria-label="PIN de 4 a 6 números" placeholder="4 a 6 números" className="min-h-touch w-40 rounded-xl border border-white/10 bg-white/[0.04] px-3 font-display tracking-[0.4em] placeholder:tracking-normal" type="password" />
         <Button type="submit" variant="vip" disabled={pin.length < 4}>
           {has ? "Cambiar PIN" : "Guardar PIN"}
         </Button>

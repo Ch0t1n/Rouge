@@ -117,6 +117,9 @@ export function Footer() {
             Acceso equipo
           </Link>
         )}
+        <Link href="/legal/terminos" className="min-h-[32px] content-center hover:text-primary">Términos</Link>
+        <Link href="/legal/privacidad" className="min-h-[32px] content-center hover:text-primary">Privacidad</Link>
+        <Link href="/legal/arrepentimiento" className="min-h-[32px] content-center hover:text-primary">Botón de arrepentimiento</Link>
         <span className="ml-auto">La noche, conectada.</span>
       </div>
     </footer>

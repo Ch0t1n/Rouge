@@ -71,6 +71,7 @@ export const upsertProfile = (userId: UUID, input: A.ProfileInput): Command<Roug
       music_genres: p.music_genres,
       spotify_embed_url: p.spotify_embed_url,
       instagram_username: p.instagram_username,
+      ...(p.terms_accepted_at ? { terms_accepted_at: p.terms_accepted_at } : {}),
     };
     const existed = before.profiles.some((x) => x.id === p.id);
     if (existed) must(await sb.from("profiles").update(fields).eq("id", p.id));
@@ -473,6 +474,7 @@ export const upsertEvent = (input: Parameters<typeof A.upsertEvent>[1]): Command
       logo_url: e.logo_url,
       theme_primary: e.theme_primary,
       theme_accent: e.theme_accent,
+      require_checkin_for_lobby: e.require_checkin_for_lobby ?? false,
       ...(isNew ? { master_invite_code: e.master_invite_code, created_by: e.created_by } : {}),
     };
     if (isNew) {

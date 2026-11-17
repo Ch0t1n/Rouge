@@ -229,6 +229,13 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
     `NoAccess` si el rol no tiene la sección (`ADMIN_ROUTE_PERMISSION`). Tras el login cada uno va a `destinationFor()`
     (barra/mozo → comandas, seguridad/dueño/producción → resumen, asistente → `/app`). El equipo lo arma solo el dueño/a
     (`setStaffRole` / RPC `set_staff_role`, por @username). Botones demo que actúan por el staff pasan `{ simulate: true }`.
+15b. **Plataformas y staff (v1.7).** `surfaceForPath` / `canAccessPath` (`roles.ts`) aíslan `client_app`, `staff_ops`
+    (`/ops`), `owner_admin` (`/admin`) y `super_admin` (`/superadmin`); Puerta/Barra en turno solo ven `/ops`. Staff por
+    organización (= cuenta del dueño/a): `staff_assignments` + `staff_invites` (token de 1 uso, 2 h, solo su SHA-256) con
+    `access_window`; `staffRoleOf(s, ev, user, now)` ⇔ `assigned_staff_role`/`has_staff_role` en SQL. Kill switch
+    `revoke_staff_access`; kiosco con `terminal_pins` (bcrypt) + `kiosk_unlock`/`kiosk_audit`; `audit_log` append-only
+    (trigger). Reglas puras en `engine/security.ts`; hash/HMAC sincrónicos en `lib/crypto/sha256.ts`. Rate limiting en
+    `src/proxy.ts` (Next 16, ex middleware) y cabeceras en `next.config.ts`.
 16. **Todo link se comparte con QR.** Usar `useShare()` / `ShareButton` (`components/share`) para cualquier link
     nuevo (evento, códigos, Squad, perfil). Links relativos se completan con el dominio actual.
 17. **Login social.** Google = proveedor nativo de Supabase (`signInWithOAuth`, vuelve a `/login`). Instagram = OAuth

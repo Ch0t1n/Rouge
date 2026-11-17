@@ -23,6 +23,8 @@ export async function compressImage(file: File, preset: ImagePreset = "profile")
   const compressed = await imageCompression(file, {
     ...IMAGE_PRESETS[preset],
     useWebWorker: true,
+    // Privacidad: la recodificación por canvas a WebP NO conserva EXIF (GPS, modelo del teléfono, fecha).
+    preserveExif: false,
     fileType: "image/webp",
     initialQuality: 0.82,
   });

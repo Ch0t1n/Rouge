@@ -21,6 +21,37 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
   (**Alt + 1…9** secciones, **/** buscar, **?** ayuda), transiciones suaves y ancho extra en monitores 2xl.
   `/demo` aprovecha monitores anchos.
 
+### Agregado — Seguridad, plataformas y staff
+- **Superficies de plataforma** (`PlatformSurface`: `client_app`, `staff_ops`, `owner_admin`, `super_admin`) y roles de
+  plataforma (`PlatformStaffRole`: owner, manager, door_scanner, bar_pos, rrpp) mapeados desde el enum de la base sin
+  renombrarlo. `canAccessPath()` decide en el cliente (AppShell, AdminChrome, OpsChrome) con la misma regla que exigen
+  las RPCs (`has_staff_role` con asignaciones y ventana horaria; `is_platform_admin`).
+- **Plataforma operativa `/ops`** (Puerta y Barra): alto contraste, botones grandes; Puerta y Barra en turno no pueden
+  abrir lobby, CRM ni finanzas (se los redirige). `/ops/door` suma alertas de rescate y reportes en vivo; `/ops/bar` es
+  ventanilla + comandas de un toque.
+- **Staff por organización**: invitaciones de **1 uso por link/QR** (vencen a las 2 h; se guarda solo el SHA-256 del
+  token) con rol, alcance (todos los eventos de la organización, también futuros, o algunos) y **ventana horaria
+  automática** (2 h antes del inicio → 1 h después del cierre). Página `/equipo/<token>` para aceptar.
+- **Kill switch**: baja inmediata de un integrante en toda la organización (asignaciones, equipo de cada evento y PIN).
+- **Modo Kiosco**: terminal fija con la cuenta de dueño/a o producción; cada integrante opera con su **PIN de 4–6
+  dígitos** (bcrypt en el servidor, PINs triviales rechazados, 5 errores → 5 min bloqueada, auto-bloqueo a los 90 s).
+- **Auditoría inmutable** (append-only, triggers en SQL): altas/bajas, roles, PINs, kiosco, entregas, check-ins,
+  cambios de precio, anulaciones, reportes. Panel con filtros y CSV.
+- **Reportar usuario** (con bloqueo mutuo opcional): alerta en vivo al panel de seguridad. **Borrado real de la cuenta**
+  desde Privacidad (`delete_my_account` + `/api/account` borra el usuario de Auth).
+- **Privacidad del lobby**: opción por evento para que solo aparezca en la grilla quien ya ingresó por la puerta.
+- **+18 y términos** explícitos en el onboarding; páginas `/legal/terminos`, `/legal/privacidad` y **Botón de
+  arrepentimiento** (`/legal/arrepentimiento`, Res. 424/2020, con código de seguimiento).
+- **Cabeceras seguras** (CSP, HSTS, X-Frame-Options DENY en producción, nosniff, Referrer/Permissions-Policy) y **rate
+  limiting** por IP en `src/proxy.ts` (API v1, OAuth, cobros, login, /join, /equipo).
+
+### Cambiado — Seguridad
+- **Mercado Pago**: la firma `x-signature` del webhook es obligatoria (sin secreto responde 503) y la acreditación exige
+  además el `collector_id` de la cuenta del organizador. **Instagram**: tokens cifrados en reposo con AES-256-GCM
+  (`TOKEN_ENCRYPTION_KEY` o `MP_TOKEN_KEY`; los heredados en texto plano se siguen leyendo).
+- Fotos: `preserveExif: false` explícito (la recodificación a WebP elimina EXIF/GPS).
+- Barra y mozo/a van a `/ops/bar`; seguridad a `/ops/door`.
+
 ## [1.6.0] — 2026-11-16
 
 ### Agregado
