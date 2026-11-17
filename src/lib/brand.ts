@@ -8,3 +8,12 @@ export const APP_NAME = "Rouge Pass";
 export const APP_WORDMARK = "ROUGE PASS";
 /** Lema corto (PWA, <title>). */
 export const APP_TAGLINE = "La noche, conectada";
+
+/** Dominio público canónico (SEO: canonical, sitemap, Open Graph). `NEXT_PUBLIC_SITE_URL` lo pisa. */
+export const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "https://www.rougepass.com").replace(/\/$/, "");
+
+/**
+ * ¿Este despliegue se deja indexar? Solo el sitio real (con Supabase) y nunca un preview de Vercel.
+ * El sitio de demostración (Modo Demo) y los previews piden a Google que no los indexe.
+ */
+export const SITE_INDEXABLE = !!process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.VERCEL_ENV !== "preview";
