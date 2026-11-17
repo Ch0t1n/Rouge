@@ -24,6 +24,19 @@ describe("grilla del lobby", () => {
     for (let i = 1; i < grid.length; i++) expect(grid[i - 1].affinity.rank).toBeGreaterThanOrEqual(grid[i].affinity.rank);
   });
 
+  it("busca por nombre (sin tildes) o @username y cuenta la búsqueda como filtro", () => {
+    const s = createSeedState(NOW);
+    const all = lobbyGrid(s, EV, ME, undefined, NOW);
+    const target = all[0].profile;
+    const byName = lobbyGrid(s, EV, ME, { genres: [], moods: [], sameZone: false, query: target.full_name.split(" ")[0].normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase() }, NOW);
+    expect(byName.map((g) => g.profile.id)).toContain(target.id);
+    const byHandle = lobbyGrid(s, EV, ME, { genres: [], moods: [], sameZone: false, query: "@" + target.username }, NOW);
+    expect(byHandle.map((g) => g.profile.id)).toEqual([target.id]);
+    expect(lobbyGrid(s, EV, ME, { genres: [], moods: [], sameZone: false, query: "zzz-nadie" }, NOW)).toEqual([]);
+    // la búsqueda nunca saltea las reglas de visibilidad (bloqueados siguen invisibles)
+    expect(lobbyGrid(s, EV, ME, { genres: [], moods: [], sameZone: false, query: "gonza" }, NOW)).toEqual([]);
+  });
+
   it("informa el estado de conexión de cada tarjeta", () => {
     const grid = lobbyGrid(createSeedState(NOW), EV, ME, undefined, NOW);
     const by = (u: string) => grid.find((g) => g.profile.username === u)!.connection;

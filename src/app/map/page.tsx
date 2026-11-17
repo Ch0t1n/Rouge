@@ -126,10 +126,11 @@ function LiveMap() {
         </div>
       </header>
 
-      <div className="space-y-3 px-4 pb-8">
+      {/* PC: plano grande a la izquierda; estado, acciones y quién está en el plano a la derecha. */}
+      <div className="flex flex-col gap-3 px-4 pb-8 lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:grid-rows-[auto_auto_auto_1fr] lg:items-start lg:gap-x-6">
         {/* Modo */}
         {mode !== "pin" ? (
-          <div className={cn("flex items-center gap-3 rounded-2xl border p-3 text-sm", mode === "rescue" ? "border-sos bg-sos/15 text-sos shadow-glow-sos" : "border-vip/50 bg-vip/10 text-vip")}>
+          <div className={cn("flex items-center lg:col-start-2 gap-3 rounded-2xl border p-3 text-sm", mode === "rescue" ? "border-sos bg-sos/15 text-sos shadow-glow-sos" : "border-vip/50 bg-vip/10 text-vip")}>
             {mode === "rescue" ? <Siren className="size-5 shrink-0" /> : <Flag className="size-5 shrink-0" />}
             <p className="flex-1 font-semibold">{mode === "rescue" ? "Tocá dónde estás: le mandamos tu pin rojo al Squad." : "Tocá el plano para fijar el Punto Base del Squad."}</p>
             <Button size="sm" variant="ghost" onClick={() => setMode("pin")}>
@@ -137,7 +138,7 @@ function LiveMap() {
             </Button>
           </div>
         ) : myPin ? (
-          <div className={cn("flex items-center gap-3 rounded-2xl border p-3", myPin.is_rescue_alert ? "border-sos bg-sos/10" : "border-white/10 bg-white/[0.04]")}>
+          <div className={cn("flex items-center gap-3 rounded-2xl border p-3 lg:col-start-2", myPin.is_rescue_alert ? "border-sos bg-sos/10" : "border-white/10 bg-white/[0.04]")}>
             <span className={cn("grid size-10 shrink-0 place-items-center rounded-xl", myPin.is_rescue_alert ? "bg-sos text-white" : "bg-squad/15 text-squad")}>
               {myPin.is_rescue_alert ? <Siren className="size-5" /> : <MapPin className="size-5" />}
             </span>
@@ -155,11 +156,12 @@ function LiveMap() {
             </button>
           </div>
         ) : (
-          <p className="flex items-center gap-2 rounded-2xl border border-dashed border-white/15 p-3 text-sm text-muted">
+          <p className="flex items-center gap-2 rounded-2xl border border-dashed border-white/15 p-3 text-sm text-muted lg:col-start-2">
             <Clock3 className="size-4 shrink-0" /> Tocá el plano y marcá "Estoy acá". Tu pin dura 15 min y vos elegís quién lo ve.
           </p>
         )}
 
+        <div className="lg:sticky lg:top-24 lg:col-start-1 lg:row-span-4 lg:row-start-1">
         <VenueMap
           layout={event.venue_layout_json}
           mapImageUrl={event.venue_map_url}
@@ -170,8 +172,9 @@ function LiveMap() {
           onTap={onTap}
           onPinClick={setInspect}
         />
+        </div>
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-2 lg:col-start-2">
           <Button variant="danger" onClick={() => (mine ? setMode("rescue") : notify({ tone: "info", title: "Necesitás un Squad para el Botón de Rescate", cta: { label: "Armar Squad", href: "/squad" } }))}>
             <Siren /> Rescate
           </Button>
@@ -179,7 +182,8 @@ function LiveMap() {
             <Flag className="text-vip" /> Punto Base
           </Button>
         </div>
-        <p className="text-center text-[11px] text-muted/70">Nadie te ve en el plano salvo las personas que elegís, y solo por 15 minutos.</p>
+        <p className="text-center text-[11px] text-muted/70 lg:col-start-2">Nadie te ve en el plano salvo las personas que elegís, y solo por 15 minutos.</p>
+        <PinRoster pins={pins} onPick={setInspect} />
       </div>
 
       {/* Estoy acá */}
@@ -295,5 +299,33 @@ function PinDetail({ vp, onClose, go }: { vp: VisiblePin; onClose: () => void; g
         </div>
       )}
     </div>
+  );
+}
+
+/** PC: lista de quiénes ves en el plano (Squad y matches que te compartieron su pin), con minutos restantes. */
+function PinRoster({ pins, onPick }: { pins: VisiblePin[]; onPick: (p: VisiblePin) => void }) {
+  const others = pins.filter((p) => p.audience !== "self");
+  return (
+    <section aria-label="Quién está en el plano" className="glass hidden rounded-3xl p-4 lg:col-start-2 lg:block">
+      <h2 className="mb-2 text-base">En el plano ahora · {others.length}</h2>
+      {others.length === 0 ? (
+        <p className="text-sm text-muted">Nadie de tu Squad ni tus matches compartió su ubicación todavía.</p>
+      ) : (
+        <ul className="space-y-1">
+          {others.map((vp) => (
+            <li key={vp.pin.id}>
+              <button type="button" onClick={() => onPick(vp)} className="flex min-h-touch w-full items-center gap-3 rounded-2xl px-2 py-1.5 text-left hover:bg-white/5">
+                <Avatar profile={vp.profile} size={36} ring={vp.pin.is_rescue_alert ? "rouge" : vp.audience === "squad" ? "squad" : "rouge"} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold">{vp.pin.is_rescue_alert ? "🚨 " : ""}{vp.profile.full_name.split(" ")[0]}</span>
+                  <span className="block truncate text-xs text-muted">{vp.pin.sector_name ?? "En el plano"}{vp.pin.note ? ` · ${vp.pin.note}` : ""}</span>
+                </span>
+                <span className={cn("metric text-xs", vp.audience === "squad" ? "text-squad" : "text-rouge")}>{vp.minutesLeft}′</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }

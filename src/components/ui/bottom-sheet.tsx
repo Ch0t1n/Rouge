@@ -16,8 +16,8 @@ interface BottomSheetProps {
 }
 
 /**
- * Modal inferior tipo Bottom Sheet. En desktop queda alineado al contenedor
- * móvil centrado (max-w-md) para respetar la "pantalla del teléfono".
+ * Modal inferior tipo Bottom Sheet en móvil. En tablet/PC (≥ 768px) se convierte en un diálogo
+ * centrado sobre el área de contenido (respeta el sidebar con --sidebar-w), sin el "recorte" del teléfono.
  */
 export function BottomSheet({ open, onClose, title, description, children, footer, className }: BottomSheetProps) {
   const titleId = useId();
@@ -37,7 +37,7 @@ export function BottomSheet({ open, onClose, title, description, children, foote
 
   if (!open || typeof document === "undefined") return null;
   return createPortal(
-    <div className="fixed inset-0 z-50 mx-auto flex max-w-md items-end" role="presentation">
+    <div className="fixed inset-0 z-50 mx-auto flex max-w-md items-end md:fixed-app-x md:max-w-none md:items-center md:justify-center md:p-6" role="presentation">
       <button aria-label="Cerrar" className="fixed inset-0 bg-black/70 backdrop-blur-sm animate-in fade-in" onClick={onClose} />
       <div
         ref={panelRef}
@@ -46,11 +46,11 @@ export function BottomSheet({ open, onClose, title, description, children, foote
         aria-labelledby={title ? titleId : undefined}
         tabIndex={-1}
         className={cn(
-          "glass relative z-10 flex max-h-[88dvh] w-full flex-col rounded-t-[28px] border-b-0 shadow-sheet outline-none animate-sheet-up",
+          "glass relative z-10 flex max-h-[88dvh] w-full flex-col rounded-t-[28px] border-b-0 shadow-sheet outline-none animate-sheet-up md:max-h-[85dvh] md:max-w-lg md:rounded-[28px] md:border-b md:animate-in md:fade-in md:zoom-in-95",
           className,
         )}
       >
-        <div className="mx-auto mt-2.5 h-1.5 w-10 rounded-full bg-white/20" aria-hidden />
+        <div className="mx-auto mt-2.5 h-1.5 w-10 rounded-full bg-white/20 md:hidden" aria-hidden />
         {(title || description) && (
           <div className="flex items-start justify-between gap-3 px-5 pb-2 pt-3">
             <div>

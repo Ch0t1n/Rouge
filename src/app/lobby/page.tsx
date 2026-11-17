@@ -3,7 +3,7 @@
 import * as C from "@/lib/store/commands";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { ChevronDown, Ghost, Inbox, MapPin, Moon, SlidersHorizontal, X } from "lucide-react";
+import { ChevronDown, Ghost, Inbox, MapPin, Moon, Search, SlidersHorizontal, X } from "lucide-react";
 import { MOOD_TAGS, MUSIC_GENRES, type MoodTag } from "@/lib/types";
 import { updateAttendeeSettings } from "@/lib/engine/actions";
 import { activeFilterCount, EMPTY_FILTERS, lobbyGrid, type GridFilters } from "@/lib/engine/grid";
@@ -17,6 +17,8 @@ import { PersonaSwitcher } from "@/components/layout/PersonaSwitcher";
 import { GridCard } from "@/components/lobby/GridCard";
 import { useMatchCelebration } from "@/components/lobby/MatchCelebration";
 import { useConnect } from "@/components/lobby/useConnect";
+import { ProfilePreview } from "@/components/lobby/ProfilePreview";
+import { useIsDesktop } from "@/lib/hooks/useMediaQuery";
 import { LiveDot } from "@/components/ui/badge";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -40,6 +42,8 @@ function Lobby() {
   const [moodOpen, setMoodOpen] = useState(false);
   const celebration = useMatchCelebration();
   const connect = useConnect(celebration.show);
+  const desktop = useIsDesktop();
+  const [preview, setPreview] = useState<string | null>(null);
 
   const grid = useMemo(() => lobbyGrid(state, event.id, meId, filters, now), [state, event.id, meId, filters, now]);
   const pending = inboxOf(state, meId, event.id).length;
@@ -66,66 +70,8 @@ function Lobby() {
     );
   }
 
-  const setSetting = (patch: Parameters<typeof updateAttendeeSettings>[3]) => exec(C.updateAttendeeSettings(event.id, meId, patch));
-
-  const toggleGhost = async (v: boolean) => {
-    const r = await setSetting({ ghost_mode: v });
-    if (r.ok)
-      notify({
-        tone: v ? "squad" : "rouge",
-        title: v ? "👻 Modo Solo Amigos activado" : "✨ Volviste a la grilla",
-        description: v ? "Nadie nuevo te ve en la grilla. Tu Squad, tus matches, el plano, la barra y los sorteos siguen funcionando." : "Ya aparecés para conectar.",
-      });
-  };
-
-  return (
-    <main className="safe-top">
-      {/* Header */}
-      <header className="sticky top-0 z-30 space-y-3 bg-background/85 px-4 pb-3 pt-3 backdrop-blur-xl">
-        <div className="flex items-center gap-2">
-          <div className="min-w-0 flex-1">
-            <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-rouge">
-              {phase === "live" && <LiveDot />} {phase === "live" ? "En vivo" : phase === "afterglow" ? "After · lobby abierto" : "Lobby abierto"}
-            </p>
-            <h1 className="truncate text-xl leading-tight">{event.name}</h1>
-          </div>
-          <Link href="/inbox" aria-label={`Bandeja, ${pending} solicitudes`} className="glass relative grid size-11 place-items-center rounded-full">
-            <Inbox className="size-5" />
-            {pending > 0 && <span className="absolute -right-0.5 -top-0.5 grid min-w-[18px] place-items-center rounded-full bg-rouge px-1 font-display text-[10px] font-bold leading-[18px] text-white">{pending}</span>}
-          </Link>
-          <PersonaSwitcher />
-        </div>
-
-        {/* Switch rápido de privacidad */}
-        <div className={cn("flex items-center gap-3 rounded-2xl border px-3 py-1.5 transition", attendee.ghost_mode ? "border-squad/40 bg-squad/[0.07]" : "border-white/10 bg-white/[0.03]")}>
-          <Ghost className={cn("size-5 shrink-0", attendee.ghost_mode ? "text-squad" : "text-muted")} />
-          <Switch tone="squad" checked={attendee.ghost_mode} onCheckedChange={toggleGhost} id="ghost" label="Modo Solo Amigos" description={attendee.ghost_mode ? "No aparecés en la grilla" : "Ocultarme de la grilla de conexiones"} className="flex-1" />
-        </div>
-      </header>
-
-      <div className="space-y-4 px-4 pb-8">
-        <LineupBanner event={event} />
-
-        {attendee.ghost_mode ? (
-          <section className="rounded-3xl border border-squad/25 bg-squad/[0.05] p-6 text-center">
-            <span className="mx-auto grid size-14 place-items-center rounded-full bg-squad/15 text-squad shadow-glow-squad">
-              <Ghost className="size-7" />
-            </span>
-            <h2 className="mt-4 text-xl">Estás en Modo Solo Amigos</h2>
-            <p className="mt-2 text-sm text-muted">Nadie nuevo te ve en la grilla y no recibís conexiones nuevas. Ideal si estás en pareja o venís a bailar con tu Squad.</p>
-            <ul className="mt-4 space-y-1 text-left text-sm text-primary/85">
-              <li>✓ Tu Squad y tus matches te siguen viendo</li>
-              <li>✓ Plano, Barra Express, perks y sorteos activos</li>
-              <li>✓ Podés aceptar solicitudes que ya tenías</li>
-            </ul>
-            <Button variant="glass" className="mt-5" onClick={() => toggleGhost(false)}>
-              Volver a la grilla
-            </Button>
-          </section>
-        ) : (
-          <>
-            {/* Mood + filtros */}
-            <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4">
+  const filterRow = (
+    <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 lg:mx-0 lg:flex-wrap lg:overflow-visible lg:px-0">
               <button type="button" onClick={() => setMoodOpen(true)} className="glass-pill inline-flex min-h-[40px] shrink-0 items-center gap-1.5 px-3 text-xs">
                 {mood ? `${mood.emoji} ${mood.label}` : "Elegí tu mood"} <ChevronDown className="size-3.5" />
               </button>
@@ -150,6 +96,93 @@ function Lobby() {
                 </button>
               )}
             </div>
+  );
+
+  const setSetting = (patch: Parameters<typeof updateAttendeeSettings>[3]) => exec(C.updateAttendeeSettings(event.id, meId, patch));
+
+  const toggleGhost = async (v: boolean) => {
+    const r = await setSetting({ ghost_mode: v });
+    if (r.ok)
+      notify({
+        tone: v ? "squad" : "rouge",
+        title: v ? "👻 Modo Solo Amigos activado" : "✨ Volviste a la grilla",
+        description: v ? "Nadie nuevo te ve en la grilla. Tu Squad, tus matches, el plano, la barra y los sorteos siguen funcionando." : "Ya aparecés para conectar.",
+      });
+  };
+
+  return (
+    <main className="safe-top">
+      {/* Header */}
+      <header className="sticky top-0 z-30 space-y-3 bg-background/85 px-4 pb-3 pt-3 backdrop-blur-xl md:pt-5">
+        <div className="flex items-center gap-2">
+          <div className="min-w-0 flex-1">
+            <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-rouge">
+              {phase === "live" && <LiveDot />} {phase === "live" ? "En vivo" : phase === "afterglow" ? "After · lobby abierto" : "Lobby abierto"}
+            </p>
+            <h1 className="truncate text-xl leading-tight">{event.name}</h1>
+          </div>
+          <Link href="/inbox" aria-label={`Bandeja, ${pending} solicitudes`} className="glass relative grid size-11 place-items-center rounded-full">
+            <Inbox className="size-5" />
+            {pending > 0 && <span className="absolute -right-0.5 -top-0.5 grid min-w-[18px] place-items-center rounded-full bg-rouge px-1 font-display text-[10px] font-bold leading-[18px] text-white">{pending}</span>}
+          </Link>
+          <label className="relative hidden w-64 lg:block">
+            <span className="sr-only">Buscar por nombre o @username</span>
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
+            <input
+              type="search"
+              value={filters.query ?? ""}
+              onChange={(e) => setFilters((f) => ({ ...f, query: e.target.value }))}
+              placeholder="Buscar nombre o @usuario"
+              className="h-11 w-full rounded-full border border-white/10 bg-white/[0.04] pl-9 pr-3 text-sm text-primary placeholder:text-muted/70 focus:border-rouge/60"
+            />
+          </label>
+          <div className="md:hidden">
+            <PersonaSwitcher />
+          </div>
+        </div>
+
+        {/* Switch rápido de privacidad */}
+        <div className={cn("flex items-center gap-3 rounded-2xl border px-3 py-1.5 transition", attendee.ghost_mode ? "border-squad/40 bg-squad/[0.07]" : "border-white/10 bg-white/[0.03]")}>
+          <Ghost className={cn("size-5 shrink-0", attendee.ghost_mode ? "text-squad" : "text-muted")} />
+          <Switch tone="squad" checked={attendee.ghost_mode} onCheckedChange={toggleGhost} id="ghost" label="Modo Solo Amigos" description={attendee.ghost_mode ? "No aparecés en la grilla" : "Ocultarme de la grilla de conexiones"} className="flex-1" />
+        </div>
+        {!attendee.ghost_mode && (
+          <div className="hidden space-y-2 lg:block">
+            {filterRow}
+            <div className="flex flex-wrap gap-1.5" aria-label="Filtrar por género musical">
+              {MUSIC_GENRES.map((g) => (
+                <Chip key={g} small on={filters.genres.includes(g)} onClick={() => setFilters((f) => ({ ...f, genres: f.genres.includes(g) ? f.genres.filter((x) => x !== g) : [...f.genres, g] }))}>
+                  {g}
+                </Chip>
+              ))}
+            </div>
+          </div>
+        )}
+      </header>
+
+      <div className="space-y-4 px-4 pb-8">
+        <LineupBanner event={event} />
+
+        {attendee.ghost_mode ? (
+          <section className="rounded-3xl border border-squad/25 bg-squad/[0.05] p-6 text-center">
+            <span className="mx-auto grid size-14 place-items-center rounded-full bg-squad/15 text-squad shadow-glow-squad">
+              <Ghost className="size-7" />
+            </span>
+            <h2 className="mt-4 text-xl">Estás en Modo Solo Amigos</h2>
+            <p className="mt-2 text-sm text-muted">Nadie nuevo te ve en la grilla y no recibís conexiones nuevas. Ideal si estás en pareja o venís a bailar con tu Squad.</p>
+            <ul className="mt-4 space-y-1 text-left text-sm text-primary/85">
+              <li>✓ Tu Squad y tus matches te siguen viendo</li>
+              <li>✓ Plano, Barra Express, perks y sorteos activos</li>
+              <li>✓ Podés aceptar solicitudes que ya tenías</li>
+            </ul>
+            <Button variant="glass" className="mt-5" onClick={() => toggleGhost(false)}>
+              Volver a la grilla
+            </Button>
+          </section>
+        ) : (
+          <>
+            {/* Mood + filtros (en PC van fijos en la cabecera) */}
+            <div className="lg:hidden">{filterRow}</div>
 
             <div className="flex items-baseline justify-between">
               <h2 className="text-lg">{phase === "afterglow" ? "Los que vibraron con vos" : "Afines a vos esta noche"}</h2>
@@ -162,9 +195,19 @@ function Lobby() {
                 {filters.sameZone && <p className="mt-2">Dejá tu pin en el plano para que podamos cruzar zonas.</p>}
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 lg:gap-4 xl:grid-cols-5">
                 {grid.map((card, i) => (
-                  <GridCard key={card.profile.id} card={card} priority={i < 4} onConnect={() => connect(card.profile)} />
+                  <GridCard
+                    key={card.profile.id}
+                    card={card}
+                    priority={i < 10}
+                    onConnect={() => connect(card.profile)}
+                    onOpen={() => {
+                      if (!desktop) return false;
+                      setPreview(card.profile.id);
+                      return true;
+                    }}
+                  />
                 ))}
               </div>
             )}
@@ -229,6 +272,7 @@ function Lobby() {
         </div>
       </BottomSheet>
 
+      <ProfilePreview userId={preview} onClose={() => setPreview(null)} />
       {celebration.element}
     </main>
   );
@@ -243,13 +287,13 @@ function FilterGroup({ title, children }: { title: string; children: React.React
   );
 }
 
-function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
+function Chip({ on, onClick, children, small }: { on: boolean; onClick: () => void; children: React.ReactNode; small?: boolean }) {
   return (
     <button
       type="button"
       aria-pressed={on}
       onClick={onClick}
-      className={cn("min-h-[40px] rounded-full border px-3.5 text-sm font-semibold transition", on ? "border-rouge bg-rouge/15 text-primary" : "border-white/15 bg-white/[0.04] text-primary/85")}
+      className={cn("rounded-full border font-semibold transition", small ? "min-h-[32px] px-3 text-xs" : "min-h-[40px] px-3.5 text-sm", on ? "border-rouge bg-rouge/15 text-primary" : "border-white/15 bg-white/[0.04] text-primary/85")}
     >
       {children}
     </button>

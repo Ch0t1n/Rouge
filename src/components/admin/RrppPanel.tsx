@@ -125,9 +125,9 @@ function ManagerView({ stats }: { stats: PromoterStats[] }) {
         </Button>
       }
     >
-      <div className="overflow-x-auto">
+      <div className="max-h-[70dvh] overflow-auto">
         <table className="w-full min-w-[760px] text-sm">
-          <thead className="text-left text-xs uppercase tracking-wider text-muted">
+          <thead className="sticky top-0 z-10 bg-surface/95 text-left text-xs uppercase tracking-wider text-muted backdrop-blur">
             <tr>
               <th className="py-2 pr-3">RRPP</th>
               <th className="px-3">Link</th>

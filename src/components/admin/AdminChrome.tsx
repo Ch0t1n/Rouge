@@ -1,14 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState, type ReactNode } from "react";
 import { BarChart3, CalendarCog, Gift, Lock, LogOut, Megaphone, Martini, Palette, ScanLine, Share2, ShieldCheck, UtensilsCrossed, Tv, Users } from "lucide-react";
 import { useRouge } from "@/lib/store/RougeContext";
 import { NO_PERMISSION, permissionForPath, ROLE_META, roleHome } from "@/lib/engine/roles";
 import { getProfile } from "@/lib/engine/selectors";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
+import { BottomSheet } from "@/components/ui/bottom-sheet";
 
 export const ADMIN_NAV = [
   { href: "/admin", label: "Resumen", icon: BarChart3 },
@@ -35,6 +36,8 @@ export function AdminChrome({ children }: { children: ReactNode }) {
   const me = getProfile(state, state.current_user_id);
   const meta = ROLE_META[role];
 
+  const shortcuts = useAdminShortcuts(nav.map((n) => n.href));
+
   if (!allowed) return <NoAccess />;
   // La Pantalla LED va a pantalla completa (HDMI), sin chrome.
   if (pathname.startsWith("/admin/live-wall") || pathname.startsWith("/admin/print-codes") || pathname.startsWith("/admin/print-ticket")) return <>{children}</>;
@@ -59,24 +62,30 @@ export function AdminChrome({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-screen">
-      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-white/10 bg-surface/60 p-5 lg:flex">
+      {shortcuts.sheet}
+      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col overflow-y-auto border-r border-white/10 bg-surface/60 p-5 lg:flex 2xl:w-72">
         <Link href="/app" className="font-display text-2xl font-bold tracking-tight text-rouge text-glow-rouge">
           ROUGE
         </Link>
         <p className="mt-1 text-xs font-semibold uppercase tracking-widest text-vip">Organizer Suite</p>
         <div className="mt-6">{eventSelect}</div>
         <nav className="mt-6 flex flex-col gap-1" aria-label="Administración">
-          {nav.map(({ href, label, icon: Icon }) => (
+          {nav.map(({ href, label, icon: Icon }, i) => (
             <Link
               key={href}
               href={href}
               aria-current={isActive(href) ? "page" : undefined}
-              className={cn("flex min-h-touch items-center gap-3 rounded-xl px-3 text-sm font-medium transition", isActive(href) ? "bg-vip/15 text-vip" : "text-muted hover:bg-white/5 hover:text-primary")}
+              aria-keyshortcuts={i < 9 ? `Alt+${i + 1}` : undefined}
+              className={cn("group flex min-h-touch items-center gap-3 rounded-xl px-3 text-sm font-medium transition", isActive(href) ? "bg-vip/15 text-vip" : "text-muted hover:bg-white/5 hover:text-primary")}
             >
               <Icon className="size-[18px]" />
-              {label}
+              <span className="flex-1">{label}</span>
+              {i < 9 && <kbd className="hidden rounded-md border border-white/10 px-1.5 font-display text-[10px] text-muted/70 group-hover:inline xl:inline">⌥{i + 1}</kbd>}
             </Link>
           ))}
+          <button type="button" onClick={shortcuts.open} className="mt-2 flex min-h-[36px] items-center gap-2 rounded-xl px-3 text-left text-xs text-muted hover:text-primary">
+            <kbd className="rounded-md border border-white/10 px-1.5 font-display text-[10px]">?</kbd> Atajos de teclado
+          </button>
         </nav>
         <div className="mt-auto space-y-3">
           <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3">
@@ -126,10 +135,65 @@ export function AdminChrome({ children }: { children: ReactNode }) {
             Todavía no sos parte del equipo de este evento. Creá el tuyo acá abajo (quedás como dueño/a) o pedile al dueño/a que te sume.
           </div>
         )}
-        {children}
+        <div key={pathname} className="animate-in fade-in duration-200 motion-reduce:animate-none">{children}</div>
       </div>
     </div>
   );
+}
+
+/**
+ * Atajos del panel (PC): Alt+1…9 abre cada sección del menú, "/" enfoca el buscador de la página
+ * (inputs con data-admin-search) y "?" muestra la ayuda. Se ignoran mientras se escribe en un campo.
+ */
+function useAdminShortcuts(hrefs: string[]) {
+  const router = useRouter();
+  const [help, setHelp] = useState(false);
+  const routes = hrefs.join("|");
+  useEffect(() => {
+    const list = routes.split("|");
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      const typing = !!t && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName));
+      if (e.altKey && !e.ctrlKey && !e.metaKey && /^Digit[1-9]$/.test(e.code)) {
+        const href = list[Number(e.code.slice(5)) - 1];
+        if (href) {
+          e.preventDefault();
+          router.push(href);
+        }
+        return;
+      }
+      if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === "/") {
+        const input = document.querySelector<HTMLInputElement>("[data-admin-search]");
+        if (input) {
+          e.preventDefault();
+          input.focus();
+        }
+      } else if (e.key === "?") setHelp(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [routes, router]);
+  const sheet = (
+    <BottomSheet open={help} onClose={() => setHelp(false)} title="Atajos de teclado" description="Para operar la noche desde la notebook sin soltar el teclado.">
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+        {[
+          ["Alt + 1…9", "Ir a cada sección del menú (en orden)"],
+          ["/", "Buscar en la página (CRM, comandas…)"],
+          ["Esc", "Cerrar paneles y diálogos"],
+          ["?", "Mostrar esta ayuda"],
+        ].map(([k, v]) => (
+          <div key={k} className="contents">
+            <dt>
+              <kbd className="rounded-md border border-white/15 bg-white/[0.04] px-2 py-0.5 font-display text-xs">{k}</kbd>
+            </dt>
+            <dd className="text-muted">{v}</dd>
+          </div>
+        ))}
+      </dl>
+    </BottomSheet>
+  );
+  return { sheet, open: () => setHelp(true) };
 }
 
 /** Pantalla para quien no tiene sesión o cuyo rol no incluye esta sección. */
@@ -177,7 +241,8 @@ function NoAccess() {
 /** Encabezado estándar de cada sección del admin. */
 export function AdminHeader({ title, subtitle, actions }: { title: string; subtitle?: ReactNode; actions?: ReactNode }) {
   return (
-    <div className="flex flex-wrap items-end justify-between gap-4">
+    // Cabecera fija en PC: el título y las acciones de la sección quedan a la vista al scrollear tablas largas.
+    <div className="flex flex-wrap items-end justify-between gap-4 lg:sticky lg:top-0 lg:z-20 lg:-mx-2 lg:bg-background/85 lg:px-2 lg:py-3 lg:backdrop-blur-xl">
       <div>
         <h1 className="text-3xl lg:text-4xl">{title}</h1>
         {subtitle && <p className="mt-1 text-sm text-muted">{subtitle}</p>}

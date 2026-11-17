@@ -54,7 +54,7 @@ export function DemoHub() {
   return (
     <div className="min-h-dvh">
       <header className="sticky top-0 z-30 border-b border-white/10 bg-background/85 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 py-3 sm:px-6 2xl:max-w-[1500px]">
           <span className="font-display text-xl font-bold tracking-tight text-rouge text-glow-rouge">ROUGE</span>
           <Badge tone="vip" size="md">Demo para anfitriones</Badge>
           <div className="ml-auto flex flex-wrap gap-2">
@@ -66,7 +66,7 @@ export function DemoHub() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl space-y-12 px-4 py-10 sm:px-6">
+      <main className="mx-auto max-w-6xl space-y-12 px-4 py-10 sm:px-6 2xl:max-w-[1500px]">
         <section className="grid gap-8 lg:grid-cols-[1.3fr_1fr] lg:items-end">
           <div>
             <h1 className="font-display text-4xl font-bold leading-[1.02] tracking-tight [text-wrap:balance] sm:text-5xl">
@@ -108,11 +108,11 @@ export function DemoHub() {
               <Clock3 className="size-4" /> 7 minutos · cada paso abre la vista justa
             </p>
           </div>
-          <ol className="mt-5 grid gap-3">
+          <ol className="mt-5 grid gap-3 2xl:grid-cols-2">
             {DEMO_SCRIPT.map((s, i) => {
               const panel = DEMO_ROLES[s.panelRole];
               return (
-                <li key={s.title} className="glass grid grid-cols-[auto_minmax(0,1fr)] gap-4 rounded-3xl p-5 md:grid-cols-[auto_minmax(0,1fr)_auto] md:items-start">
+                <li key={s.title} className="glass grid grid-cols-[auto_minmax(0,1fr)] gap-4 rounded-3xl p-5 transition duration-200 hover:border-white/20 md:grid-cols-[auto_minmax(0,1fr)_auto] md:items-start">
                   <span className="grid size-10 place-items-center rounded-2xl bg-rouge/15 font-display text-lg font-bold text-rouge">{i + 1}</span>
                   <div className="min-w-0">
                     <p className="flex flex-wrap items-baseline gap-x-2 font-display text-lg font-semibold">
@@ -142,7 +142,7 @@ export function DemoHub() {
         <section aria-labelledby="vistas">
           <h2 id="vistas" className="text-2xl">Abrir cualquier vista</h2>
           <p className="mt-1 text-sm text-muted">Cada una abre en una pestaña nueva, ya con la persona correcta. Sin contraseñas.</p>
-          <ul className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <ul className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
             {VIEWS.map((v) => {
               const r = DEMO_ROLES[v.role];
               return (

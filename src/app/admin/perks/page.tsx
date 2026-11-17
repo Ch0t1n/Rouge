@@ -35,7 +35,7 @@ export default function AdminPerksPage() {
   const { state } = useRouge();
   const event = activeEvent(state)!;
   return (
-    <main className="mx-auto max-w-7xl space-y-6 px-5 py-6 lg:px-10 lg:py-10">
+    <main className="mx-auto max-w-7xl 2xl:max-w-[1600px] space-y-6 px-5 py-6 lg:px-10 lg:py-10">
       <AdminHeader title="Perks, QR Drops y sorteos" subtitle="Recompensas automáticas para atraer grupos y público femenino, y sorteos en vivo." />
       <div className="grid gap-6 xl:grid-cols-2">
         <RafflePanel eventId={event.id} />

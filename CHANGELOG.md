@@ -2,6 +2,25 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y [SemVer](https://semver.org/lang/es/).
 
+## [Sin publicar]
+
+### Agregado — Experiencia en PC y tablet
+- **Layout fluido**: en tablet/PC (≥ 768px) la app del asistente deja el "teléfono recortado": sidebar izquierdo
+  fijo (riel de íconos en tablet, expandible/colapsable en PC con **Ctrl/⌘ + B**), indicadores en vivo (bandeja,
+  rescate, invitaciones, perks, pedidos listos), selector del evento activo y acceso al perfil. Contenido hasta
+  `max-w-7xl`; las pantallas de lectura (perfil, ajustes) en `max-w-3xl`. En móvil sigue la barra inferior.
+- **Lobby**: grilla de 2 → 5 columnas, buscador por nombre/@usuario, filtros de mood y géneros fijos en la cabecera
+  y **vista previa del perfil en un panel derecho** (sin perder el scroll de la grilla).
+- **Bandeja y chat**: vista dividida (conversaciones 35% · chat 65%) con el perfil del contacto en pantallas anchas.
+- **Barra Express**: catálogo en grilla y **pedido persistente en columna derecha** (total, entrega, Vaquita, pago y
+  QR de retiro sin modales). **Perks**: QRs en grilla, QR seleccionado y avisos en columna lateral.
+- **Squad**: tres columnas (plano en vivo · integrantes y pines · chat grupal o cuentas de la mesa).
+  **Plano**: mapa grande con la lista de quién está en el plano.
+- Modales (`BottomSheet`) como diálogos centrados en PC; avisos arriba a la derecha.
+- **Panel del organizador**: cabeceras fijas, tablas de alta densidad con encabezado fijo (CRM, RRPP), atajos
+  (**Alt + 1…9** secciones, **/** buscar, **?** ayuda), transiciones suaves y ancho extra en monitores 2xl.
+  `/demo` aprovecha monitores anchos.
+
 ## [1.6.0] — 2026-11-16
 
 ### Agregado

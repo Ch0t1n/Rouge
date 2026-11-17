@@ -64,7 +64,7 @@ export default function AdminBlastsPage() {
   };
 
   return (
-    <main className="mx-auto max-w-7xl space-y-6 px-5 py-6 lg:px-10 lg:py-10">
+    <main className="mx-auto max-w-7xl 2xl:max-w-[1600px] space-y-6 px-5 py-6 lg:px-10 lg:py-10">
       <AdminHeader title="Text Blast y Flash Promos" subtitle="Avisos instantáneos a todo el evento o a un segmento. Ideal para descomprimir barras llenas." />
 
       <div className="grid gap-6 xl:grid-cols-3">

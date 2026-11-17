@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { House, Inbox, LayoutGrid, Map as MapIcon, UsersRound } from "lucide-react";
-import { inboxOf, pendingSquadInvites, rescueAlertsFor } from "@/lib/engine/selectors";
+import { inboxOf, ordersOf, pendingSquadInvites, perksOf, rescueAlertsFor } from "@/lib/engine/selectors";
 import { useRouge } from "@/lib/store/RougeContext";
 import { cn } from "@/lib/utils";
 
-const ITEMS = [
+export const NAV_ITEMS = [
   { href: "/app", label: "Inicio", icon: House },
   { href: "/lobby", label: "Lobby", icon: LayoutGrid },
   { href: "/map", label: "Plano", icon: MapIcon },
@@ -15,24 +15,37 @@ const ITEMS = [
   { href: "/inbox", label: "Bandeja", icon: Inbox },
 ] as const;
 
-/** Rutas donde se muestra la navegación inferior. */
-export const NAV_ROUTES: readonly string[] = [...ITEMS.map((i) => i.href), "/profile", "/perks"];
+/** Rutas donde se muestra la navegación inferior (móvil). En tablet/PC manda el sidebar. */
+export const NAV_ROUTES: readonly string[] = [...NAV_ITEMS.map((i) => i.href), "/profile", "/perks"];
+
+export const isNavActive = (href: string, pathname: string) => (href === "/app" ? pathname === "/app" : pathname === href || pathname.startsWith(href + "/") || (href === "/inbox" && pathname.startsWith("/chat/")));
+
+/** Indicadores en vivo compartidos por la barra inferior y el sidebar (misma fuente: el estado). */
+export function useNavBadges() {
+  const { state } = useRouge();
+  const me = state.current_user_id;
+  const ev = state.active_event_id;
+  return {
+    pending: inboxOf(state, me, ev).length,
+    rescue: rescueAlertsFor(state, ev, me).length,
+    invites: pendingSquadInvites(state, ev, me).length,
+    perks: perksOf(state, me, ev).filter((p) => p.status === "available").length,
+    ready: ordersOf(state, me, ev).filter((o) => o.status === "ready_qr" || o.status === "delivering").length,
+  };
+}
 
 export function BottomNav() {
-  const pathname = usePathname();
-  const { state } = useRouge();
-  const pending = inboxOf(state, state.current_user_id, state.active_event_id).length;
-  const rescue = rescueAlertsFor(state, state.active_event_id, state.current_user_id).length;
-  const invites = pendingSquadInvites(state, state.active_event_id, state.current_user_id).length;
+  const pathname = usePathname() ?? "/";
+  const { pending, rescue, invites } = useNavBadges();
 
   return (
     <nav
       aria-label="Navegación principal"
-      className="fixed inset-x-0 bottom-0 z-40 mx-auto max-w-md border-t border-white/10 bg-background/85 pb-[var(--safe-bottom)] backdrop-blur-xl"
+      className="fixed inset-x-0 bottom-0 z-40 mx-auto max-w-md border-t border-white/10 bg-background/85 pb-[var(--safe-bottom)] backdrop-blur-xl md:hidden"
     >
       <ul className="grid grid-cols-5">
-        {ITEMS.map(({ href, label, icon: Icon }) => {
-          const active = href === "/app" ? pathname === "/app" : pathname.startsWith(href);
+        {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+          const active = isNavActive(href, pathname);
           return (
             <li key={href}>
               <Link

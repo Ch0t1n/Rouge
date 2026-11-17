@@ -187,9 +187,13 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
    Si cambiás el formato del estado, subí `STATE_VERSION` en `seed.ts` (fuerza re-siembra).
 4. **Hidratación solo en cliente.** La semilla depende de `Date.now()`; el provider muestra
    un BootScreen hasta montar. Las páginas de usuario son Client Components.
-5. **Una sola interfaz.** `AppShell` renderiza todo dentro de
-   `max-w-md mx-auto min-h-screen border-x border-white/10 shadow-2xl relative` salvo
-   `/admin/*` (vista expandida). Overlays (`BottomSheet`, `Toaster`) son `fixed` + `max-w-md mx-auto`.
+5. **Una sola interfaz, responsiva.** En móvil (< md) `AppShell` muestra el contenedor tipo teléfono
+   (`max-w-md`) con `BottomNav`. En tablet/PC (≥ md) usa `DesktopSidebar` (riel en md, expandible en lg; estado en
+   `localStorage`) y contenido fluido (`max-w-7xl` en rutas `WIDE`, `max-w-3xl` en lectura). El ancho del sidebar es
+   la variable CSS `--sidebar-w` (en `<html data-sidebar>`): todo elemento `fixed` de la app usa `md:fixed-app-x`.
+   `BottomSheet` pasa a diálogo centrado en md+; para paneles laterales sin navegar usar `Drawer`. Comportamiento
+   distinto por tamaño (no solo estilos) con `useIsDesktop()` (`lib/hooks/useMediaQuery`). `/admin/*`, `/ops/*` y
+   `/superadmin` van expandidos sin sidebar de la app.
 6. **Baja señal.** Comprimir toda imagen con `compressImage()` antes de subir; avatares con
    fallback de iniciales y color dominante (`blur_color`); Service Worker cache-first para estáticos;
    el iframe de Spotify NO se carga hasta que el usuario toca "Escuchar".

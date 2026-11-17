@@ -66,6 +66,8 @@ function Bar() {
   const total = lines.reduce((a, l) => a + l.item.price * l.qty, 0);
   const sharing = splitWith.some((u) => u !== meId);
   const each = sharing ? Math.round(total / splitWith.length) : total;
+  // PC: el QR del pedido listo (o el más reciente con código) queda visible en la columna del pedido.
+  const readyQr = active.find((o) => o.pickup_code && (o.status === "ready_qr" || o.status === "delivering")) ?? active.find((o) => o.pickup_code && o.payment_status !== "awaiting_payment") ?? null;
 
   useReturnFromCheckout(mode, notify, refresh);
 
@@ -135,92 +137,14 @@ function Bar() {
     if (r.data.pickup_code) setQrOrder(r.data);
   };
 
-  return (
-    <main className="pb-32">
-      <PageHeader title="Barra Express" subtitle={online ? "Pedí y pagá con Mercado Pago, sin fila" : "Pedí sin hacer fila"} backHref="/app" />
-      <div className="space-y-5 px-4">
-        {active.map((o) => (
-          <OrderCard
-            key={o.id}
-            order={o}
-            meId={meId}
-            onQr={() => setQrOrder(o)}
-            onPay={() => pay(o)}
-            onCancel={() => exec(C.cancelUnpaidOrder(o.id, meId))}
-            payBusy={busy}
-            onSimulate={mode === "demo" ? () => {
-              const next = nextOrderStatus(o);
-              if (next) void exec(C.advanceOrder(o, { simulate: true }));
-            } : undefined}
-          />
-        ))}
-
-        {CATEGORIES.map((cat) => {
-          const items = state.bar_menu.filter((i) => i.category === cat.id);
-          if (!items.length) return null;
-          return (
-            <section key={cat.id}>
-              <h2 className={cn("mb-2 text-base", cat.id === "botella" && "text-vip")}>{cat.label}</h2>
-              <ul className="space-y-2">
-                {items.map((i) => {
-                  const qty = cart[i.id] ?? 0;
-                  return (
-                    <li key={i.id} className={cn("flex items-center gap-3 rounded-2xl border p-3 transition", qty ? "border-vip/50 bg-vip/[0.07]" : "border-white/10 bg-white/[0.03]", !i.is_available && "opacity-55")}>
-                      <span className="text-3xl" aria-hidden>{i.emoji}</span>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-semibold">{i.name}</p>
-                        <p className="metric text-sm text-vip">{formatMoney(i.price)}</p>
-                      </div>
-                      {!i.is_available ? (
-                        <span className="rounded-full bg-white/10 px-3 py-1.5 font-display text-xs font-semibold uppercase text-muted">Agotado</span>
-                      ) : qty ? (
-                        <div className="flex items-center gap-1">
-                          <button type="button" aria-label={`Quitar ${i.name}`} onClick={() => set(i.id, qty - 1)} className="grid size-11 place-items-center rounded-full bg-white/10"><Minus className="size-4" /></button>
-                          <span className="metric w-6 text-center text-lg">{qty}</span>
-                          <button type="button" aria-label={`Agregar ${i.name}`} onClick={() => set(i.id, qty + 1)} className="grid size-11 place-items-center rounded-full bg-vip text-background"><Plus className="size-4" /></button>
-                        </div>
-                      ) : (
-                        <button type="button" aria-label={`Agregar ${i.name}`} onClick={() => set(i.id, 1)} className="grid size-11 place-items-center rounded-full bg-vip/15 text-vip"><Plus className="size-5" /></button>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          );
-        })}
-
-        {mine && (
-          <Link href="/squad/cuentas" className="glass flex items-center gap-3 rounded-2xl p-4 text-sm">
-            <span className="text-2xl">🧾</span>
-            <span className="flex-1"><b>Cuentas de la mesa:</b> lo que comparten con el Squad se suma solo, y al final te decimos quién le transfiere a quién.</span>
-          </Link>
-        )}
-        <Link href="/lobby" className="glass flex items-center gap-3 rounded-2xl p-4 text-sm">
-          <span className="text-2xl">🍸</span>
-          <span className="flex-1"><b>Trago Rompehielos:</b> regalale un trago a alguien al mandarle tu Rompehielos desde su perfil.</span>
-        </Link>
-      </div>
-
-      {lines.length > 0 && (
-        <div className="fixed inset-x-0 bottom-0 z-30 mx-auto max-w-md border-t border-white/10 bg-background/90 px-4 pb-[max(1rem,var(--safe-bottom))] pt-3 backdrop-blur-xl">
-          <Button block size="lg" variant="vip" onClick={() => setCheckout(true)}>
-            <ShoppingBag /> Ver pedido · {lines.reduce((a, l) => a + l.qty, 0)} ítems · {formatMoney(total)}
-          </Button>
-        </div>
-      )}
-
-      <BottomSheet
-        open={checkout}
-        onClose={() => setCheckout(false)}
-        title="¿Cómo lo querés?"
-        footer={
-          <Button block size="lg" variant="vip" onClick={order} disabled={!options.find((o) => o.id === delivery)?.available}>
+  const payButton = (
+          <Button block size="lg" variant="vip" onClick={order} disabled={!lines.length || !options.find((o) => o.id === delivery)?.available}>
             {online ? <Wallet /> : <ShoppingBag />}
             {online ? `Pagar ${formatMoney(total)} con Mercado Pago` : `Pedir · pagás ${formatMoney(total)} en la barra`}
           </Button>
-        }
-      >
+  );
+  const checkoutBody = (
+    <>
         <ul className="mb-4 space-y-1 text-sm">
           {lines.map((l) => (
             <li key={l.item.id} className="flex justify-between">
@@ -286,6 +210,113 @@ function Bar() {
           </section>
         )}
         {online && <p className="mt-3 text-center text-xs text-muted">Pagás con la billetera de Mercado Pago, dinero en cuenta o tarjeta. La barra lo prepara apenas se acredita.</p>}
+    </>
+  );
+
+  return (
+    <main className="pb-32 lg:pb-10">
+      <PageHeader title="Barra Express" subtitle={online ? "Pedí y pagá con Mercado Pago, sin fila" : "Pedí sin hacer fila"} backHref="/app" />
+      <div className="lg:grid lg:grid-cols-[1fr_380px] lg:items-start lg:gap-6 lg:px-4">
+      <div className="space-y-5 px-4 lg:px-0">
+        <div className="space-y-3 lg:grid lg:grid-cols-2 lg:gap-3 lg:space-y-0">
+        {active.map((o) => (
+          <OrderCard
+            key={o.id}
+            order={o}
+            meId={meId}
+            onQr={() => setQrOrder(o)}
+            onPay={() => pay(o)}
+            onCancel={() => exec(C.cancelUnpaidOrder(o.id, meId))}
+            payBusy={busy}
+            onSimulate={mode === "demo" ? () => {
+              const next = nextOrderStatus(o);
+              if (next) void exec(C.advanceOrder(o, { simulate: true }));
+            } : undefined}
+          />
+        ))}
+        </div>
+
+        {CATEGORIES.map((cat) => {
+          const items = state.bar_menu.filter((i) => i.category === cat.id);
+          if (!items.length) return null;
+          return (
+            <section key={cat.id}>
+              <h2 className={cn("mb-2 text-base", cat.id === "botella" && "text-vip")}>{cat.label}</h2>
+              <ul className="space-y-2 sm:grid sm:grid-cols-2 sm:gap-2 sm:space-y-0 2xl:grid-cols-3">
+                {items.map((i) => {
+                  const qty = cart[i.id] ?? 0;
+                  return (
+                    <li key={i.id} className={cn("flex items-center gap-3 rounded-2xl border p-3 transition", qty ? "border-vip/50 bg-vip/[0.07]" : "border-white/10 bg-white/[0.03]", !i.is_available && "opacity-55")}>
+                      <span className="text-3xl" aria-hidden>{i.emoji}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-semibold">{i.name}</p>
+                        <p className="metric text-sm text-vip">{formatMoney(i.price)}</p>
+                      </div>
+                      {!i.is_available ? (
+                        <span className="rounded-full bg-white/10 px-3 py-1.5 font-display text-xs font-semibold uppercase text-muted">Agotado</span>
+                      ) : qty ? (
+                        <div className="flex items-center gap-1">
+                          <button type="button" aria-label={`Quitar ${i.name}`} onClick={() => set(i.id, qty - 1)} className="grid size-11 place-items-center rounded-full bg-white/10"><Minus className="size-4" /></button>
+                          <span className="metric w-6 text-center text-lg">{qty}</span>
+                          <button type="button" aria-label={`Agregar ${i.name}`} onClick={() => set(i.id, qty + 1)} className="grid size-11 place-items-center rounded-full bg-vip text-background"><Plus className="size-4" /></button>
+                        </div>
+                      ) : (
+                        <button type="button" aria-label={`Agregar ${i.name}`} onClick={() => set(i.id, 1)} className="grid size-11 place-items-center rounded-full bg-vip/15 text-vip"><Plus className="size-5" /></button>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          );
+        })}
+
+        {mine && (
+          <Link href="/squad/cuentas" className="glass flex items-center gap-3 rounded-2xl p-4 text-sm">
+            <span className="text-2xl">🧾</span>
+            <span className="flex-1"><b>Cuentas de la mesa:</b> lo que comparten con el Squad se suma solo, y al final te decimos quién le transfiere a quién.</span>
+          </Link>
+        )}
+        <Link href="/lobby" className="glass flex items-center gap-3 rounded-2xl p-4 text-sm">
+          <span className="text-2xl">🍸</span>
+          <span className="flex-1"><b>Trago Rompehielos:</b> regalale un trago a alguien al mandarle tu Rompehielos desde su perfil.</span>
+        </Link>
+      </div>
+
+      {/* PC: pedido persistente en la columna derecha (sin modales para pagar ni para ver el QR) */}
+      <aside aria-label="Tu pedido" className="sticky top-4 hidden max-h-[calc(100dvh-2rem)] flex-col overflow-hidden rounded-3xl border border-vip/30 bg-surface/85 backdrop-blur-xl lg:flex">
+        <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+          <h2 className="flex items-center gap-2 text-lg"><ShoppingBag className="size-5 text-vip" /> Tu pedido</h2>
+          {lines.length > 0 && <button type="button" onClick={() => setCart({})} className="text-xs text-muted hover:text-primary">Vaciar</button>}
+        </div>
+        <div className="flex-1 overflow-y-auto px-5 py-4">
+          {lines.length ? checkoutBody : <p className="py-6 text-center text-sm text-muted">Sumá tragos del menú con <b className="text-vip">+</b>. Acá ves el total, cómo te llega y con quién lo compartís.</p>}
+          {readyQr && (
+            <section className="mt-5 rounded-2xl border border-squad/40 bg-squad/[0.06] p-4" aria-label="QR de retiro">
+              <p className="mb-3 text-center font-display text-sm font-semibold text-squad">Retiro · código {readyQr.pickup_code}</p>
+              <QrBlock value={orderQrValue(readyQr)} size={180} label={`Pedido ${readyQr.pickup_code}`} />
+            </section>
+          )}
+        </div>
+        {lines.length > 0 && <div className="border-t border-white/10 px-5 pb-5 pt-3">{payButton}</div>}
+      </aside>
+      </div>
+
+      {lines.length > 0 && (
+        <div className="fixed inset-x-0 bottom-0 z-30 mx-auto max-w-md md:fixed-app-x md:max-w-none md:[&>*]:mx-auto md:[&>*]:max-w-md lg:hidden border-t border-white/10 bg-background/90 px-4 pb-[max(1rem,var(--safe-bottom))] pt-3 backdrop-blur-xl">
+          <Button block size="lg" variant="vip" onClick={() => setCheckout(true)}>
+            <ShoppingBag /> Ver pedido · {lines.reduce((a, l) => a + l.qty, 0)} ítems · {formatMoney(total)}
+          </Button>
+        </div>
+      )}
+
+      <BottomSheet
+        open={checkout}
+        onClose={() => setCheckout(false)}
+        title="¿Cómo lo querés?"
+        footer={payButton}
+      >
+        {checkoutBody}
       </BottomSheet>
 
       {/* Checkout simulado de Mercado Pago (solo Modo Demo: en producción se abre el de Mercado Pago). */}

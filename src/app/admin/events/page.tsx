@@ -40,7 +40,7 @@ export default function AdminEventsPage() {
   const event = editing === "new" ? null : mine.find((e) => e.id === editing) ?? null;
 
   return (
-    <main className="mx-auto max-w-7xl space-y-6 px-5 py-6 lg:px-10 lg:py-10">
+    <main className="mx-auto max-w-7xl 2xl:max-w-[1600px] space-y-6 px-5 py-6 lg:px-10 lg:py-10">
       <AdminHeader
         title="Eventos y accesos"
         subtitle="Configurá la fiesta, el lobby, el plano y los links de ingreso."

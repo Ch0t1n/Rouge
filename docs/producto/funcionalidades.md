@@ -339,3 +339,14 @@ cliente y para la barra. Es un comprobante interno: la factura la emite cada com
 - **`/organizadores`** — para dueños de boliches y productoras: barra y cobros, panel, CRM, Text Blasts, LED, RRPP,
   puerta, planes y preguntas de negocio. **Oculto:** no aparece en buscadores ni se enlaza desde `/`; se comparte por
   link junto con la [demo](#18-demo-en-vivo-para-anfitriones).
+
+## 27. Experiencia en PC, notebook y tablet
+
+- Móvil (< 768px): la app de siempre, una mano, barra inferior y hojas inferiores.
+- Tablet (≥ 768px): sidebar de íconos con los mismos indicadores en vivo. PC (≥ 1024px): sidebar expandible
+  (Ctrl/⌘ + B), selector de evento y acceso al perfil; los modales pasan a diálogos centrados.
+- Lobby con 3–5 columnas, buscador y vista previa del perfil en panel derecho; bandeja y chat en vista dividida;
+  barra con el pedido fijo a la derecha; perks con QR y avisos al costado; Squad en tres columnas (plano, integrantes,
+  chat/cuentas); plano grande con la lista de pines visibles.
+- Panel del organizador con cabeceras y encabezados de tabla fijos y atajos de teclado (Alt + 1…9, /, ?).
+

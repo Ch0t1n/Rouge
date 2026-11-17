@@ -97,7 +97,7 @@ function Home() {
           )}
           <Badge tone={mode === "demo" ? "vip" : "squad"}>{mode === "demo" ? "Modo Demo" : "Supabase"}</Badge>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 md:hidden">
           <Link href="/profile" aria-label="Mi perfil" className="glass grid size-11 place-items-center rounded-full">
             <UserRound className="size-5" />
           </Link>
@@ -105,11 +105,13 @@ function Home() {
         </div>
       </header>
 
-      <div className="space-y-4 px-4">
-        <LineupBanner event={event} />
+      <div className="space-y-4 px-4 lg:grid lg:grid-cols-2 lg:items-start lg:gap-5 lg:space-y-0">
+        <div className="lg:col-span-2">
+          <LineupBanner event={event} />
+        </div>
 
         {/* Hero del evento */}
-        <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-rouge/25 via-surface to-squad/10 p-5">
+        <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-rouge/25 via-surface to-squad/10 p-5 lg:col-span-2">
           <div aria-hidden className="absolute -right-10 -top-10 size-40 rounded-full bg-rouge/30 blur-3xl" />
           <div className="relative">
             <div className="flex items-center gap-2">
@@ -189,7 +191,7 @@ function Home() {
         )}
 
         {/* Métricas personales */}
-        <section className="grid grid-cols-2 gap-3">
+        <section className="grid grid-cols-2 gap-3 lg:col-span-2 lg:grid-cols-4">
           <StatTile href="/lobby" icon={<Users />} tone="rouge" value={data.grid.length} label="Asistentes visibles" hint="Ir a la grilla →" />
           <StatTile href="/inbox" icon={<Heart />} tone="rouge" value={data.matches.length} label="Matches" hint={`${data.inbox.length} en tu bandeja`} />
           <StatTile href="/perks" icon={<Gift />} tone="vip" value={data.perks.length} label="Perks & QRs" hint="listos para canjear" />

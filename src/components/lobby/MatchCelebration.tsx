@@ -24,7 +24,7 @@ function MatchOverlay({ connectionId, otherId, onClose }: { connectionId: UUID; 
   const other = getProfile(state, otherId);
   if (!me || !other) return null;
   return (
-    <div role="dialog" aria-modal="true" aria-label={`Match con ${other.full_name}`} className="fixed inset-0 z-[70] mx-auto flex max-w-md flex-col items-center justify-center gap-8 bg-background/95 px-8 text-center backdrop-blur-xl animate-in fade-in">
+    <div role="dialog" aria-modal="true" aria-label={`Match con ${other.full_name}`} className="fixed inset-0 z-[70] mx-auto flex max-w-md flex-col md:max-w-none items-center justify-center gap-8 bg-background/95 px-8 text-center backdrop-blur-xl animate-in fade-in">
       <div aria-hidden className="absolute inset-0 overflow-hidden">
         <div className="absolute left-1/2 top-1/3 size-[420px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-rouge/25 blur-[100px]" />
       </div>

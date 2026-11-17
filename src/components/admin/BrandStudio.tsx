@@ -56,7 +56,7 @@ export function BrandStudio() {
   }, [params, notify, router]);
 
   return (
-    <main className="mx-auto max-w-7xl space-y-6 px-5 py-6 lg:px-10 lg:py-10">
+    <main className="mx-auto max-w-7xl 2xl:max-w-[1600px] space-y-6 px-5 py-6 lg:px-10 lg:py-10">
       <AdminHeader
         title="Marca y cobros"
         subtitle="Tu logo y tus colores en la app de tus fiestas, y la cuenta de Mercado Pago donde entra la plata de la barra."

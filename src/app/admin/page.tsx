@@ -56,7 +56,7 @@ export default function AdminOverviewPage() {
   const security = role === "security";
 
   return (
-    <main className="mx-auto max-w-7xl space-y-8 px-5 py-6 lg:px-10 lg:py-10">
+    <main className="mx-auto max-w-7xl 2xl:max-w-[1600px] space-y-8 px-5 py-6 lg:px-10 lg:py-10">
       <AdminHeader
         title={event.name}
         subtitle={

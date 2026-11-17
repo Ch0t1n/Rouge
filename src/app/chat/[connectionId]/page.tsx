@@ -12,6 +12,8 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { Avatar } from "@/components/ui/avatar";
 import { MessageList } from "@/components/chat/MessageList";
 import { Composer } from "@/components/chat/Composer";
+import { ConversationList } from "@/components/chat/ConversationList";
+import { ProfileView } from "@/components/profile/ProfileView";
 
 /** Chat 1:1 entre matches. Sigue abierto aunque el lobby haya cerrado. */
 export default function ChatPage() {
@@ -32,18 +34,21 @@ function Chat() {
   const allowed = !!conn && conn.status === "accepted" && (conn.sender_id === meId || conn.receiver_id === meId) && !!other && !isBlockedBetween(state, meId, other.id);
   if (!allowed || !other) {
     return (
-      <main>
-        <PageHeader title="Chat" backHref="/inbox" />
-        <div className="flex flex-col items-center gap-3 px-8 pt-24 text-center">
-          <UserX className="size-10 text-muted" />
-          <h2 className="text-xl">Esta conversación no está disponible</h2>
-        </div>
-      </main>
+      <SplitView>
+        <main>
+          <PageHeader title="Chat" backHref="/inbox" />
+          <div className="flex flex-col items-center gap-3 px-8 pt-24 text-center">
+            <UserX className="size-10 text-muted" />
+            <h2 className="text-xl">Esta conversación no está disponible</h2>
+          </div>
+        </main>
+      </SplitView>
     );
   }
 
   return (
-    <main className="flex min-h-dvh flex-col">
+    <SplitView activeId={conn.id} contact={<ProfileView profile={other} mood={null} affinity={null} />}>
+    <main className="flex min-h-dvh flex-col lg:h-dvh lg:min-h-0 lg:overflow-y-auto">
       <PageHeader
         backHref="/inbox"
         title={
@@ -61,5 +66,34 @@ function Chat() {
       </div>
       <Composer onSend={async (body) => (await exec(C.sendMessage(meId, { type: "direct", connectionId: conn.id }, body))).ok} />
     </main>
+    </SplitView>
+  );
+}
+
+/**
+ * PC (≥ 1024px): vista dividida — conversaciones a la izquierda (35%) y el chat activo a la derecha (65%),
+ * con el perfil del contacto en una tercera columna en pantallas anchas (≥ 1280px). En móvil, solo el chat.
+ */
+function SplitView({ activeId, contact, children }: { activeId?: string; contact?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="lg:grid lg:h-dvh lg:grid-cols-[minmax(300px,35%)_1fr]">
+      <aside aria-label="Conversaciones" className="hidden overflow-y-auto border-r border-white/10 lg:block">
+        <div className="sticky top-0 z-10 flex items-baseline justify-between bg-background/85 px-4 pb-3 pt-6 backdrop-blur-xl">
+          <h2 className="text-2xl">Chats</h2>
+          <Link href="/inbox" className="text-xs font-semibold text-rouge hover:underline">Solicitudes →</Link>
+        </div>
+        <div className="px-2 pb-6">
+          <ConversationList activeId={activeId} compact />
+        </div>
+      </aside>
+      <div className={contact ? "xl:grid xl:h-dvh xl:grid-cols-[1fr_320px]" : undefined}>
+        {children}
+        {contact && (
+          <aside aria-label="Perfil del contacto" className="hidden overflow-y-auto border-l border-white/10 px-4 py-6 xl:block">
+            {contact}
+          </aside>
+        )}
+      </div>
+    </div>
   );
 }

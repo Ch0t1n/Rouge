@@ -15,6 +15,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { QrBlock } from "@/components/perks/QrCard";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { useIsDesktop } from "@/lib/hooks/useMediaQuery";
 
 const TYPE: Record<UserPerkQR["perk_type"], { label: string; icon: string }> = {
   free_drink: { label: "Trago gratis", icon: "🍹" },
@@ -42,27 +43,10 @@ function Wallet() {
   const orders = ordersOf(state, meId, event.id).filter((o) => o.pickup_code && (o.status === "ready_qr" || o.status === "preparing" || o.status === "pending"));
   const blasts = useMemo(() => blastsFor(state, event.id, meId, now), [state, event.id, meId, now]);
   const live = show ? state.user_perks_qrs.find((p) => p.id === show.id) ?? show : null;
+  const desktop = useIsDesktop();
 
-  return (
-    <main className="pb-10">
-      <PageHeader title="Mis Perks & QRs" subtitle={event.name} backHref="/app" />
-      <div className="px-4">
-        <div role="tablist" className="grid grid-cols-2 rounded-2xl bg-white/[0.05] p-1">
-          {(
-            [
-              ["qrs", `QRs · ${available.length + orders.length}`],
-              ["avisos", `Avisos · ${blasts.length}`],
-            ] as const
-          ).map(([k, label]) => (
-            <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)} className={cn("min-h-[40px] rounded-xl font-display text-sm font-semibold", tab === k ? "bg-vip text-background shadow-glow-vip" : "text-muted")}>
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {tab === "qrs" ? (
-        <div className="space-y-3 px-4 pt-4">
+  const qrsPane = (
+        <div className="space-y-3 px-4 pt-4 lg:grid lg:grid-cols-2 lg:gap-3 lg:space-y-0 lg:px-0 xl:grid-cols-3">
           {orders.map((o) => (
             <Link key={o.id} href="/bar" className={cn("flex items-center gap-3 rounded-3xl border p-4", o.status === "ready_qr" ? "border-squad bg-squad/10 shadow-glow-squad" : "border-white/10 bg-white/[0.04]")}>
               <span className="grid size-12 place-items-center rounded-2xl bg-white/10 text-2xl">🧾</span>
@@ -75,7 +59,7 @@ function Wallet() {
           ))}
 
           {available.length === 0 && orders.length === 0 && (
-            <div className="rounded-3xl border border-dashed border-white/10 p-8 text-center text-sm text-muted">
+            <div className="rounded-3xl border border-dashed border-white/10 p-8 text-center text-sm text-muted lg:col-span-full">
               Todavía no ganaste QRs. Armá tu Squad, participá de los sorteos o recibí un Rompehielos con trago 🍸
               <Link href="/squad" className={cn(buttonVariants({ variant: "vip", size: "sm" }), "mt-4")}>
                 Armar mi Squad
@@ -97,7 +81,7 @@ function Wallet() {
           ))}
 
           {redeemed.length > 0 && (
-            <section className="pt-3">
+            <section className="pt-3 lg:col-span-full">
               <h2 className="mb-2 text-sm text-muted">Canjeados</h2>
               <ul className="space-y-2">
                 {redeemed.map((p) => (
@@ -111,8 +95,9 @@ function Wallet() {
             </section>
           )}
         </div>
-      ) : (
-        <div className="space-y-3 px-4 pt-4">
+  );
+  const avisosPane = (
+        <div className="space-y-3 px-4 pt-4 lg:px-0 lg:pt-0">
           {blasts.length === 0 && <p className="rounded-3xl border border-dashed border-white/10 p-8 text-center text-sm text-muted">Sin avisos del organizador por ahora.</p>}
           {blasts.map((b) => {
             const left = b.expires_at ? Math.ceil((+new Date(b.expires_at) - now) / 60_000) : null;
@@ -144,10 +129,8 @@ function Wallet() {
             <Bell className="size-3" /> Los avisos nuevos te llegan como banner arriba de la pantalla.
           </p>
         </div>
-      )}
-
-      <BottomSheet open={!!live} onClose={() => setShow(null)} title={live ? `${TYPE[live.perk_type].icon} ${live.title}` : ""} description={live?.status === "redeemed" ? "Ya fue canjeado." : "Mostrale este QR al bartender."}>
-        {live && (
+  );
+  const qrDetail = live && (
           <div className="space-y-4 pb-2">
             <QrBlock value={live.qr_code_string} dimmed={live.status === "redeemed"} label={live.title} />
             <p className="text-center font-display text-xs tracking-widest text-muted">{live.qr_code_string}</p>
@@ -164,7 +147,43 @@ function Wallet() {
               </Button>
             )}
           </div>
-        )}
+  );
+
+  return (
+    <main className="pb-10">
+      <PageHeader title="Mis Perks & QRs" subtitle={event.name} backHref="/app" />
+      <div className="px-4">
+        <div role="tablist" className="grid grid-cols-2 lg:hidden rounded-2xl bg-white/[0.05] p-1">
+          {(
+            [
+              ["qrs", `QRs · ${available.length + orders.length}`],
+              ["avisos", `Avisos · ${blasts.length}`],
+            ] as const
+          ).map(([k, label]) => (
+            <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)} className={cn("min-h-[40px] rounded-xl font-display text-sm font-semibold", tab === k ? "bg-vip text-background shadow-glow-vip" : "text-muted")}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="lg:grid lg:grid-cols-[1fr_380px] lg:items-start lg:gap-6 lg:px-4">
+        <div className={cn(tab !== "qrs" && "hidden lg:block")}>{qrsPane}</div>
+        <div className={cn("lg:sticky lg:top-4 lg:space-y-4", tab !== "avisos" && "hidden lg:block")}>
+          {desktop && live && (
+            <section aria-label="QR seleccionado" className="mt-4 rounded-3xl border border-vip/40 bg-surface/85 p-5 shadow-glow-vip lg:mt-0">
+              <p className="mb-1 text-center font-display font-bold">{TYPE[live.perk_type].icon} {live.title}</p>
+              <p className="mb-4 text-center text-xs text-muted">{live.status === "redeemed" ? "Ya fue canjeado." : "Mostrale este QR al bartender."}</p>
+              {qrDetail}
+            </section>
+          )}
+          <h2 className="hidden px-1 text-lg lg:block">Avisos del organizador</h2>
+          {avisosPane}
+        </div>
+      </div>
+
+      <BottomSheet open={!!live && !desktop} onClose={() => setShow(null)} title={live ? `${TYPE[live.perk_type].icon} ${live.title}` : ""} description={live?.status === "redeemed" ? "Ya fue canjeado." : "Mostrale este QR al bartender."}>
+        {live && qrDetail}
       </BottomSheet>
     </main>
   );
