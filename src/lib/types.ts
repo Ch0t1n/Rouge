@@ -106,7 +106,10 @@ export interface Profile {
   id: UUID;
   username: string;
   full_name: string;
-  birth_date: string; // YYYY-MM-DD
+  /** YYYY-MM-DD. Solo la propia cuenta (y el Modo Demo): de otras personas el servidor manda `age`, nunca la fecha. */
+  birth_date: string | null;
+  /** Edad calculada por el servidor en la tarjeta pública (profile_cards). */
+  age?: number | null;
   gender: Gender;
   phone_normalized: string | null; // E.164: +5491122334455
   bio: string;
@@ -230,6 +233,8 @@ export interface RougeEvent {
   id: UUID;
   /** Vertical del evento: noche (ROUGE) o corporativo (ROUGE Pro). No cambia una vez que entró alguien. */
   kind: EventKind;
+  /** Networking (grilla, conectar, reuniones) solo entre quienes ya pasaron por la puerta. */
+  networking_checkin_only: boolean;
   slug: string;
   name: string;
   description: string;
@@ -339,9 +344,71 @@ export interface EventAttendee {
   visited_sectors: string[];
   /** RRPP por cuyo link entró (primer contacto). */
   referred_by: UUID | null;
-  /** Escaneado en la puerta con su pase de la app o su entrada. */
+  /** Escaneado en la puerta con su pase de la app o su entrada. Privado: solo la persona y el equipo. */
   checked_in_at: ISODate | null;
+  /** Lo que ven los demás asistentes: si está acreditado/a, sin la hora (columna generada en SQL). */
+  is_checked_in?: boolean;
   joined_at: ISODate;
+}
+
+// ── Privacidad ───────────────────────────────────────────────────────
+
+/** Ajustes de privacidad de la cuenta (tabla `privacy_settings`). Sin fila = DEFAULT_PRIVACY. */
+export interface PrivacySettings {
+  user_id: UUID;
+  /** Entrar a cada evento en Modo Solo Amigos / Contactos (fuera de la grilla). */
+  incognito_default: boolean;
+  /** false: el pin del plano solo se comparte con el Squad, nunca con matches. */
+  pin_share_matches: boolean;
+  /** Empresa y cargo ocultos hasta aceptar una reunión o un contacto (LinkedIn siempre oculto hasta entonces). */
+  pro_details_after_meeting: boolean;
+  updated_at: ISODate;
+}
+
+// ── Reuniones y puntos de encuentro ──────────────────────────────────
+
+export type VenueSpotKind = "room" | "table" | "point";
+
+/** Sala, mesa o punto de encuentro del evento (tabla `venue_spots`), cargado por el organizador. */
+export interface VenueSpot {
+  id: UUID;
+  event_id: UUID;
+  name: string;
+  kind: VenueSpotKind;
+  /** Reuniones a la vez (null = sin límite). */
+  capacity: number | null;
+  coord_x: number | null;
+  coord_y: number | null;
+  is_active: boolean;
+  created_at: ISODate;
+}
+
+export type MeetingStatus = "pending" | "accepted" | "rescheduled" | "declined" | "cancelled";
+/** Estado que se muestra: "completed" = aceptada y ya terminó (derivado, no se guarda). */
+export type MeetingDisplayStatus = MeetingStatus | "completed";
+export type MeetingLocationKind = "spot" | "pin" | "tbd";
+
+/** Reunión 1 a 1 dentro de un evento (tabla `meetings`). */
+export interface Meeting {
+  id: UUID;
+  event_id: UUID;
+  requester_id: UUID;
+  invitee_id: UUID;
+  topic: string;
+  starts_at: ISODate;
+  duration_min: 15 | 30;
+  location_kind: MeetingLocationKind;
+  spot_id: UUID | null;
+  pin_x: number | null;
+  pin_y: number | null;
+  pin_label: string | null;
+  status: MeetingStatus;
+  /** Quién hizo la última propuesta: responde la otra persona. */
+  proposed_by: UUID;
+  /** Chat que se abre al aceptar. */
+  connection_id: UUID | null;
+  created_at: ISODate;
+  updated_at: ISODate;
 }
 
 // ── Conexiones ───────────────────────────────────────────────────────
@@ -598,6 +665,9 @@ export interface AdminStats {
   icebreakers_sent: number;
   matches_last_hour: number;
   matches_by_user: Record<UUID, number>;
+  active_pins?: number;
+  meetings_requested?: number;
+  meetings_accepted?: number;
 }
 
 export interface RougeState {
@@ -607,8 +677,14 @@ export interface RougeState {
   current_user_id: UUID;
   active_event_id: UUID;
   profiles: Profile[];
-  /** Perfiles adicionales (los míos y los que otros usan en mis eventos). */
+  /** Perfiles adicionales (los míos y los que otros usan en mis eventos, saneados por persona_cards). */
   profile_personas: ProfilePersona[];
+  /** Ajustes de privacidad (Supabase: solo los míos; demo: los de todas las personas). */
+  privacy_settings: PrivacySettings[];
+  /** Salas, mesas y puntos de encuentro de los eventos cargados. */
+  venue_spots: VenueSpot[];
+  /** Reuniones (Supabase: solo las mías). */
+  meetings: Meeting[];
   /** Cuentas de Instagram conectadas (demo: todas las personas; Supabase: solo la mía). */
   instagram_links: InstagramLink[];
   user_blocks: UserBlock[];

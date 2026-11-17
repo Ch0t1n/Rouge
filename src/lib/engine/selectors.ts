@@ -88,12 +88,41 @@ export interface GridEntry {
   profile: Face;
 }
 
-/** Asistentes que el viewer puede ver: sin bloqueos, sin ghost mode, sin sí mismo. */
+/** Acreditado/a: la persona y el equipo ven la hora (`checked_in_at`); los demás, solo `is_checked_in`. */
+export const isCheckedIn = (a: EventAttendee | undefined) => !!a && (a.checked_in_at != null || a.is_checked_in === true);
+
+/** Equipo del evento con acceso a datos (sin RRPP), o quien lo creó. Espejo de public.is_event_staff. */
+export const isEventStaff = (s: RougeState, eventId: UUID, userId: UUID) =>
+  getEvent(s, eventId)?.created_by === userId || s.event_staff.some((r) => r.event_id === eventId && r.user_id === userId && r.role !== "promoter");
+
+/**
+ * ¿`viewer` puede ver la asistencia de `target`? (⇔ public.can_see_attendee, base de la RLS de event_attendees)
+ * Uno mismo y el equipo siempre. Otro asistente: sin bloqueo; si está en Modo Solo Amigos solo su Squad y sus matches;
+ * si el evento limita el networking a acreditados, los dos tienen que haber pasado por la puerta.
+ */
+export function canSeeAttendee(s: RougeState, eventId: UUID, viewer: UUID, target: UUID): boolean {
+  if (viewer === target || isEventStaff(s, eventId, viewer)) return true;
+  const t = getAttendee(s, eventId, target);
+  const v = getAttendee(s, eventId, viewer);
+  if (!t || !v || isBlockedBetween(s, viewer, target)) return false;
+  if (areSquadmates(s, eventId, viewer, target) || isMatch(s, eventId, viewer, target)) return true;
+  if (t.ghost_mode) return false;
+  if (getEvent(s, eventId)?.networking_checkin_only && !(isCheckedIn(t) && isCheckedIn(v))) return false;
+  return true;
+}
+
+/** ¿Puede hacer networking nuevo (conectar, rompehielos, reuniones)? Si el evento lo limita, solo acreditados. */
+export function networkingOpenFor(s: RougeState, eventId: UUID, userId: UUID): boolean {
+  const a = getAttendee(s, eventId, userId);
+  return !!a && (!getEvent(s, eventId)?.networking_checkin_only || isCheckedIn(a));
+}
+
+/** Asistentes que el viewer puede ver en la grilla: sin bloqueos, sin ghost mode, sin sí mismo (canSeeAttendee). */
 export function visibleAttendees(s: RougeState, eventId: UUID, viewerId: UUID): GridEntry[] {
   const out: GridEntry[] = [];
   for (const a of s.event_attendees) {
     if (a.event_id !== eventId || a.user_id === viewerId || a.ghost_mode) continue;
-    if (isBlockedBetween(s, viewerId, a.user_id)) continue;
+    if (!canSeeAttendee(s, eventId, viewerId, a.user_id)) continue;
     const profile = faceOf(s, a.user_id, eventId);
     if (profile) out.push({ attendee: a, profile });
   }

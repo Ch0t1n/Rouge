@@ -16,6 +16,8 @@ import { ConnectActions } from "@/components/lobby/ConnectActions";
 import { InviteToSquadButton } from "@/components/squad/InviteToSquadButton";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
+import { profileAccess } from "@/lib/engine/privacy";
+import { MeetingButton } from "@/components/meetings/MeetingButton";
 
 export default function UserProfilePage() {
   return (
@@ -38,13 +40,16 @@ function UserProfile() {
   const [menu, setMenu] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const handle = decodeURIComponent(username ?? "").replace(/^@/, "").toLowerCase();
-  const isSelf = !!me && handle === me.username;
+  const isSelf = !!me && (handle === me.username || handle === me.id);
   useEffect(() => {
     if (isSelf) router.replace("/profile");
   }, [isSelf, router]);
   if (!me || isSelf) return null;
 
-  const base = state.profiles.find((p) => p.username === handle);
+  // Por @usuario o por id (los perfiles que solo muestran el nombre no exponen el @). Sin contexto compartido o con
+  // bloqueo → "no disponible" (⇔ profile_access en SQL).
+  const found = state.profiles.find((p) => (p.username && p.username === handle) || p.id === handle);
+  const base = found && profileAccess(state, me.id, found.id) ? found : undefined;
   const wanted = params.get("e");
   const eventId = wanted && state.events.some((e) => e.id === wanted) ? wanted : state.active_event_id;
   const other = base ? faceOf(state, base.id, eventId) : undefined;
@@ -71,7 +76,7 @@ function UserProfile() {
   const mine = getAttendee(state, eventId, me.id);
   const myFace = faceOf(state, me.id, eventId) ?? me;
   const affinity = theirs ? computeAffinity(myFace, mine, other, theirs, Date.now(), kind) : null;
-  const handleLabel = other.persona?.kind === "corporate" || kind === "corporate" ? v.copy.profileKind : `@${other.username}`;
+  const handleLabel = other.persona?.kind === "corporate" || kind === "corporate" || !other.username ? v.copy.profileKind : `@${other.username}`;
 
   const doBlock = async () => {
     const r = await exec(C.blockUser(me.id, other.id));
@@ -97,6 +102,7 @@ function UserProfile() {
         <ProfileView profile={other} mood={theirs && !theirs.ghost_mode ? theirs.mood_tag : null} affinity={affinity} actions={
             <div className="space-y-2">
               <ConnectActions target={other} />
+              <MeetingButton target={other} />
               <InviteToSquadButton target={other} />
             </div>
           } />

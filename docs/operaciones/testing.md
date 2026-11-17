@@ -6,7 +6,7 @@ Cuatro niveles. Antes de cada commit: `npm run typecheck && npm test && npm run 
 |---|---|---|---|
 | Unitarios + contrato | `npm test` | Reglas del motor (bloqueos, ghost, pines, rompehielos, barra, roles, Instagram…), helpers de OAuth y el **contrato cliente ↔ `schema.sql`** (nombres de RPC, parámetros, tablas y columnas de cada comando y del cargador). | Nada |
 | Integración real | `npm run test:integration` | Flujo completo contra un Supabase de verdad con usuarios reales: RLS, privacidad del teléfono, códigos ocultos, roles, Instagram (tokens invisibles, verificado), Realtime y Storage. Se saltea sin credenciales. | Supabase de prueba |
-| E2E demo | `npm run e2e:demo` | Navegador real (Playwright) sobre la app en Modo Demo: onboarding, lobby, squad, barra, panel, roles, QR, landing, Instagram/Google simulados. | App en demo levantada |
+| E2E demo | `npm run e2e:demo` | Navegador real (Playwright) sobre la app en Modo Demo: onboarding, lobby, squad, barra, panel, roles, QR, landing, Instagram/Google simulados; `demo-pro.cjs`: privacidad por contexto, reuniones con sala y `/empresas` (formulario y API de leads). | App en demo levantada |
 | E2E API | `npm run e2e:api` | API v1 por HTTP: claves, códigos por entrada idempotentes, paginación, check-in, anulación, QR PNG/SVG, alcance y revocación. | App con Supabase + `SUPABASE_SERVICE_ROLE_KEY` |
 | E2E Supabase | `npm run e2e:supabase` · `npm run e2e:instagram` | Navegador real contra Supabase: magic link real (Mailpit), Storage, Realtime, roles; login con Instagram contra una API imitada. | App + Supabase local + Mailpit |
 

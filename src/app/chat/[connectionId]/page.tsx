@@ -13,6 +13,9 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { Avatar } from "@/components/ui/avatar";
 import { MessageList } from "@/components/chat/MessageList";
 import { Composer } from "@/components/chat/Composer";
+import { profileHref } from "@/lib/engine/privacy";
+import { displayStatus, meetingPlace, meetingPoint, meetingsOf } from "@/lib/engine/meetings";
+import { formatTime } from "@/lib/utils";
 
 /** Chat 1:1 entre matches. Sigue abierto aunque el lobby haya cerrado. */
 export default function ChatPage() {
@@ -50,13 +53,27 @@ function Chat() {
       <PageHeader
         backHref="/inbox"
         title={
-          <Link href={`/u/${other.username}?e=${conn.event_id}`} className="flex items-center gap-2">
+          <Link href={profileHref(other, conn.event_id)} className="flex items-center gap-2">
             <Avatar profile={other} size={32} ring="rouge" /> {other.full_name.split(" ")[0]}
           </Link>
         }
         subtitle={`${v.copy.match} en ${getEvent(state, conn.event_id)?.name ?? "un evento"}`}
       />
       <div className="flex-1 px-4 pb-4 pt-2">
+        {/* Reunión aceptada entre los dos: fijada arriba del chat con link al plano */}
+        {meetingsOf(state, meId, conn.event_id)
+          .filter((m) => m.connection_id === conn.id && displayStatus(m, Date.now()) === "accepted")
+          .slice(0, 1)
+          .map((m) => (
+            <Link key={m.id} href={meetingPoint(state, m) ? `/map?meeting=${m.id}` : "/meetings"} className="mb-3 flex items-center gap-3 rounded-2xl border border-squad/40 bg-squad/[0.07] px-3 py-2.5 text-sm">
+              <span className="text-xl" aria-hidden>📅</span>
+              <span className="min-w-0 flex-1">
+                <span className="block font-semibold">Reunión {formatTime(m.starts_at)} · {m.duration_min} min</span>
+                <span className="block truncate text-xs text-muted">{meetingPlace(state, m)} · {m.topic}</span>
+              </span>
+              <span className="shrink-0 text-xs font-semibold text-squad">{meetingPoint(state, m) ? "Ver en el plano" : "Ver"}</span>
+            </Link>
+          ))}
         <p className="mx-auto mb-4 w-fit rounded-full bg-white/[0.05] px-3 py-1 text-center text-[11px] text-muted">
           {conn.type === "icebreaker" ? `⚡ Empezó con un${v.kind === "corporate" ? "a" : ""} ${v.copy.icebreaker}` : v.kind === "corporate" ? "🤝 Son contactos" : "💘 Hicieron Match"} · este chat no se borra al cerrar el lobby
         </p>

@@ -54,7 +54,10 @@ src/
     api/v1/               # API para ticketeras (SOLO servidor): events, events/[eventId]/codes(/[code]), qr/[code], openapi.json
     onboarding/           # Alta del perfil persistente en 4 pasos (guarda progresivamente)
     profile/              # "Así te ven" + completitud · profile/edit (editor completo) · profile/personas (Mis perfiles + editor ?id=|?kind=&next=)
-    settings/privacy/     # Lista negra por teléfono + perfiles bloqueados
+    settings/privacy/     # Ajustes de privacidad (incógnito, pin solo Squad, datos pro tras reunión) + lista negra + bloqueados
+    meetings/             # Mis reuniones: para responder, próximas, enviadas, historial (aceptar, reprogramar, cancelar)
+    empresas/             # Página de ventas ROUGE Pro (pública, indexable, sin link desde "/"): estimador + formulario de leads
+    api/leads/            # POST de leads B2B (SOLO servidor): valida, honeypot + límite por IP, b2b_leads y webhook comercial
     u/[username]/         # Perfil de otro asistente (afinidad, Conectar, Rompehielos, bloquear)
     join/                 # Ingreso manual por código · join/[code]: link maestro, código único o link de Squad + Mood
     lobby/                # Grilla por afinidad, Ghost Mode, filtros, Line-up, cambio de Mood
@@ -90,6 +93,8 @@ src/
     lobby/                # GridCard, ConnectActions, IcebreakerComposer, MatchCelebration, useConnect
     chat/                 # MessageList (texto, fotos, system_alert), Composer (foto comprimida)
     squad/                # InviteToSquadButton ("Invitar a mi Squad" desde cualquier perfil)
+    meetings/             # MeetingRequestSheet (pedir / reprogramar), LocationPicker (sala, pin o a definir), MeetingButton
+    corporate/            # CorporateLanding (/empresas)
     perks/                # QrBlock (QR alto contraste)
     share/ShareSheet.tsx  # QR + compartir nativo + WhatsApp + copiar + PNG para CUALQUIER link (useShare, ShareButton)
     social/               # SocialLoginButtons, InstagramPhotoPicker, InstagramField (+ useInstagramReturn), InstagramCallback
@@ -106,6 +111,8 @@ src/
     engine/
       roles.ts            # Tipos de usuario, permisos por rol, roleHome(), destinationFor() (espejo de has_staff_role)
       verticals.ts        # Noche ⇄ corporativo (ROUGE Pro): moods, features, vocabulario, faceOf(), afinidad de negocio, perfiles
+      privacy.ts          # Privacidad por contexto: profileAccess (⇔ profile_access), publicCard, ajustes, ageOf, profileHref
+      meetings.ts         # Reuniones y salas: request/respond/reschedule/cancel, checkSlot, spotBusy, hasConflict, meetingSlots
       selectors.ts        # Reglas de VISIBILIDAD (bloqueos, ghost, pines, lobby)
       actions.ts          # Reglas de NEGOCIO puras (state, input, now) → Result
       affinity.ts         # Algoritmo de afinidad
@@ -141,6 +148,7 @@ src/
     media/compress.ts     # Compresión WebP, color dominante, transcodificación del loop (sin audio)
     media/mediaStore.ts   # Blobs en IndexedDB (`idb:<uuid>`) para el Modo Demo
     media/upload.ts       # uploadMedia(): Supabase Storage si hay sesión, si no IndexedDB
+    leads.ts              # Leads B2B (validateLead ⇔ checks de b2b_leads), aviso comercial, planes y recomendación — testeado
 docs/                     # Documentación: producto, técnica, operaciones y api/ (guía para ticketeras)
 e2e/                      # E2E Playwright (demo, Supabase, Instagram con API imitada) + env.cjs + run.cjs
 CHANGELOG.md              # Historial de versiones (SemVer); pendientes conocidos
@@ -333,7 +341,8 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
   (`referred_by`). Ve solo conteos (`promoter_stats`). Comisión por ingreso; con escáner se liquida por ingreso en puerta.
 - **Puerta:** `door_check_in` (dueño/a, producción, seguridad) valida códigos de 1 uso (`checked_in_at`, distinto de
   `is_used`) y pases `ROUGE:PASS:<evento>:<usuario>`; rechaza anulados, expulsados, otro evento y el link general.
-- **Sitio:** la landing pública (`/`) nunca muestra CRM, ventas, planes ni links a `/organizadores` (noindex).
+- **Sitio:** la landing pública (`/`) nunca muestra CRM, ventas, planes ni links a `/organizadores` (noindex) ni a `/empresas`.
+  `/empresas` (ROUGE Pro, indexable) se enlaza desde `/organizadores`; sus leads entran solo por `/api/leads` (service role).
 - **Verticales (ROUGE / ROUGE Pro):** `events.kind` = `nightlife` | `corporate`; todo lo que cambia vive en
   `engine/verticals.ts` (`vertical(kind)`, `verticalOf`, `hasFeature`, `copy`). Nada de `if (kind === …)` sueltos con textos:
   usar `v.copy.*` y `v.features.*`. Moods `pro_*` solo en corporativo (`checkMoodForEvent` ⇔ `mood_kind` + trigger
@@ -344,6 +353,15 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
   otra persona en el contexto de un evento pasa por `faceOf(state, userId, eventId)`** (grilla, perfil, bandeja, chat,
   plano, Squad/Equipo, CRM, LED): en corporativo nunca aparece la cara de la noche (sin perfil ⇒ cara neutra). Los
   contactos se muestran con la cara del evento de su conexión. `getProfile` queda para la cuenta propia y la lógica.
+- **Privacidad por contexto (no negociable, v1.8):** `profiles` solo se lee la propia fila. Otras personas llegan como
+  tarjeta (`profile_cards` ⇔ `profileAccess`/`publicCard`): edad y nunca fecha de nacimiento, teléfono ni email; @ y fotos
+  solo con nivel "full". Perfiles profesionales ajenos por `persona_cards` (⇔ `sanitizePersonaFor`). Columnas privadas de
+  `event_attendees` nunca por tabla (`ATTENDEE_COLUMNS` en sync; lo privado por `my_attendances` / `event_attendance` /
+  `shared_zones`). Visibilidad entre asistentes = `canSeeAttendee` ⇔ `can_see_attendee`. Links a perfiles con
+  `profileHref()` (por id si no hay @). El equipo solo ve pines de rescate.
+- **Reuniones (v1.8):** solo por RPC (`request_meeting`, `respond_meeting`, `reschedule_meeting`, `cancel_meeting`); en la
+  noche solo con matches; horario dentro del evento; cupo de sala (`spot_busy`) y agenda sin superposiciones
+  (`meeting_conflict`) en motor y SQL; al aceptar se abre el chat. "Completada" se deriva (`displayStatus`).
 - **Pin-Drop (SQL):** usar la RPC `drop_pin` (reemplaza el pin anterior y descarta ids que no son
   matches reales). Punto Base y su aviso: `set_squad_base_pin`, `announce_base_meetup`.
 
@@ -382,8 +400,9 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
 - [x] **Fase 10** — Gestión completa del evento (menú, nueva edición, expulsar, eliminar) y ticket de comanda.
 - [x] **Fase 11** — RRPP con link y comisión, escáner de puerta y sitio público / organizadores separados.
 - [x] **Fase 12** — ROUGE Pro: eventos corporativos (`events.kind`) y perfiles múltiples por cuenta (`profile_personas`).
-- [ ] **Próximo** — ver `docs/producto/competencia.md` y `docs/producto/estrategia-corporativa.md`: RLS de `profiles` por
-  contexto, pedir reunión con horario, lista de espera, entradas propias, Mesa VIP con seña, facturación ARCA.
+- [x] **Fase 13** — Privacidad por contexto (tarjetas saneadas, columnas privadas, ajustes), reuniones con sala/pin y `/empresas`.
+- [ ] **Próximo** — ver `docs/producto/competencia.md` y `docs/producto/estrategia-corporativa.md`: facturación ARCA,
+  modo claro corporativo, preguntas al orador, SSO, lista de espera, entradas propias, Mesa VIP con seña.
 
 ## Convenciones
 

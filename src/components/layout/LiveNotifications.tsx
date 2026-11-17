@@ -15,6 +15,8 @@ import { blastsFor } from "@/lib/engine/actions";
 import { getProfile, ordersOf, pendingSquadInvites, perksOf, squadMessages, squadOf } from "@/lib/engine/selectors";
 import { useRouge } from "@/lib/store/RougeContext";
 import { faceOf, verticalOf } from "@/lib/engine/verticals";
+import { awaitsMe, displayStatus, meetingPlace, meetingsOf, otherOf } from "@/lib/engine/meetings";
+import { formatTime } from "@/lib/utils";
 
 type Notice = { key: string; toast: Omit<Toast, "id"> };
 
@@ -69,6 +71,22 @@ function noticesFor(s: RougeState, meId: UUID, now: number): Notice[] {
     }
     if (c.sender_id === meId && c.status === "accepted" && c.responded_at) {
       out.push({ key: `match:${c.id}`, toast: { tone: "rouge", title: pro ? `🤝 ${first(c.receiver_id)} es tu contacto` : `🔥 ¡Match con ${first(c.receiver_id)}!`, description: "Aceptó tu conexión.", cta: { label: "Escribile", href: `/chat/${c.id}` } } });
+    }
+  }
+
+  // Reuniones: pedidos y cambios para responder, y confirmaciones (la clave incluye updated_at: cada cambio avisa una vez).
+  for (const m of meetingsOf(s, meId, eventId)) {
+    const other = first(otherOf(m, meId));
+    const when = `${formatTime(m.starts_at)} · ${meetingPlace(s, m)}`;
+    if (awaitsMe(m, meId)) {
+      out.push({
+        key: `meeting:${m.id}:${m.updated_at}`,
+        toast: { tone: "squad", title: m.status === "rescheduled" ? `📅 ${other} propuso otro horario` : `📅 ${other} te pidió una reunión`, description: `${when} · ${m.topic}`, cta: { label: "Responder", href: `/meetings#${m.id}` } },
+      });
+    } else if (m.status === "accepted" && m.proposed_by === meId && displayStatus(m, now) === "accepted") {
+      out.push({ key: `meeting:${m.id}:${m.updated_at}`, toast: { tone: "squad", title: `✅ Reunión confirmada con ${other}`, description: when, cta: { label: "Ver", href: `/meetings#${m.id}` } } });
+    } else if (m.status === "cancelled" || m.status === "declined") {
+      out.push({ key: `meeting:${m.id}:${m.updated_at}`, toast: { tone: "info", title: m.status === "declined" ? `${other} no puede reunirse` : `Se canceló la reunión con ${other}`, description: when } });
     }
   }
   return out;

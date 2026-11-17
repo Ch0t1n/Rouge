@@ -9,7 +9,7 @@
  * Contraparte SQL: door_check_in (dueño/a, producción y seguridad).
  */
 import type { RougeState, UUID } from "@/lib/types";
-import { ageFrom } from "@/lib/utils";
+import { ageOf } from "./privacy";
 
 export type DoorStatus = "ok" | "already" | "invalid" | "revoked" | "banned" | "other_event" | "not_attendee" | "general_link";
 
@@ -62,7 +62,7 @@ export function doorCheckIn(state: RougeState, eventId: UUID, raw: string, now =
   const iso = new Date(now).toISOString();
   const person = (userId: UUID | null) => {
     const p = userId ? state.profiles.find((x) => x.id === userId) : undefined;
-    return { user_id: p?.id ?? null, name: p?.full_name ?? null, username: p?.username ?? null, photo: p?.photos?.[0]?.url ?? null, age: p ? ageFrom(p.birth_date) : null };
+    return { user_id: p?.id ?? null, name: p?.full_name ?? null, username: p?.username ?? null, photo: p?.photos?.[0]?.url ?? null, age: p ? ageOf(p) : null };
   };
   const banned = (userId: UUID | null) => !!userId && state.event_bans.some((b) => b.event_id === eventId && b.user_id === userId);
 

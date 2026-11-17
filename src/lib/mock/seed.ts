@@ -26,8 +26,11 @@ import type {
   MoodTag,
   MusicGenre,
   PerkRule,
+  Meeting,
+  PrivacySettings,
   Profile,
   ProfilePersona,
+  VenueSpot,
   Raffle,
   RougeEvent,
   RougeState,
@@ -39,7 +42,7 @@ import type {
   VenueLayout,
 } from "@/lib/types";
 
-export const STATE_VERSION = 9;
+export const STATE_VERSION = 10;
 
 // IDs estables → los links de demo (/join/..., /u/...) no cambian entre re-siembras.
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -303,6 +306,7 @@ export function createSeedState(now = Date.now()): RougeState {
   const event: RougeEvent = {
     id: DEMO_IDS.event,
     kind: "nightlife",
+    networking_checkin_only: false,
     slug: "bresh-sabado",
     name: "ROUGE Night × Bresh Sábado",
     description: "La noche más grande del mes. Line-up de house y techno, Mesa VIP, Barra Express y sorteos en vivo.",
@@ -649,6 +653,7 @@ export function createSeedState(now = Date.now()): RougeState {
   const proEvent: RougeEvent = {
     id: DEMO_IDS.proEvent,
     kind: "corporate",
+    networking_checkin_only: false,
     slug: "encuentro-pyme",
     name: "Encuentro Pyme Conecta",
     description: "Ronda de negocios, charlas y networking para pymes y emprendedores. Encontrá clientes, proveedores, socios e inversión.",
@@ -777,6 +782,44 @@ export function createSeedState(now = Date.now()): RougeState {
   const proPerks: UserPerkQR[] = [
     { ...perk(101, 1, "☕ Café de bienvenida", "free_drink", "manual", null, 140), event_id: proEvent.id },
   ];
+  // ── [v1.8] Salas, mesas y puntos de encuentro + reuniones ─────────
+  const spot = (n: number, eventId: string, name: string, kind: VenueSpot["kind"], capacity: number | null, x: number, y: number): VenueSpot => ({
+    id: id(18000 + n), event_id: eventId, name, kind, capacity, coord_x: x, coord_y: y, is_active: true, created_at: t(-60 * 24 * 3),
+  });
+  const venue_spots: VenueSpot[] = [
+    spot(1, proEvent.id, "Sala 1", "room", 1, 70, 60),
+    spot(2, proEvent.id, "Sala 2", "room", 1, 86, 60),
+    spot(3, proEvent.id, "Sala 3", "room", 1, 70, 70),
+    spot(4, proEvent.id, "Sala 4", "room", 1, 86, 70),
+    spot(5, proEvent.id, "Mesa coffee 1", "table", 1, 22, 69),
+    spot(6, proEvent.id, "Mesa coffee 2", "table", 1, 34, 69),
+    spot(7, proEvent.id, "Mesa coffee 3", "table", 1, 46, 69),
+    spot(8, proEvent.id, "Stand Red Pyme", "point", null, 26, 38),
+    spot(11, event.id, "Mesa VIP 4", "table", 1, 85, 76),
+    spot(12, event.id, "Columna dorada · Barra Central", "point", null, 50, 57),
+    spot(13, event.id, "Fogonero del patio", "point", null, 15, 76),
+  ];
+  // Horarios redondeados al cuarto de hora (como los ofrece la app), sin superposiciones en la agenda de Sofi:
+  // Carla ahora (+15, 30 min), Ezequiel +60, Joaquín +90 (a definir) y el punto de encuentro de la fiesta +120.
+  const quarter = (minFromNow: number) => new Date(Math.ceil((now + minFromNow * 60_000) / 900_000) * 900_000).toISOString();
+  const meeting = (n: number, eventId: string, from: number, to: number, topic: string, startsAt: string, duration: 15 | 30, loc: Pick<Meeting, "location_kind" | "spot_id" | "pin_x" | "pin_y" | "pin_label">, status: Meeting["status"], connectionId: string | null = null): Meeting => ({
+    id: id(19000 + n), event_id: eventId, requester_id: id(from), invitee_id: id(to), topic, starts_at: startsAt, duration_min: duration, ...loc,
+    status, proposed_by: id(from), connection_id: connectionId, created_at: t(-40 + n), updated_at: t(-30 + n),
+  });
+  const atSpot = (n: number) => ({ location_kind: "spot" as const, spot_id: id(18000 + n), pin_x: null, pin_y: null, pin_label: null });
+  const meetings: Meeting[] = [
+    meeting(1, proEvent.id, 22, 1, "Consulta: monotributo y crédito para tu estudio", quarter(60), 15, atSpot(2), "pending"),
+    meeting(2, proEvent.id, 21, 1, "Tienda online para Textil Norte: alcance y presupuesto", quarter(15), 30, atSpot(3), "accepted", id(6101)),
+    meeting(3, proEvent.id, 1, 8, "Software de stock para Vera Alimentos", quarter(90), 15, { location_kind: "tbd", spot_id: null, pin_x: null, pin_y: null, pin_label: null }, "pending"),
+    meeting(4, proEvent.id, 5, 8, "Integración de Logix con tu distribuidora", new Date(now - 70 * 60_000).toISOString(), 30, atSpot(6), "accepted", id(6104)),
+    meeting(5, event.id, 5, 1, "Te espero en la barra para el set de Kaleb 🍸", quarter(120), 15, { location_kind: "pin", spot_id: null, pin_x: 46, pin_y: 56, pin_label: "Barra Central, lado cabina" }, "accepted", id(6001)),
+  ];
+  // Ajustes de privacidad: Melina muestra empresa y cargo solo después de una reunión; Valentina entra siempre incógnita.
+  const privacy_settings: PrivacySettings[] = [
+    { user_id: id(4), incognito_default: false, pin_share_matches: true, pro_details_after_meeting: true, updated_at: t(-60 * 24) },
+    { user_id: id(9), incognito_default: true, pin_share_matches: false, pro_details_after_meeting: false, updated_at: t(-60 * 24) },
+  ];
+
   const proStaff: EventStaff[] = (["manager", "bartender", "security"] as StaffRole[]).map((role) => ({
     event_id: proEvent.id,
     user_id: STAFF.find((m) => m.role === role)!.id,
@@ -791,6 +834,9 @@ export function createSeedState(now = Date.now()): RougeState {
     active_event_id: event.id,
     profiles,
     profile_personas,
+    privacy_settings,
+    venue_spots,
+    meetings,
     instagram_links,
     user_blocks,
     events: [event, proEvent],

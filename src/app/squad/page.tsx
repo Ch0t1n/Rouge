@@ -43,6 +43,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
 import { faceOf, verticalOf } from "@/lib/engine/verticals";
+import { profileHref } from "@/lib/engine/privacy";
 
 /** Vocabulario de la vertical: "Squad" en la noche, "Equipo" en corporativo. */
 function useSq() {
@@ -291,7 +292,7 @@ const meId = state.current_user_id;
             const pin = pins.get(m.user_id);
             return (
               <li key={m.id} className="flex min-h-touch items-center gap-3">
-                <Link href={m.user_id === meId ? "/profile" : `/u/${p.username}`}>
+                <Link href={m.user_id === meId ? "/profile" : profileHref(p, state.active_event_id)}>
                   <Avatar profile={p} size={40} ring={m.status === "joined" ? "squad" : "none"} className={m.status === "invited" ? "opacity-50" : undefined} />
                 </Link>
                 <div className="min-w-0 flex-1">
@@ -504,7 +505,7 @@ function VipTables({ list }: { list: ReturnType<typeof openVipSquads> }) {
               <p className="truncate text-xs text-muted">{squad.base_pin_label ?? "Sector VIP"} · {members.length} personas</p>
             </div>
             {members[0] && (
-              <Link href={`/u/${members[0].username}`} className={buttonVariants({ size: "sm", variant: "glass" })}>
+              <Link href={profileHref(members[0], squad.event_id)} className={buttonVariants({ size: "sm", variant: "glass" })}>
                 Ver
               </Link>
             )}

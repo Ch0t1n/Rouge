@@ -39,6 +39,9 @@ import { QrBlock } from "@/components/perks/QrCard";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { passValue } from "@/lib/engine/door";
 import { verticalOf } from "@/lib/engine/verticals";
+import { awaitsMe, displayStatus, meetingPlace, meetingsOf } from "@/lib/engine/meetings";
+import { CalendarClock } from "lucide-react";
+import { formatTime } from "@/lib/utils";
 
 const PHASE_LABEL: Record<LobbyPhase, string> = {
   upcoming: "Próximamente",
@@ -79,6 +82,12 @@ function Home() {
       flash: blastsFor(state, event.id, me.id, now).find((b) => b.is_flash_promo && b.expires_at && +new Date(b.expires_at) > now),
     };
   }, [state, event.id, me.id, now]);
+
+  const myMeetings = meetingsOf(state, me.id, event.id);
+  const meetingSummary = {
+    respond: myMeetings.filter((m) => awaitsMe(m, me.id)).length,
+    next: myMeetings.find((m) => displayStatus(m, now) === "accepted"),
+  };
 
   const hoursToClose = Math.max(0, Math.round((+new Date(event.lobby_expires_at) - now) / 3_600_000));
   const mood = MOOD_TAGS.find((m) => m.id === attendee?.mood_tag);
@@ -198,6 +207,21 @@ function Home() {
           <StatTile href="/perks" icon={<Gift />} tone="vip" value={data.perks.length} label="Perks & QRs" hint="listos para canjear" />
           <StatTile href="/bar" icon={<Martini />} tone="vip" value={data.orders.length} label={v.copy.bar} hint="Pedí sin hacer fila →" />
         </section>
+
+        {/* Reuniones / puntos de encuentro */}
+        <Link href="/meetings" className="glass flex min-h-touch items-center gap-3 rounded-2xl p-4 transition hover:bg-white/5">
+          <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-squad/15 text-squad">
+            <CalendarClock className="size-5" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block font-semibold">{pro ? "Mis reuniones" : "Puntos de encuentro"}</span>
+            <span className="block truncate text-xs text-muted">
+              {meetingSummary.respond ? `${meetingSummary.respond} para responder · ` : ""}
+              {meetingSummary.next ? `Próxima ${formatTime(meetingSummary.next.starts_at)} · ${meetingPlace(state, meetingSummary.next)}` : pro ? "Pedí una reunión desde el perfil de alguien" : "Proponé un punto de encuentro a un match"}
+            </span>
+          </span>
+          {meetingSummary.respond > 0 && <span className="grid min-w-[22px] place-items-center rounded-full bg-squad px-1.5 font-display text-xs font-bold text-background">{meetingSummary.respond}</span>}
+        </Link>
 
         {/* Squad */}
         {data.squad ? (

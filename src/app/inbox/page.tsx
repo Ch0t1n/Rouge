@@ -16,6 +16,8 @@ import { cn, timeAgo } from "@/lib/utils";
 import { useMatchCelebration } from "@/components/lobby/MatchCelebration";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { profileHref } from "@/lib/engine/privacy";
+import { awaitsMe, meetingsOf } from "@/lib/engine/meetings";
 
 export default function InboxPage() {
   const me = useRequireProfile();
@@ -30,6 +32,7 @@ function Inbox() {
   const eventId = state.active_event_id;
   const me = faceOf(state, meId, eventId) ?? getProfile(state, meId)!;
   const v = verticalOf(state, eventId);
+  const toAnswer = meetingsOf(state, meId, eventId).filter((m) => awaitsMe(m, meId)).length;
   const celebration = useMatchCelebration();
   const requests = inboxOf(state, meId, eventId);
   const [tab, setTab] = useState<"requests" | "matches">(requests.length ? "requests" : "matches");
@@ -62,7 +65,13 @@ function Inbox() {
   return (
     <main className="safe-top">
       <header className="sticky top-0 z-30 bg-background/85 px-4 pb-2 pt-4 backdrop-blur-xl">
-        <h1 className="text-2xl">Bandeja</h1>
+        <div className="flex items-center justify-between gap-2">
+          <h1 className="text-2xl">Bandeja</h1>
+          <Link href="/meetings" className="glass-pill inline-flex min-h-[40px] items-center gap-1.5 px-3 text-xs">
+            📅 {v.kind === "corporate" ? "Reuniones" : "Encuentros"}
+            {toAnswer > 0 && <span className="rounded-full bg-squad px-1.5 font-bold text-background">{toAnswer}</span>}
+          </Link>
+        </div>
         <div role="tablist" className="mt-3 grid grid-cols-2 rounded-2xl bg-white/[0.05] p-1">
           {(
             [
@@ -98,7 +107,7 @@ function Inbox() {
                       <Zap className="size-3.5 fill-current" /> {v.copy.icebreaker} · {v.kind === "corporate" ? "fijada" : "fijado"}
                     </p>
                     <div className="flex gap-3">
-                      <Link href={`/u/${p.username}?e=${c.event_id}`}>
+                      <Link href={profileHref(p, c.event_id)}>
                         <Avatar profile={p} size={52} ring="rouge" />
                       </Link>
                       <div className="min-w-0 flex-1">
@@ -126,7 +135,7 @@ function Inbox() {
               }
               return (
                 <article key={c.id} className="glass flex items-center gap-3 rounded-2xl p-3">
-                  <Link href={`/u/${p.username}?e=${c.event_id}`} className="flex min-w-0 flex-1 items-center gap-3">
+                  <Link href={profileHref(p, c.event_id)} className="flex min-w-0 flex-1 items-center gap-3">
                     <Avatar profile={p} size={52} />
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold">{p.full_name.split(" ")[0]} te dio Conectar</p>
@@ -152,7 +161,7 @@ function Inbox() {
                   {sent.map((c) => {
                     const p = faceOf(state, c.receiver_id, c.event_id);
                     return p ? (
-                      <Link key={c.id} href={`/u/${p.username}?e=${c.event_id}`} className="flex w-16 shrink-0 flex-col items-center gap-1 text-center">
+                      <Link key={c.id} href={profileHref(p, c.event_id)} className="flex w-16 shrink-0 flex-col items-center gap-1 text-center">
                         <Avatar profile={p} size={52} className={c.type === "icebreaker" ? "ring-2 ring-rouge" : "opacity-80"} />
                         <span className="w-full truncate text-[11px] text-muted">{c.type === "icebreaker" ? "⚡ " : ""}{p.full_name.split(" ")[0]}</span>
                       </Link>

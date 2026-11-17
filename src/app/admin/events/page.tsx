@@ -24,6 +24,8 @@ import { VENUE_LAYOUT } from "@/lib/mock/seed";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Segmented, TextAreaField, TextField } from "@/components/ui/field";
+import { Switch } from "@/components/ui/switch";
+import { VenueSpotsPanel } from "@/components/admin/VenueSpotsPanel";
 
 const H = 3_600_000;
 /** ISO → valor de <input type="datetime-local"> en hora local */
@@ -69,6 +71,7 @@ export default function AdminEventsPage() {
       </div>
       <EventEditor key={editing} event={event} onSaved={(id) => { setEditing(id); setActiveEvent(id); }} />
       {event && <AccessPanel event={event} />}
+      {event && <VenueSpotsPanel event={event} />}
       {event && (
         <div className="grid gap-6 xl:grid-cols-3">
           <ApiKeysPanel event={event} />
@@ -102,6 +105,7 @@ function EventEditor({ event, onSaved }: { event: RougeEvent | null; onSaved: (i
   // La vertical no cambia una vez que entró gente (moods y perfiles ya elegidos): mismo control que el servidor.
   const kindLocked = !!event && state.event_attendees.some((a) => a.event_id === event.id);
   const v = vertical(kind);
+  const [checkinOnly, setCheckinOnly] = useState(event?.networking_checkin_only ?? false);
   const [name, setName] = useState(event?.name ?? "");
   const [slug, setSlug] = useState(event?.slug ?? "");
   const [venue, setVenue] = useState(event?.venue_name ?? "");
@@ -125,6 +129,7 @@ function EventEditor({ event, onSaved }: { event: RougeEvent | null; onSaved: (i
         // Un evento nuevo arranca con mi marca (logo, colores y cobro); se cambia en Marca y cobros.
         ...(event ? { id: event.id } : { brand_id: myBrands(state)[0]?.id ?? null }),
         kind,
+        networking_checkin_only: checkinOnly,
         name,
         slug: slug || undefined,
         venue_name: venue,
@@ -194,6 +199,16 @@ function EventEditor({ event, onSaved }: { event: RougeEvent | null; onSaved: (i
           <TextField label="Termina" type="datetime-local" value={ends} onChange={(e) => setEnds(e.target.value)} />
           <TextField label="El lobby abre (horas antes)" type="number" min={0} value={opensBefore} onChange={(e) => setOpensBefore(Number(e.target.value))} hint="Para armar Squads y conectar antes de la fiesta." />
           <TextField label="El lobby cierra (horas después)" type="number" min={0} value={closesAfter} onChange={(e) => setClosesAfter(Number(e.target.value))} hint="Efecto Cenicienta: los matches y chats quedan." />
+        </div>
+        <div className="mt-4 rounded-2xl border border-white/10 px-3">
+          <Switch
+            tone="squad"
+            id="checkin-only"
+            checked={checkinOnly}
+            onCheckedChange={setCheckinOnly}
+            label="Networking solo para acreditados"
+            description="La grilla, Conectar, Rompehielos y las reuniones son solo entre quienes ya pasaron por la puerta (escáner). Ideal para congresos y eventos con lista nominal."
+          />
         </div>
         <div className="mt-4">
           <TextAreaField label="Descripción" value={description} maxLength={300} onChange={(e) => setDescription(e.target.value)} />

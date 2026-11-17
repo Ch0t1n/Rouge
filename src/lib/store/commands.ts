@@ -19,6 +19,8 @@ import * as T from "@/lib/engine/settle";
 import * as E from "@/lib/engine/eventAdmin";
 import * as RP from "@/lib/engine/promoters";
 import * as D from "@/lib/engine/door";
+import * as PV from "@/lib/engine/privacy";
+import * as MT from "@/lib/engine/meetings";
 import { BAR_MENU, CORPORATE_MENU } from "@/lib/mock/seed";
 
 export interface Command<T> {
@@ -164,6 +166,89 @@ export const upsertPersona = (userId: UUID, input: A.PersonaInput): Command<Roug
     const existed = before.profile_personas.some((x) => x.id === p.id);
     if (existed) must(await sb.from("profile_personas").update(fields).eq("id", p.id).eq("user_id", userId));
     else must(await sb.from("profile_personas").insert({ id: p.id, user_id: userId, kind: p.kind, ...fields }));
+  },
+});
+
+// ── Privacidad (v1.8) ────────────────────────────────────────────────
+
+/** Ajustes de privacidad de la cuenta: incógnito por defecto, pin solo Squad, datos profesionales tras reunión. */
+export const updatePrivacySettings = (userId: UUID, patch: PV.PrivacyPatch): Command<RougeState["privacy_settings"][number]> => ({
+  name: "updatePrivacySettings",
+  local: (s) => PV.updatePrivacySettings(s, userId, patch),
+  remote: async (sb, p) => {
+    must(
+      await sb.from("privacy_settings").upsert(
+        { user_id: userId, incognito_default: p.incognito_default, pin_share_matches: p.pin_share_matches, pro_details_after_meeting: p.pro_details_after_meeting, updated_at: p.updated_at },
+        { onConflict: "user_id" },
+      ),
+    );
+  },
+});
+
+// ── Reuniones y puntos de encuentro (v1.8) ───────────────────────────
+
+const locationArgs = (loc: MT.MeetingLocation) => ({
+  p_location_kind: loc.kind,
+  p_spot: loc.kind === "spot" ? loc.spotId : null,
+  p_x: loc.kind === "pin" ? loc.x : null,
+  p_y: loc.kind === "pin" ? loc.y : null,
+  p_label: loc.kind === "pin" ? (loc.label ?? null) : null,
+});
+
+/** Pedir una reunión. El id lo genera el servidor (no optimista). */
+export const requestMeeting = (eventId: UUID, requesterId: UUID, inviteeId: UUID, input: MT.MeetingInput): Command<RougeState["meetings"][number]> => ({
+  name: "requestMeeting",
+  optimistic: false,
+  local: (s) => MT.requestMeeting(s, eventId, requesterId, inviteeId, input),
+  remote: async (sb) =>
+    rpc<RougeState["meetings"][number]>(sb, "request_meeting", {
+      p_event: eventId,
+      p_invitee: inviteeId,
+      p_topic: input.topic.trim(),
+      p_starts_at: input.startsAt,
+      p_duration: input.duration,
+      ...locationArgs(input.location),
+    }),
+});
+
+/** Aceptar (abre el chat) o rechazar. Si el lugar estaba "a definir", `location` lo fija. */
+export const respondMeeting = (meetingId: UUID, userId: UUID, accept: boolean, location?: MT.MeetingLocation): Command<RougeState["meetings"][number]> => ({
+  name: "respondMeeting",
+  optimistic: false, // al aceptar, el servidor crea la conexión (chat) con su id
+  local: (s) => MT.respondMeeting(s, meetingId, userId, accept, location),
+  remote: async (sb) =>
+    rpc<RougeState["meetings"][number]>(sb, "respond_meeting", { p_meeting: meetingId, p_accept: accept, ...(location ? locationArgs(location) : {}) }),
+});
+
+export const rescheduleMeeting = (meetingId: UUID, userId: UUID, input: Omit<MT.MeetingInput, "topic">): Command<RougeState["meetings"][number]> => ({
+  name: "rescheduleMeeting",
+  local: (s) => MT.rescheduleMeeting(s, meetingId, userId, input),
+  remote: async (sb) =>
+    rpc<RougeState["meetings"][number]>(sb, "reschedule_meeting", { p_meeting: meetingId, p_starts_at: input.startsAt, p_duration: input.duration, ...locationArgs(input.location) }),
+});
+
+export const cancelMeeting = (meetingId: UUID, userId: UUID): Command<RougeState["meetings"][number]> => ({
+  name: "cancelMeeting",
+  local: (s) => MT.cancelMeeting(s, meetingId, userId),
+  remote: async (sb) => rpc<RougeState["meetings"][number]>(sb, "cancel_meeting", { p_meeting: meetingId }),
+});
+
+/** Sala / mesa / punto de encuentro del evento (dueño/a o producción). Mismo id en el insert que en el optimista. */
+export const upsertVenueSpot = (eventId: UUID, input: MT.VenueSpotInput): Command<RougeState["venue_spots"][number]> => ({
+  name: "upsertVenueSpot",
+  local: guarded("admin.events", () => eventId, (s) => MT.upsertVenueSpot(s, eventId, input)),
+  remote: async (sb, x, before) => {
+    const fields = { name: x.name, kind: x.kind, capacity: x.capacity, coord_x: x.coord_x, coord_y: x.coord_y, is_active: x.is_active };
+    if (before.venue_spots.some((v) => v.id === x.id)) must(await sb.from("venue_spots").update(fields).eq("id", x.id).eq("event_id", eventId));
+    else must(await sb.from("venue_spots").insert({ id: x.id, event_id: eventId, ...fields }));
+  },
+});
+
+export const deleteVenueSpot = (eventId: UUID, spotId: UUID): Command<undefined> => ({
+  name: "deleteVenueSpot",
+  local: guarded("admin.events", () => eventId, (s) => MT.deleteVenueSpot(s, spotId)),
+  remote: async (sb) => {
+    must(await sb.from("venue_spots").delete().eq("id", spotId).eq("event_id", eventId));
   },
 });
 
@@ -509,6 +594,7 @@ export const upsertEvent = (input: Parameters<typeof A.upsertEvent>[1]): Command
       logo_url: e.logo_url,
       theme_primary: e.theme_primary,
       theme_accent: e.theme_accent,
+      networking_checkin_only: e.networking_checkin_only,
       ...(isNew ? { master_invite_code: e.master_invite_code, created_by: e.created_by } : {}),
     };
     if (isNew) {
@@ -689,6 +775,7 @@ export const duplicateEvent = (eventId: UUID, startsAt: string): Command<{ event
         venue_layout_json: e.venue_layout_json, lineup_json: e.lineup_json, cover_url: e.cover_url, starts_at: e.starts_at, ends_at: e.ends_at,
         lobby_opens_at: e.lobby_opens_at, lobby_expires_at: e.lobby_expires_at, max_capacity: e.max_capacity, master_invite_code: e.master_invite_code,
         created_by: e.created_by, brand_id: e.brand_id, logo_url: e.logo_url, theme_primary: e.theme_primary, theme_accent: e.theme_accent,
+        networking_checkin_only: e.networking_checkin_only,
       }),
     );
     must(await sb.from("bar_menu_items").insert(before.bar_menu.map((i) => ({ id: i.id, event_id: e.id, name: i.name, category: i.category, price: i.price, emoji: i.emoji, is_available: i.is_available }))));

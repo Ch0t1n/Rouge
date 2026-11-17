@@ -4,9 +4,10 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { BadgeCheck } from "lucide-react";
 import { MOOD_TAGS, type EventKind, type MoodTag, type Profile, type ProfilePersona } from "@/lib/types";
 import { vertical } from "@/lib/engine/verticals";
+import { ageOf } from "@/lib/engine/privacy";
 import { ProFacts } from "./ProFacts";
 import type { AffinityResult } from "@/lib/engine/affinity";
-import { ageFrom, cn } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { MediaImage } from "@/components/media/MediaImage";
 import { LoopVideo } from "@/components/media/LoopVideo";
 import { SpotifyEmbed } from "@/components/media/SpotifyEmbed";
@@ -103,11 +104,11 @@ export function ProfileView({ profile, mood, affinity, actions, className }: Pro
           )}
           <h2 className="flex items-center gap-2 text-[28px] leading-none">
             {v.features.showAge ? profile.full_name.split(" ")[0] : profile.full_name}
-            {v.features.showAge && <span className="font-sans text-2xl font-normal text-primary/80">{ageFrom(profile.birth_date)}</span>}
+            {v.features.showAge && <span className="font-sans text-2xl font-normal text-primary/80">{ageOf(profile)}</span>}
             {profile.is_verified && <BadgeCheck className="size-6 text-squad" aria-label="Verificado" />}
           </h2>
           {/* En corporativo no se muestra el @ de la cuenta (puede delatar el perfil de la noche): cargo y empresa. */}
-          <p className="mt-1 text-sm text-muted">{pro ? [pro.job_title, pro.company].filter(Boolean).join(" · ") : `@${profile.username}`}</p>
+          <p className="mt-1 text-sm text-muted">{pro ? [pro.job_title, pro.company].filter(Boolean).join(" · ") || "Perfil profesional" : profile.username ? `@${profile.username}` : ""}</p>
         </div>
       </div>
 

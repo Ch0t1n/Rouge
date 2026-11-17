@@ -216,16 +216,51 @@ export function projectFace(base: Profile, persona: ProfilePersona | null, kind:
   return { ...base, persona: null, face_kind: kind };
 }
 
-/** Cara de `userId` en `eventId` (por defecto, el evento activo). */
+/** Cara de `userId` en `eventId` (por defecto, el evento activo), vista por quien usa la app (`current_user_id`). */
 export function faceOf(s: RougeState, userId: UUID | null | undefined, eventId: UUID | null | undefined = s.active_event_id): Face | undefined {
   if (!userId) return undefined;
   const base = s.profiles.find((p) => p.id === userId);
   if (!base) return undefined;
   const kind = eventKindOf(s, eventId);
   const att = eventId ? s.event_attendees.find((a) => a.event_id === eventId && a.user_id === userId) : undefined;
-  const persona = att?.persona_id ? (s.profile_personas.find((p) => p.id === att.persona_id) ?? null) : null;
+  const raw = att?.persona_id ? (s.profile_personas.find((p) => p.id === att.persona_id) ?? null) : null;
+  const persona = raw ? sanitizePersonaFor(s, raw, s.current_user_id) : null;
   // Sin perfil profesional (equipo sin fila de asistente, perfil borrado): cara neutra en corporativo.
   return projectFace(base, persona, kind);
+}
+
+/** ¿Hubo una reunión aceptada o un contacto aceptado en un evento corporativo entre los dos? (⇔ public.pro_unlocked) */
+export function proUnlocked(s: RougeState, viewer: UUID, owner: UUID): boolean {
+  const pair = (a: UUID, b: UUID) => (a === viewer && b === owner) || (a === owner && b === viewer);
+  return (
+    s.meetings.some((m) => m.status === "accepted" && pair(m.requester_id, m.invitee_id)) ||
+    s.connections.some((c) => c.status === "accepted" && pair(c.sender_id, c.receiver_id) && eventKindOf(s, c.event_id) === "corporate")
+  );
+}
+
+/**
+ * Perfil adicional tal como lo ve `viewer` (⇔ public.persona_cards): sin el nombre interno; LinkedIn solo tras una
+ * reunión o contacto aceptado; empresa y cargo ocultos hasta entonces si su dueño/a lo eligió. Dueño/a y producción de
+ * un evento donde se usa ese perfil ven todo (CRM).
+ */
+export function sanitizePersonaFor(s: RougeState, p: ProfilePersona, viewer: UUID): ProfilePersona {
+  if (p.user_id === viewer) return p;
+  const manager = s.event_attendees.some(
+    (a) =>
+      a.persona_id === p.id &&
+      (s.events.find((e) => e.id === a.event_id)?.created_by === viewer ||
+        s.event_staff.some((r) => r.event_id === a.event_id && r.user_id === viewer && (r.role === "owner" || r.role === "manager"))),
+  );
+  if (manager) return { ...p, label: "" };
+  const unlocked = proUnlocked(s, viewer, p.user_id);
+  const hide = s.privacy_settings.find((x) => x.user_id === p.user_id)?.pro_details_after_meeting ?? false;
+  return {
+    ...p,
+    label: "",
+    linkedin_url: unlocked ? p.linkedin_url : null,
+    job_title: unlocked || !hide ? p.job_title : "",
+    company: unlocked || !hide ? p.company : "",
+  };
 }
 
 /** Línea corta de la cara profesional: "Cargo · Empresa". */

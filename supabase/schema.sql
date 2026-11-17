@@ -306,6 +306,12 @@ create table if not exists public.profile_personas (
 );
 alter table public.event_attendees add column if not exists persona_id uuid references public.profile_personas(id) on delete set null;
 
+-- [v1.8] Privacidad: los demás solo saben SI alguien está acreditado (no a qué hora entró).
+alter table public.event_attendees add column if not exists is_checked_in boolean generated always as (checked_in_at is not null) stored;
+-- [v1.8] El organizador puede limitar el networking a quienes ya pasaron por la puerta (acreditados).
+alter table public.events add column if not exists networking_checkin_only boolean not null default false;
+
+
 create table if not exists public.connections (
   id                    uuid primary key default gen_random_uuid(),
   event_id              uuid not null references public.events(id) on delete cascade,
@@ -319,6 +325,70 @@ create table if not exists public.connections (
   responded_at          timestamptz,                                   -- [ext]
   constraint connections_not_self check (sender_id <> receiver_id),
   constraint icebreaker_msg_chk  check (type = 'regular' or icebreaker_message is not null)
+);
+
+-- [v1.8] Ajustes de privacidad de la cuenta (espejo: PrivacySettings en types.ts). Sin fila = valores por defecto.
+create table if not exists public.privacy_settings (
+  user_id                    uuid primary key references public.profiles(id) on delete cascade,
+  incognito_default          boolean not null default false,  -- entra a cada evento en Modo Solo Amigos / Contactos
+  pin_share_matches          boolean not null default true,   -- false: el pin solo se comparte con el Squad
+  pro_details_after_meeting  boolean not null default false,  -- empresa y cargo ocultos hasta una reunión o contacto aceptado
+  updated_at                 timestamptz not null default now()
+);
+
+-- [v1.8] Salas, mesas y puntos de encuentro que carga el organizador (espejo: VenueSpot).
+create table if not exists public.venue_spots (
+  id          uuid primary key default gen_random_uuid(),
+  event_id    uuid not null references public.events(id) on delete cascade,
+  name        text not null check (char_length(name) between 2 and 40),
+  kind        text not null default 'room' check (kind in ('room','table','point')),
+  capacity    integer check (capacity is null or capacity between 1 and 50),  -- reuniones a la vez (null = sin límite)
+  coord_x     double precision check (coord_x is null or coord_x between 0 and 100),
+  coord_y     double precision check (coord_y is null or coord_y between 0 and 100),
+  is_active   boolean not null default true,
+  created_at  timestamptz not null default now(),
+  unique (event_id, name)
+);
+
+-- [v1.8] Leads de la página /empresas. SOLO servidor (RLS sin políticas): los escribe /api/leads con service role.
+create table if not exists public.b2b_leads (
+  id           uuid primary key default gen_random_uuid(),
+  name         text not null check (char_length(name) between 2 and 80),
+  company      text not null check (char_length(company) between 2 and 120),
+  email        text not null check (char_length(email) <= 160 and email ~* '^[^@\s]+@[^@\s]+\.[^@\s]+$'),
+  whatsapp     text check (whatsapp is null or whatsapp ~ '^\+[1-9][0-9]{7,14}$'),
+  event_type   text not null check (event_type in ('congress','internal','cowork','launch','other')),
+  attendees    integer not null check (attendees between 10 and 100000),
+  message      text not null default '' check (char_length(message) <= 1000),
+  source       text not null default 'empresas' check (char_length(source) <= 60),
+  notified_at  timestamptz,
+  created_at   timestamptz not null default now()
+);
+
+-- [v1.8] Reuniones 1 a 1 dentro de un evento (espejo: Meeting). "Completada" se deriva (aceptada y ya terminó).
+create table if not exists public.meetings (
+  id             uuid primary key default gen_random_uuid(),
+  event_id       uuid not null references public.events(id) on delete cascade,
+  requester_id   uuid not null references public.profiles(id) on delete cascade,
+  invitee_id     uuid not null references public.profiles(id) on delete cascade,
+  topic          text not null check (char_length(topic) between 1 and 140),
+  starts_at      timestamptz not null,
+  duration_min   integer not null check (duration_min in (15, 30)),
+  location_kind  text not null default 'tbd' check (location_kind in ('spot','pin','tbd')),
+  spot_id        uuid references public.venue_spots(id) on delete restrict,
+  pin_x          double precision check (pin_x is null or pin_x between 0 and 100),
+  pin_y          double precision check (pin_y is null or pin_y between 0 and 100),
+  pin_label      text check (pin_label is null or char_length(pin_label) <= 60),
+  status         text not null default 'pending' check (status in ('pending','accepted','rescheduled','declined','cancelled')),
+  proposed_by    uuid not null references public.profiles(id) on delete cascade,
+  connection_id  uuid references public.connections(id) on delete set null,
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now(),
+  constraint meetings_not_self check (requester_id <> invitee_id),
+  constraint meetings_location_chk check (
+    (location_kind = 'spot' and spot_id is not null) or
+    (location_kind = 'pin' and pin_x is not null and pin_y is not null) or
+    location_kind = 'tbd')
 );
 
 create table if not exists public.squads (
@@ -593,6 +663,10 @@ create index if not exists idx_orders_user           on public.bar_orders (user_
 create index if not exists idx_songs_event           on public.song_requests (event_id);
 create index if not exists idx_personas_user          on public.profile_personas (user_id);
 create index if not exists idx_attendees_persona      on public.event_attendees (persona_id) where persona_id is not null;
+create index if not exists idx_spots_event            on public.venue_spots (event_id);
+create index if not exists idx_meetings_event         on public.meetings (event_id, starts_at);
+create index if not exists idx_meetings_people        on public.meetings (requester_id, invitee_id);
+create index if not exists idx_meetings_spot          on public.meetings (spot_id, starts_at) where spot_id is not null;
 
 -- ════════════════════════════════════════════════════════════════════════
 -- HELPERS (security definer: evitan recursión de RLS)
@@ -698,6 +772,35 @@ returns boolean language sql stable security definer set search_path = public, e
   );
 $$;
 
+-- [v1.8] ¿Puede `p_viewer` ver la asistencia de `p_target` a un evento? (⇔ canSeeAttendee en selectors.ts)
+-- Uno mismo y el equipo (sin RRPP) siempre. Otro asistente: sin bloqueo, y si está en Modo Solo Amigos solo su Squad y
+-- sus matches; si el evento limita el networking a acreditados, los dos tienen que haber pasado por la puerta.
+create or replace function public.can_see_attendee(p_event uuid, p_viewer uuid, p_target uuid)
+returns boolean language sql stable security definer set search_path = public, extensions as $$
+  select p_viewer = p_target
+    or public.is_event_staff(p_event, p_viewer)
+    or exists (
+      select 1 from public.event_attendees t join public.events e on e.id = t.event_id
+      where t.event_id = p_event and t.user_id = p_target
+        and public.is_event_attendee(p_event, p_viewer)
+        and not public.is_blocked(p_viewer, p_target)
+        and (
+          public.are_squadmates(p_event, p_viewer, p_target) or public.is_match(p_event, p_viewer, p_target)
+          or (not t.ghost_mode and (not e.networking_checkin_only or (
+                t.checked_in_at is not null and exists (
+                  select 1 from public.event_attendees v where v.event_id = p_event and v.user_id = p_viewer and v.checked_in_at is not null))))
+        )
+    );
+$$;
+
+-- [v1.8] ¿`p_user` puede hacer networking nuevo en el evento? (si el evento lo limita, solo acreditados)
+create or replace function public.networking_open_for(p_event uuid, p_user uuid default auth.uid())
+returns boolean language sql stable security definer set search_path = public, extensions as $$
+  select exists (
+    select 1 from public.event_attendees a join public.events e on e.id = a.event_id
+    where a.event_id = p_event and a.user_id = p_user and (not e.networking_checkin_only or a.checked_in_at is not null));
+$$;
+
 -- ════════════════════════════════════════════════════════════════════════
 -- ROW LEVEL SECURITY
 -- ════════════════════════════════════════════════════════════════════════
@@ -730,11 +833,17 @@ alter table public.payout_aliases      enable row level security;
 alter table public.event_bans          enable row level security;
 alter table public.promoter_links      enable row level security;
 alter table public.profile_personas    enable row level security;
+alter table public.privacy_settings    enable row level security;
+alter table public.venue_spots         enable row level security;
+alter table public.meetings            enable row level security;
+alter table public.b2b_leads           enable row level security;
 
--- PROFILES ── el teléfono NUNCA es legible por otros usuarios (column privileges).
+-- PROFILES ── [v1.8] cada uno lee SOLO su fila. Los demás perfiles se leen con profile_cards(): tarjeta saneada según
+-- el contexto (edad y no fecha de nacimiento; @usuario y fotos solo si esa persona se mostró con su Perfil principal
+-- en un evento que compartimos). El teléfono nunca es legible por otros (column privileges).
 drop policy if exists profiles_select on public.profiles;
 create policy profiles_select on public.profiles for select to authenticated
-  using (id = auth.uid() or not public.is_blocked(auth.uid(), id));
+  using (id = auth.uid());
 drop policy if exists profiles_insert on public.profiles;
 create policy profiles_insert on public.profiles for insert to authenticated with check (id = auth.uid());
 drop policy if exists profiles_update on public.profiles;
@@ -783,13 +892,10 @@ $$;
 -- [v1.7] PROFILE_PERSONAS ── veo los míos y los que alguien USA en un evento donde estoy (asistente o equipo),
 -- sin bloqueo. Un perfil que no se usó en un evento compartido nunca es legible por otros. Altas y edición directas
 -- (privilegios por columna: kind y user_id no se editan); la baja va por delete_persona (no se borra en uso).
+-- [v1.8] Solo los propios por tabla; los de otros, saneados por persona_cards() (sin el nombre interno, LinkedIn solo tras
+-- un contacto o reunión aceptada, empresa y cargo según los ajustes de privacidad de su dueño/a).
 drop policy if exists personas_select on public.profile_personas;
-create policy personas_select on public.profile_personas for select to authenticated using (
-  user_id = auth.uid()
-  or (not public.is_blocked(auth.uid(), user_id) and exists (
-        select 1 from public.event_attendees a
-        where a.persona_id = profile_personas.id and (public.is_event_attendee(a.event_id) or public.is_event_staff(a.event_id))))
-);
+create policy personas_select on public.profile_personas for select to authenticated using (user_id = auth.uid());
 drop policy if exists personas_insert on public.profile_personas;
 create policy personas_insert on public.profile_personas for insert to authenticated with check (user_id = auth.uid());
 drop policy if exists personas_update on public.profile_personas;
@@ -869,20 +975,17 @@ create policy codes_staff on public.event_invite_codes for all to authenticated
 
 -- ATTENDEES ── veo a los asistentes de mis eventos sin bloqueo; ghost solo para mí, mi squad y mis matches.
 drop policy if exists attendees_select on public.event_attendees;
-create policy attendees_select on public.event_attendees for select to authenticated using (
-  user_id = auth.uid()
-  or public.is_event_staff(event_id)
-  or (
-    public.is_event_attendee(event_id)
-    and not public.is_blocked(auth.uid(), user_id)
-    and (not ghost_mode or public.are_squadmates(event_id, auth.uid(), user_id) or public.is_match(event_id, auth.uid(), user_id))
-  )
-);
+create policy attendees_select on public.event_attendees for select to authenticated using (public.can_see_attendee(event_id, auth.uid(), user_id));
 drop policy if exists attendees_update_self on public.event_attendees;
 create policy attendees_update_self on public.event_attendees for update to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 revoke update on public.event_attendees from authenticated;
 grant update (mood_tag, ghost_mode, only_liked_can_icebreak, last_active_at) on public.event_attendees to authenticated;
+-- [v1.8] Columnas privadas: gasto, cómo entró, RRPP, hora de ingreso y sectores donde dejó pin NO se leen por tabla
+-- (tampoco viajan por Realtime). Lo propio: my_attendances(); el equipo: event_attendance(); zonas en común: shared_zones().
+revoke select on public.event_attendees from anon, authenticated;
+grant select (id, event_id, user_id, mood_tag, persona_id, ghost_mode, only_liked_can_icebreak, icebreaker_used, last_active_at, joined_at, is_checked_in)
+  on public.event_attendees to authenticated;
 
 -- CONNECTIONS ── las ven emisor y receptor; altas vía RPC; el receptor responde.
 drop policy if exists conn_select on public.connections;
@@ -914,8 +1017,9 @@ create policy squad_members_leave on public.squad_members for delete to authenti
 
 -- MAP PINS ── visibilidad por can_see_pin(); cada uno gestiona su pin.
 drop policy if exists pins_select on public.map_pins;
+-- [v1.8] El equipo ya no ve todos los pines: solo las alertas de rescate (seguridad). El resto, solo Squad y matches elegidos.
 create policy pins_select on public.map_pins for select to authenticated
-  using (public.can_see_pin(map_pins) or public.is_event_staff(event_id));
+  using (public.can_see_pin(map_pins) or (is_rescue_alert and public.is_event_staff(event_id)));
 drop policy if exists pins_insert on public.map_pins;
 create policy pins_insert on public.map_pins for insert to authenticated with check (
   user_id = auth.uid() and public.is_event_attendee(event_id) and public.lobby_is_open(event_id)
@@ -1164,9 +1268,11 @@ begin
     elsif (select count(*) from public.event_attendees where event_id = v_event.id) >= v_event.max_capacity then
       raise exception 'event_full';
     end if;
-    insert into public.event_attendees (event_id, user_id, mood_tag, persona_id, joined_via, referred_by)
+    -- [v1.8] Modo incógnito por defecto (ajustes de privacidad): entra sin aparecer en la grilla.
+    insert into public.event_attendees (event_id, user_id, mood_tag, persona_id, joined_via, referred_by, ghost_mode)
     values (v_event.id, v_uid, p_mood, p_persona, v_via,
-            case when v_link.user_id is distinct from v_uid and v_event.kind::text = 'nightlife' then v_link.user_id end);
+            case when v_link.user_id is distinct from v_uid and v_event.kind::text = 'nightlife' then v_link.user_id end,
+            coalesce((select incognito_default from public.privacy_settings where user_id = v_uid), false));
   end if;
 
   if v_via = 'squad_link' and public.user_squad(v_event.id, v_uid) is null
@@ -1234,6 +1340,9 @@ begin
   if public.is_blocked(v_uid, p_receiver) then raise exception 'unavailable'; end if;
   if exists (select 1 from public.event_attendees where event_id = p_event and user_id = v_uid and ghost_mode) then raise exception 'sender_in_ghost_mode'; end if;
   if public.is_match(p_event, v_uid, p_receiver) then raise exception 'already_matched'; end if;
+  -- [v1.8] Solo a quien puedo ver (Modo Solo Amigos, bloqueos, networking solo para acreditados).
+  if not public.networking_open_for(p_event, v_uid) then raise exception 'checkin_required'; end if;
+  if not public.can_see_attendee(p_event, v_uid, p_receiver) then raise exception 'unavailable'; end if;
 
   select * into v_reciprocal from public.connections
    where event_id = p_event and sender_id = p_receiver and receiver_id = v_uid and status = 'pending' for update;
@@ -1263,6 +1372,8 @@ begin
   select * into v_att from public.event_attendees where event_id = p_event and user_id = v_uid for update;
   select * into v_rcv from public.event_attendees where event_id = p_event and user_id = p_receiver;
   if v_att.id is null or v_rcv.id is null or public.is_blocked(v_uid, p_receiver) or v_rcv.ghost_mode then raise exception 'unavailable'; end if;
+  if not public.networking_open_for(p_event, v_uid) then raise exception 'checkin_required'; end if;
+  if not public.can_see_attendee(p_event, v_uid, p_receiver) then raise exception 'unavailable'; end if;
   if v_att.ghost_mode then raise exception 'sender_in_ghost_mode'; end if;
   if v_att.icebreaker_used then raise exception 'icebreaker_already_used'; end if;
   if coalesce(trim(p_message), '') = '' or char_length(p_message) > 140 then raise exception 'invalid_message'; end if;
@@ -1422,6 +1533,11 @@ returns public.map_pins language plpgsql security definer set search_path = publ
 declare v_matches uuid[]; v_pin public.map_pins;
 begin
   if not public.lobby_is_open(p_event) or not public.is_event_attendee(p_event) then raise exception 'not_allowed'; end if;
+  -- [v1.8] Si la persona eligió compartir su ubicación solo con su Squad, no se acepta ningún match.
+  if cardinality(coalesce(p_match_ids, '{}')) > 0
+     and not coalesce((select pin_share_matches from public.privacy_settings where user_id = auth.uid()), true) then
+    raise exception 'pin_squad_only';
+  end if;
   select coalesce(array_agg(m), '{}') into v_matches from unnest(coalesce(p_match_ids, '{}')) m
    where public.is_match(p_event, auth.uid(), m) and not public.is_blocked(auth.uid(), m);
   p_share_with_squad := p_share_with_squad and public.user_squad(p_event, auth.uid()) is not null;
@@ -1819,6 +1935,10 @@ begin
     'pending_connections', count(*) filter (where status = 'pending'),
     'icebreakers_sent',   count(*) filter (where type = 'icebreaker'),
     'matches_last_hour',  count(*) filter (where status = 'accepted' and responded_at > now() - interval '1 hour'),
+    -- [v1.8] Pines activos y reuniones: solo conteos (el equipo no ve dónde está cada uno ni quién se reúne con quién).
+    'active_pins',        (select count(*) from public.map_pins mp where mp.event_id = p_event and mp.expires_at > now()),
+    'meetings_requested', (select count(*) from public.meetings mt where mt.event_id = p_event),
+    'meetings_accepted',  (select count(*) from public.meetings mt where mt.event_id = p_event and mt.status = 'accepted'),
     'matches_by_user',    coalesce((
       select jsonb_object_agg(u, n) from (
         select u, count(*) n from public.connections c2, unnest(array[c2.sender_id, c2.receiver_id]) u
@@ -2184,6 +2304,317 @@ begin
     'label', v_c.label, 'checked_in_at', v_at);
 end $$;
 
+-- ════════════════════════════════════════════════════════════════════════
+-- [v1.8] PRIVACIDAD POR CONTEXTO (espejo: privacy.ts y faceOf en verticals.ts)
+-- ════════════════════════════════════════════════════════════════════════
+
+-- Nivel de acceso de `p_viewer` al perfil de `p_target` (⇔ profileAccess en privacy.ts):
+--   'full' → se mostró con su Perfil principal en un evento de noche que compartimos (o es un match de noche, o soy yo).
+--   'name' → compartimos algún contexto (evento corporativo, equipo, Squad, contacto, mi lista de bloqueados): solo nombre.
+--   null   → ningún contexto o hay bloqueo: no se devuelve nada.
+create or replace function public.profile_access(p_viewer uuid, p_target uuid)
+returns text language sql stable security definer set search_path = public, extensions as $$
+  select case
+    when p_viewer is null then null
+    when p_viewer = p_target then 'full'
+    when exists (select 1 from public.user_blocks b where b.blocker_id = p_viewer and b.blocked_user_id = p_target) then 'name'
+    when public.is_blocked(p_viewer, p_target) then null
+    when exists (
+      select 1 from public.event_attendees a join public.events e on e.id = a.event_id
+      where a.user_id = p_target and a.persona_id is null and e.kind::text = 'nightlife'
+        and public.can_see_attendee(a.event_id, p_viewer, p_target)) then 'full'
+    when exists (
+      select 1 from public.connections c join public.events e on e.id = c.event_id
+      where c.status = 'accepted' and e.kind::text = 'nightlife'
+        and ((c.sender_id = p_viewer and c.receiver_id = p_target) or (c.sender_id = p_target and c.receiver_id = p_viewer))
+        and not exists (select 1 from public.event_attendees a where a.event_id = c.event_id and a.user_id = p_target and a.persona_id is not null)) then 'full'
+    when exists (select 1 from public.event_attendees a where a.user_id = p_target and public.can_see_attendee(a.event_id, p_viewer, p_target)) then 'name'
+    when exists (select 1 from public.connections c where c.status = 'accepted'
+                 and ((c.sender_id = p_viewer and c.receiver_id = p_target) or (c.sender_id = p_target and c.receiver_id = p_viewer))) then 'name'
+    when exists (select 1 from public.meetings m where (m.requester_id = p_viewer and m.invitee_id = p_target) or (m.requester_id = p_target and m.invitee_id = p_viewer)) then 'name'
+    when exists (select 1 from public.event_staff st where st.user_id = p_target
+                 and (public.is_event_attendee(st.event_id, p_viewer) or public.is_event_staff(st.event_id, p_viewer))) then 'name'
+    when exists (select 1 from public.events ev where ev.created_by = p_target
+                 and (public.is_event_attendee(ev.id, p_viewer) or public.is_event_staff(ev.id, p_viewer))) then 'name'
+    when exists (select 1 from public.event_bans bn where bn.user_id = p_target and public.is_event_manager(bn.event_id, p_viewer)) then 'name'
+    when exists (select 1 from public.squad_members m1 join public.squad_members m2 on m2.squad_id = m1.squad_id
+                 where m1.user_id = p_viewer and m2.user_id = p_target) then 'name'
+    else null end;
+$$;
+
+-- Tarjetas públicas de perfiles (PublicProfileCard). Nunca: teléfono, email, fecha de nacimiento (solo edad), historial
+-- de eventos. Con nivel 'name' solo nombre y verificado (sin @usuario, fotos ni datos de la noche).
+create or replace function public.profile_cards(p_ids uuid[])
+returns table (
+  id uuid, username citext, full_name text, age int, gender gender_t, bio text, photos jsonb, loop_video_url text,
+  music_genres text[], spotify_embed_url text, instagram_username text, instagram_verified boolean, is_verified boolean, created_at timestamptz
+) language sql stable security definer set search_path = public, extensions as $$
+  select p.id,
+         case when x.lvl = 'full' then p.username end,
+         p.full_name,
+         case when x.lvl = 'full' then date_part('year', age(p.birth_date))::int end,
+         case when x.lvl = 'full' then p.gender else 'undisclosed'::gender_t end,
+         case when x.lvl = 'full' then p.bio else '' end,
+         case when x.lvl = 'full' then p.photos else '[]'::jsonb end,
+         case when x.lvl = 'full' then p.loop_video_url end,
+         case when x.lvl = 'full' then p.music_genres else '{}'::text[] end,
+         case when x.lvl = 'full' then p.spotify_embed_url end,
+         case when x.lvl = 'full' then p.instagram_username::text end,
+         x.lvl = 'full' and p.instagram_verified,
+         p.is_verified,
+         p.created_at
+  from public.profiles p
+  cross join lateral (select public.profile_access(auth.uid(), p.id) as lvl) x
+  where p.id = any(p_ids) and x.lvl is not null;
+$$;
+
+-- ¿Ya hubo un contacto aceptado (en un evento corporativo) o una reunión aceptada entre los dos? (⇔ proUnlocked)
+create or replace function public.pro_unlocked(p_viewer uuid, p_owner uuid)
+returns boolean language sql stable security definer set search_path = public, extensions as $$
+  select exists (
+      select 1 from public.meetings m where m.status = 'accepted'
+        and ((m.requester_id = p_viewer and m.invitee_id = p_owner) or (m.requester_id = p_owner and m.invitee_id = p_viewer)))
+    or exists (
+      select 1 from public.connections c join public.events e on e.id = c.event_id
+      where c.status = 'accepted' and e.kind::text = 'corporate'
+        and ((c.sender_id = p_viewer and c.receiver_id = p_owner) or (c.sender_id = p_owner and c.receiver_id = p_viewer)));
+$$;
+
+-- Perfiles adicionales de otros, saneados: sin el nombre interno; LinkedIn solo tras un contacto o reunión aceptada;
+-- empresa y cargo ocultos hasta entonces si su dueño/a lo eligió. Dueño/a y producción del evento ven los datos
+-- profesionales completos (CRM). Solo perfiles que se usan en un evento donde puedo ver a esa persona.
+create or replace function public.persona_cards(p_ids uuid[])
+returns setof public.profile_personas language sql stable security definer set search_path = public, extensions as $$
+  select p.id, p.user_id, p.kind,
+         case when own then p.label else '' end,
+         p.display_name, p.bio, p.photos, p.music_genres, p.spotify_embed_url,
+         case when own or mgr or unlocked or not hide then p.job_title else '' end,
+         case when own or mgr or unlocked or not hide then p.company else '' end,
+         p.industry, p.looking_for, p.offering,
+         case when own or mgr or unlocked then p.linkedin_url end,
+         p.created_at
+  from public.profile_personas p
+  cross join lateral (select
+      p.user_id = auth.uid() as own,
+      exists (select 1 from public.event_attendees a where a.persona_id = p.id and public.is_event_manager(a.event_id, auth.uid())) as mgr,
+      public.pro_unlocked(auth.uid(), p.user_id) as unlocked,
+      coalesce((select ps.pro_details_after_meeting from public.privacy_settings ps where ps.user_id = p.user_id), false) as hide) f
+  where p.id = any(p_ids)
+    and (own or exists (select 1 from public.event_attendees a where a.persona_id = p.id and public.can_see_attendee(a.event_id, auth.uid(), a.user_id)));
+$$;
+
+-- Mis asistencias completas (gasto, cómo entré, ingreso, sectores): las columnas privadas no se leen por tabla.
+create or replace function public.my_attendances()
+returns setof public.event_attendees language sql stable security definer set search_path = public, extensions as $$
+  select * from public.event_attendees where user_id = auth.uid();
+$$;
+
+-- Datos privados de la asistencia para el equipo: gasto, origen y RRPP solo dueño/a y producción; ingreso también seguridad.
+create or replace function public.event_attendance(p_event uuid)
+returns table (user_id uuid, total_spent numeric, joined_via join_via_t, referred_by uuid, checked_in_at timestamptz)
+language plpgsql stable security definer set search_path = public, extensions as $$
+declare v_mgr boolean := public.is_event_manager(p_event); v_sec boolean;
+begin
+  v_sec := v_mgr or public.has_staff_role(p_event, array['owner','manager','security']::staff_role_t[]);
+  if not v_sec then raise exception 'forbidden'; end if;
+  return query select a.user_id,
+    case when v_mgr then a.total_spent else 0 end,
+    case when v_mgr then a.joined_via else 'master_link'::join_via_t end,
+    case when v_mgr then a.referred_by end,
+    a.checked_in_at
+  from public.event_attendees a where a.event_id = p_event;
+end $$;
+
+-- "Coincidieron en tu zona" sin exponer dónde estuvo cada uno: solo los sectores EN COMÚN conmigo.
+create or replace function public.shared_zones(p_event uuid)
+returns table (user_id uuid, zones text[]) language sql stable security definer set search_path = public, extensions as $$
+  select a.user_id, array(select unnest(a.visited_sectors) intersect select unnest(me.visited_sectors))
+  from public.event_attendees a
+  join public.event_attendees me on me.event_id = a.event_id and me.user_id = auth.uid()
+  where a.event_id = p_event and a.user_id <> auth.uid() and public.can_see_attendee(p_event, auth.uid(), a.user_id);
+$$;
+
+-- PRIVACY SETTINGS ── cada uno los suyos.
+drop policy if exists privacy_own on public.privacy_settings;
+create policy privacy_own on public.privacy_settings for all to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+revoke all on public.privacy_settings from anon, authenticated;
+grant select, insert, update on public.privacy_settings to authenticated;
+
+-- ════════════════════════════════════════════════════════════════════════
+-- [v1.8] REUNIONES 1 A 1 Y PUNTOS DE ENCUENTRO (espejo: engine/meetings.ts)
+-- ════════════════════════════════════════════════════════════════════════
+
+-- VENUE SPOTS ── los ve quien está en el evento (asistentes y equipo); los gestiona dueño/a o producción.
+drop policy if exists spots_select on public.venue_spots;
+create policy spots_select on public.venue_spots for select to authenticated
+  using (public.is_event_attendee(event_id) or public.is_event_staff(event_id));
+drop policy if exists spots_manage on public.venue_spots;
+create policy spots_manage on public.venue_spots for all to authenticated
+  using (public.is_event_manager(event_id)) with check (public.is_event_manager(event_id));
+
+-- MEETINGS ── solo las dos personas (y nunca con bloqueo). Todo cambio va por RPC. El equipo ve conteos (event_stats).
+drop policy if exists meetings_select on public.meetings;
+create policy meetings_select on public.meetings for select to authenticated
+  using ((requester_id = auth.uid() or invitee_id = auth.uid()) and not public.is_blocked(requester_id, invitee_id));
+revoke insert, update, delete on public.meetings from anon, authenticated;
+
+-- Reuniones aceptadas que pisan ese horario en esa sala/mesa (para el cupo).
+create or replace function public.spot_busy(p_spot uuid, p_starts timestamptz, p_minutes int, p_exclude uuid default null)
+returns int language sql stable security definer set search_path = public, extensions as $$
+  select count(*)::int from public.meetings m
+  where m.spot_id = p_spot and m.status = 'accepted' and m.id is distinct from p_exclude
+    and m.starts_at < p_starts + make_interval(mins => p_minutes)
+    and p_starts < m.starts_at + make_interval(mins => m.duration_min);
+$$;
+
+-- ¿`p_user` ya tiene una reunión aceptada que se superpone?
+create or replace function public.meeting_conflict(p_user uuid, p_starts timestamptz, p_minutes int, p_exclude uuid default null)
+returns boolean language sql stable security definer set search_path = public, extensions as $$
+  select exists (select 1 from public.meetings m
+    where m.status = 'accepted' and m.id is distinct from p_exclude and p_user in (m.requester_id, m.invitee_id)
+      and m.starts_at < p_starts + make_interval(mins => p_minutes)
+      and p_starts < m.starts_at + make_interval(mins => m.duration_min));
+$$;
+
+-- Valida horario y lugar de una reunión (usado al pedir, reprogramar y aceptar). Lanza la excepción del problema.
+create or replace function public.check_meeting_slot(p_event uuid, p_starts timestamptz, p_minutes int, p_kind text,
+                                                     p_spot uuid, p_x double precision, p_y double precision, p_exclude uuid default null)
+returns void language plpgsql stable security definer set search_path = public, extensions as $$
+declare v_ev public.events; v_spot public.venue_spots;
+begin
+  select * into v_ev from public.events where id = p_event;
+  if p_minutes not in (15, 30) then raise exception 'invalid_duration'; end if;
+  if p_starts < now() - interval '2 minutes' or p_starts < v_ev.starts_at - interval '1 minute'
+     or p_starts + make_interval(mins => p_minutes) > v_ev.ends_at then raise exception 'invalid_time'; end if;
+  if p_kind = 'spot' then
+    select * into v_spot from public.venue_spots where id = p_spot and event_id = p_event and is_active;
+    if v_spot.id is null then raise exception 'invalid_spot'; end if;
+    if v_spot.capacity is not null and public.spot_busy(p_spot, p_starts, p_minutes, p_exclude) >= v_spot.capacity then raise exception 'spot_busy'; end if;
+  elsif p_kind = 'pin' then
+    if p_x is null or p_y is null or p_x not between 0 and 100 or p_y not between 0 and 100 then raise exception 'invalid_pin'; end if;
+  elsif p_kind <> 'tbd' then raise exception 'invalid_location';
+  end if;
+end $$;
+
+-- Pedir una reunión ("Solicitar reunión" en corporativo, "Punto de encuentro" con un match en la noche).
+create or replace function public.request_meeting(p_event uuid, p_invitee uuid, p_topic text, p_starts_at timestamptz, p_duration int,
+                                                  p_location_kind text default 'tbd', p_spot uuid default null,
+                                                  p_x double precision default null, p_y double precision default null, p_label text default null)
+returns public.meetings language plpgsql security definer set search_path = public, extensions as $$
+declare v_uid uuid := auth.uid(); v_ev public.events; v_row public.meetings; v_ghost boolean;
+begin
+  if v_uid is null then raise exception 'not_authenticated'; end if;
+  select * into v_ev from public.events where id = p_event;
+  if not public.lobby_is_open(p_event) then raise exception 'lobby_closed'; end if;
+  if v_uid = p_invitee then raise exception 'not_allowed'; end if;
+  if not public.is_event_attendee(p_event, v_uid) or not public.is_event_attendee(p_event, p_invitee) then raise exception 'not_attendee'; end if;
+  if not public.can_see_attendee(p_event, v_uid, p_invitee) then raise exception 'unavailable'; end if;
+  if not public.networking_open_for(p_event, v_uid) then raise exception 'checkin_required'; end if;
+  -- Noche: solo con matches (seguridad: nadie recibe una cita de un desconocido). Corporativo: con cualquiera visible.
+  if v_ev.kind::text = 'nightlife' and not public.is_match(p_event, v_uid, p_invitee) then raise exception 'match_required'; end if;
+  select ghost_mode into v_ghost from public.event_attendees where event_id = p_event and user_id = v_uid;
+  if v_ghost and not public.is_match(p_event, v_uid, p_invitee) then raise exception 'sender_in_ghost_mode'; end if;
+  if coalesce(trim(p_topic), '') = '' or char_length(trim(p_topic)) > 140 then raise exception 'invalid_message'; end if;
+  if exists (select 1 from public.meetings where event_id = p_event and status in ('pending','rescheduled')
+             and ((requester_id = v_uid and invitee_id = p_invitee) or (requester_id = p_invitee and invitee_id = v_uid))) then
+    raise exception 'meeting_pending';
+  end if;
+  if (select count(*) from public.meetings where event_id = p_event and requester_id = v_uid and status = 'pending') >= 10 then raise exception 'too_many_requests'; end if;
+  perform public.check_meeting_slot(p_event, p_starts_at, p_duration, p_location_kind, p_spot, p_x, p_y);
+  if public.meeting_conflict(v_uid, p_starts_at, p_duration) then raise exception 'time_conflict'; end if;
+  insert into public.meetings (event_id, requester_id, invitee_id, topic, starts_at, duration_min, location_kind, spot_id, pin_x, pin_y, pin_label, proposed_by)
+  values (p_event, v_uid, p_invitee, trim(p_topic), p_starts_at, p_duration, p_location_kind,
+          case when p_location_kind = 'spot' then p_spot end,
+          case when p_location_kind = 'pin' then p_x end, case when p_location_kind = 'pin' then p_y end,
+          case when p_location_kind = 'pin' then nullif(left(trim(p_label), 60), '') end, v_uid)
+  returning * into v_row;
+  return v_row;
+end $$;
+
+-- Aceptar o rechazar (responde quien NO hizo la última propuesta). Al aceptar: valida cupo y agenda de los dos, abre el
+-- chat (conexión aceptada) y deja la reunión fijada en el chat. Si el lugar estaba "a definir", se puede elegir acá.
+create or replace function public.respond_meeting(p_meeting uuid, p_accept boolean, p_location_kind text default null, p_spot uuid default null,
+                                                  p_x double precision default null, p_y double precision default null, p_label text default null)
+returns public.meetings language plpgsql security definer set search_path = public, extensions as $$
+declare v_uid uuid := auth.uid(); v_m public.meetings; v_conn public.connections; v_spot text;
+begin
+  select * into v_m from public.meetings where id = p_meeting for update;
+  if v_m.id is null or v_uid not in (v_m.requester_id, v_m.invitee_id) then raise exception 'not_found'; end if;
+  if v_m.status not in ('pending','rescheduled') then raise exception 'final_status'; end if;
+  if v_m.proposed_by = v_uid then raise exception 'not_allowed'; end if;
+  if public.is_blocked(v_m.requester_id, v_m.invitee_id) then raise exception 'unavailable'; end if;
+  if not p_accept then
+    update public.meetings set status = 'declined', updated_at = now() where id = p_meeting returning * into v_m;
+    return v_m;
+  end if;
+  if v_m.location_kind = 'tbd' and p_location_kind is not null and p_location_kind <> 'tbd' then
+    v_m.location_kind := p_location_kind;
+    v_m.spot_id := case when p_location_kind = 'spot' then p_spot end;
+    v_m.pin_x := case when p_location_kind = 'pin' then p_x end;
+    v_m.pin_y := case when p_location_kind = 'pin' then p_y end;
+    v_m.pin_label := case when p_location_kind = 'pin' then nullif(left(trim(p_label), 60), '') end;
+  end if;
+  if v_m.starts_at + make_interval(mins => v_m.duration_min) <= now() then raise exception 'meeting_expired'; end if;
+  perform public.check_meeting_slot(v_m.event_id, greatest(v_m.starts_at, now()), v_m.duration_min, v_m.location_kind, v_m.spot_id, v_m.pin_x, v_m.pin_y, v_m.id);
+  if public.meeting_conflict(v_m.requester_id, v_m.starts_at, v_m.duration_min, v_m.id)
+     or public.meeting_conflict(v_m.invitee_id, v_m.starts_at, v_m.duration_min, v_m.id) then raise exception 'time_conflict'; end if;
+
+  -- Canal de chat: la conexión entre los dos queda aceptada (si había una pendiente, se acepta).
+  select * into v_conn from public.connections
+   where event_id = v_m.event_id and ((sender_id = v_m.requester_id and receiver_id = v_m.invitee_id) or (sender_id = v_m.invitee_id and receiver_id = v_m.requester_id))
+   order by (status = 'accepted') desc, created_at desc limit 1;
+  if v_conn.id is null then
+    insert into public.connections (event_id, sender_id, receiver_id, type, status, responded_at)
+    values (v_m.event_id, v_m.requester_id, v_m.invitee_id, 'regular', 'accepted', now()) returning * into v_conn;
+  elsif v_conn.status <> 'accepted' then
+    update public.connections set status = 'accepted', responded_at = now() where id = v_conn.id returning * into v_conn;
+  end if;
+
+  update public.meetings set status = 'accepted', location_kind = v_m.location_kind, spot_id = v_m.spot_id, pin_x = v_m.pin_x, pin_y = v_m.pin_y,
+         pin_label = v_m.pin_label, connection_id = v_conn.id, updated_at = now()
+   where id = p_meeting returning * into v_m;
+  select name into v_spot from public.venue_spots where id = v_m.spot_id;
+  insert into public.messages (event_id, conversation_type, connection_id, sender_id, message_type, content)
+  values (v_m.event_id, 'direct', v_conn.id, v_uid, 'system_alert',
+          '📅 Reunión confirmada · ' || to_char(v_m.starts_at at time zone 'America/Argentina/Buenos_Aires', 'HH24:MI') || ' · ' ||
+          coalesce(v_spot, v_m.pin_label, case when v_m.location_kind = 'pin' then 'Pin en el plano' else 'Lugar a definir' end));
+  return v_m;
+end $$;
+
+-- Reprogramar (cualquiera de los dos): nueva propuesta que la otra persona tiene que aceptar.
+create or replace function public.reschedule_meeting(p_meeting uuid, p_starts_at timestamptz, p_duration int, p_location_kind text default 'tbd',
+                                                     p_spot uuid default null, p_x double precision default null, p_y double precision default null, p_label text default null)
+returns public.meetings language plpgsql security definer set search_path = public, extensions as $$
+declare v_uid uuid := auth.uid(); v_m public.meetings;
+begin
+  select * into v_m from public.meetings where id = p_meeting for update;
+  if v_m.id is null or v_uid not in (v_m.requester_id, v_m.invitee_id) then raise exception 'not_found'; end if;
+  if v_m.status not in ('pending','accepted','rescheduled') then raise exception 'final_status'; end if;
+  if not public.lobby_is_open(v_m.event_id) then raise exception 'lobby_closed'; end if;
+  perform public.check_meeting_slot(v_m.event_id, p_starts_at, p_duration, p_location_kind, p_spot, p_x, p_y, v_m.id);
+  if public.meeting_conflict(v_uid, p_starts_at, p_duration, v_m.id) then raise exception 'time_conflict'; end if;
+  update public.meetings set status = 'rescheduled', proposed_by = v_uid, starts_at = p_starts_at, duration_min = p_duration,
+         location_kind = p_location_kind,
+         spot_id = case when p_location_kind = 'spot' then p_spot end,
+         pin_x = case when p_location_kind = 'pin' then p_x end, pin_y = case when p_location_kind = 'pin' then p_y end,
+         pin_label = case when p_location_kind = 'pin' then nullif(left(trim(p_label), 60), '') end, updated_at = now()
+   where id = p_meeting returning * into v_m;
+  return v_m;
+end $$;
+
+-- Cancelar (cualquiera de los dos, antes de que termine).
+create or replace function public.cancel_meeting(p_meeting uuid)
+returns public.meetings language plpgsql security definer set search_path = public, extensions as $$
+declare v_uid uuid := auth.uid(); v_m public.meetings;
+begin
+  select * into v_m from public.meetings where id = p_meeting for update;
+  if v_m.id is null or v_uid not in (v_m.requester_id, v_m.invitee_id) then raise exception 'not_found'; end if;
+  if v_m.status not in ('pending','accepted','rescheduled') then raise exception 'final_status'; end if;
+  update public.meetings set status = 'cancelled', updated_at = now() where id = p_meeting returning * into v_m;
+  return v_m;
+end $$;
+
 -- Permisos de ejecución
 revoke execute on all functions in schema public from anon;
 grant execute on all functions in schema public to authenticated;
@@ -2210,7 +2641,7 @@ declare t text;
 begin
   foreach t in array array['messages','map_pins','connections','squad_members','squads','blast_deliveries',
                            'user_perks_qrs','bar_orders','song_requests','raffles','event_attendees',
-                           'brands','squad_expenses','squad_settlements','profile_personas'] loop
+                           'brands','squad_expenses','squad_settlements','profile_personas','meetings','venue_spots'] loop
     begin
       execute format('alter publication supabase_realtime add table public.%I', t);
     exception when duplicate_object then null; when undefined_object then null;

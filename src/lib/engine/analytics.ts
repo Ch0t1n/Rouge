@@ -2,9 +2,9 @@
  * Métricas B2B para el panel del organizador, CRM y Pantalla LED.
  */
 import type { Gender, RougeState, UUID } from "@/lib/types";
-import { ageFrom } from "@/lib/utils";
 import { activePinOf, getEvent, getProfile, lineupNow, squadMembers, squadOf, topSongs } from "./selectors";
 import { faceOf, industryLabel, needLabel } from "./verticals";
+import { ageOf } from "./privacy";
 
 export type SmartTag = "top_spender" | "squad_leader" | "power_matcher";
 
@@ -66,7 +66,7 @@ export function crmRows(s: RougeState, eventId: UUID): CrmRow[] {
         full_name: p.full_name,
         username: p.username,
         phone: p.phone_normalized,
-        age: ageFrom(p.birth_date),
+        age: ageOf(p) ?? 0,
         gender: p.gender,
         music_genres: p.music_genres,
         company: pro?.company ?? "",
@@ -110,7 +110,8 @@ export function eventMetrics(s: RougeState, eventId: UUID, now = Date.now()) {
     squads: squads.length,
     usersInSquads: attendees.filter((a) => squadOf(s, eventId, a.user_id)).length,
     biggestSquad: biggest ? { name: biggest.squad.name, size: biggest.size } : null,
-    activePins: attendees.filter((a) => activePinOf(s, eventId, a.user_id, now)).length,
+    // En Supabase el equipo no ve los pines (privacidad): el conteo viene de event_stats.
+    activePins: statsFor(s, eventId)?.active_pins ?? attendees.filter((a) => activePinOf(s, eventId, a.user_id, now)).length,
     rescueAlerts: s.squad_members.filter((m) => m.safety_status === "rescue_needed" && squads.some((sq) => sq.id === m.squad_id)).length,
     barRevenue: orders.reduce((acc, o) => acc + o.total_amount, 0),
     openOrders: orders.filter((o) => o.status !== "completed").length,

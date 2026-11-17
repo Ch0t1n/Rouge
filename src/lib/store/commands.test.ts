@@ -12,6 +12,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSeedState, DEMO_IDS } from "@/lib/mock/seed";
 import type { RougeState } from "@/lib/types";
 import * as C from "./commands";
+import * as MT from "@/lib/engine/meetings";
 import type { Command } from "./commands";
 
 const SQL = readFileSync(path.resolve(__dirname, "../../../supabase/schema.sql"), "utf8");
@@ -119,6 +120,10 @@ describe("contrato comandos ↔ schema.sql", () => {
     expect(TABLES.get("events")?.has("kind")).toBe(true);
     expect(TABLES.get("profile_personas")?.has("looking_for")).toBe(true);
     expect(FUNCS.get("delete_persona")).toEqual(["p_persona"]);
+    expect(FUNCS.get("profile_cards")).toEqual(["p_ids"]);
+    expect(FUNCS.get("request_meeting")).toContain("p_location_kind");
+    expect(TABLES.get("meetings")?.has("proposed_by")).toBe(true);
+    expect(TABLES.get("b2b_leads")?.has("attendees")).toBe(true);
   });
 
   const s0 = () => createSeedState(NOW);
@@ -130,6 +135,8 @@ describe("contrato comandos ↔ schema.sql", () => {
     return r.state;
   };
   const squadRule = s0().perk_rules[0];
+  /** Un horario libre del evento (franjas de 15 min; `skip` saltea las primeras). */
+  const slotIn = (s: RougeState, eventId: string, skip = 1) => MT.meetingSlots(s.events.find((e) => e.id === eventId)!, NOW, 30).filter((x) => !x.now)[skip].value;
   const readyOrder = () => {
     let s = s0();
     const o = C.createBarOrder(EV, ME, [{ itemId: "gin", qty: 1 }], "fast_pickup").local(s);
@@ -219,6 +226,18 @@ describe("contrato comandos ↔ schema.sql", () => {
     ["upsertPersona (noche)", () => runRemote(C.upsertPersona(ME, { kind: "nightlife", label: "Techno", music_genres: ["Techno"] }), s0())],
     ["deletePersona", () => { const r = C.upsertPersona(ME, { kind: "nightlife", label: "Otro", music_genres: ["House"] }).local(s0()); const s = (r as { state: RougeState; data: { id: string } }); return runRemote(C.deletePersona(ME, s.data.id), s.state); }],
     ["upsertEvent (corporativo nuevo)", () => runRemote(C.upsertEvent({ kind: "corporate", name: "Encuentro Exportadores", starts_at: new Date(NOW + 72e5).toISOString(), ends_at: new Date(NOW + 9e6).toISOString() }), s0())],
+    // [v1.8] Privacidad, reuniones y salas
+    ["updatePrivacySettings", () => runRemote(C.updatePrivacySettings(ME, { incognito_default: true, pro_details_after_meeting: true }), s0())],
+    ["requestMeeting (sala)", () => { const s = s0(); const at = slotIn(s, DEMO_IDS.proEvent); return runRemote(C.requestMeeting(DEMO_IDS.proEvent, id(24), id(25), { topic: "Mentoría", startsAt: at, duration: 30, location: { kind: "spot", spotId: id(18001) } }), s, { request_meeting: { id: id(77) } }); }],
+    ["requestMeeting (pin)", () => { const s = s0(); return runRemote(C.requestMeeting(EV, id(2), id(11), { topic: "Patio", startsAt: slotIn(s, EV), duration: 15, location: { kind: "pin", x: 14, y: 70, label: "Fogón" } }), s, { request_meeting: { id: id(78) } }); }],
+    ["respondMeeting (aceptar con lugar)", () => runRemote(C.respondMeeting(id(19003), id(8), true, { kind: "spot", spotId: id(18005) }), s0(), { respond_meeting: { id: id(19003) } })],
+    ["respondMeeting (rechazar)", () => runRemote(C.respondMeeting(id(19001), ME, false), s0(), { respond_meeting: { id: id(19001) } })],
+    ["rescheduleMeeting", () => { const s = s0(); const later = slotIn(s, DEMO_IDS.proEvent, 4); return runRemote(C.rescheduleMeeting(id(19002), ME, { startsAt: later, duration: 15, location: { kind: "tbd" } }), s, { reschedule_meeting: {} }); }],
+    ["cancelMeeting", () => runRemote(C.cancelMeeting(id(19002), ME), s0(), { cancel_meeting: {} })],
+    ["upsertVenueSpot (nuevo)", () => runRemote(C.upsertVenueSpot(DEMO_IDS.proEvent, { name: "Sala 9", kind: "room", capacity: 2, coord_x: 50, coord_y: 50 }), st())],
+    ["upsertVenueSpot (edición)", () => runRemote(C.upsertVenueSpot(DEMO_IDS.proEvent, { ...s0().venue_spots[0], is_active: false }), st())],
+    ["deleteVenueSpot", () => runRemote(C.deleteVenueSpot(DEMO_IDS.proEvent, id(18001)), st())],
+    ["upsertEvent (solo acreditados)", () => runRemote(C.upsertEvent({ ...s0().events[1], networking_checkin_only: true }), st())],
     ["deleteEvent", () => { const r = C.duplicateEvent(EV, new Date(NOW + 7 * 86_400_000).toISOString()).local(st()); const s = (r as { state: RougeState; data: { event: { id: string } } }); return runRemote(C.deleteEvent(s.data.event.id), s.state); }],
   ];
 
@@ -302,7 +321,17 @@ describe("contrato del cargador (fetchRemoteState) ↔ schema.sql", () => {
       },
       rpc: (fn: string, args: Record<string, unknown> = {}) => {
         reads.push({ rpc: fn, args, filters: [] });
-        const data = fn === "my_profile" ? [{ ...seed.profiles.find((p) => p.id === ME) }] : fn === "event_crm" ? [{ user_id: id(5), phone: "+5491150001005" }] : [];
+        const ids = (args.p_ids as string[] | undefined) ?? [];
+        const data =
+          fn === "my_profile"
+            ? [{ ...seed.profiles.find((p) => p.id === ME) }]
+            : fn === "event_crm"
+              ? [{ user_id: id(5), phone: "+5491150001005" }]
+              : fn === "profile_cards"
+                ? seed.profiles.filter((p) => ids.includes(p.id)).map(({ birth_date: _b, phone_normalized: _p, ...rest }) => ({ ...rest, age: 30 }))
+                : fn === "my_attendances"
+                  ? seed.event_attendees.filter((a) => a.user_id === ME)
+                  : [];
         return { then: (res: (v: { data: unknown; error: null }) => unknown) => Promise.resolve({ data, error: null }).then(res), catch: () => undefined };
       },
     } as unknown as SupabaseClient;
@@ -319,8 +348,12 @@ describe("contrato del cargador (fetchRemoteState) ↔ schema.sql", () => {
       if (r.select && r.select !== "*") for (const c of r.select.split(",")) expect(cols, `${r.table}.${c}`).toContain(c);
       for (const f of r.filters) expect(cols, `${r.table}.${f} (filtro)`).toContain(f);
     }
-    // El teléfono nunca se pide en el select de profiles (column privileges)
-    expect(reads.find((r) => r.table === "profiles")?.select).not.toMatch(/phone/);
+    // [v1.8] Los perfiles de otros nunca se leen por tabla: solo tarjetas saneadas (profile_cards, sin teléfono ni fecha).
+    expect(reads.some((r) => r.table === "profiles")).toBe(false);
+    expect(reads.some((r) => r.rpc === "profile_cards")).toBe(true);
+    // Las columnas privadas de la asistencia no se piden por tabla.
+    for (const r of reads.filter((x) => x.table === "event_attendees")) expect(r.select).not.toMatch(/total_spent|checked_in_at|referred_by|joined_via|visited_sectors|\*/);
+    expect(snap.state.profiles.find((p) => p.id === id(5))?.birth_date).toBeNull();
     expect(snap.isStaff).toBe(true); // created_by = yo
     expect(snap.state.active_event_id).toBe(EV);
     expect(snap.state.profiles.find((p) => p.id === ME)?.phone_normalized).toBe(seed.profiles.find((p) => p.id === ME)?.phone_normalized);

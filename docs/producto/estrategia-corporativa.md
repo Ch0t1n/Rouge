@@ -139,10 +139,10 @@ de barra pesa poco, porque el catering suele estar incluido. Los ingresos extra 
 
 | # | Pendiente | Por qué | Esfuerzo |
 |---|---|---|---|
-| 1 | **Perfil principal privado por contexto (RLS de `profiles`)** | Hoy cualquier usuario con sesión puede leer el Perfil principal de otro por la API (política previa a v1.7). La app nunca lo muestra en un evento corporativo, pero alguien técnico podría verlo. Hay que restringir `profiles_select` a quienes comparten un evento donde se usó esa cara, el equipo o un contacto. | M |
-| 2 | **Pedir reunión con horario y lugar** (sala de reuniones o mesa de la ronda) | Es la función más fuerte de Brella y Grip; hoy la Presentación es un mensaje. | M |
+| ~~1~~ | ✅ **v1.8 — Perfil principal privado por contexto.** `profiles` solo legible por su dueño/a; los demás ven tarjetas saneadas (`profile_cards`) y perfiles profesionales saneados (`persona_cards`). | — |
+| ~~2~~ | ✅ **v1.8 — Reuniones 1 a 1 con sala, mesa o pin**, agenda "Mis reuniones", salas con cupo y chat al aceptar. | — |
 | 3 | **Facturación ARCA (factura A)** | Las empresas la exigen para pagar. | M |
-| 4 | **Landing `/empresas`** (tercera audiencia de la landing) | Para vender ROUGE Pro a cámaras, asociaciones y agencias. | S |
+| ~~4~~ | ✅ **v1.8 — Página `/empresas`** con estimador de planes y formulario de leads (`/api/leads` → `b2b_leads` + webhook al equipo comercial). | — |
 | 5 | **Modo claro** para eventos corporativos | Más sobrio y mejor para salones con luz de día. | S–M |
 | 6 | **Preguntas al orador** con votos (reusar los pedidos de temas) | Reemplaza "Pedir tema" en la Agenda. | S |
 | 7 | **Login con Google Workspace / Microsoft** | SSO para empresas grandes. | M |

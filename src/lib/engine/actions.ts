@@ -41,7 +41,10 @@ import type {
 } from "@/lib/types";
 import { addMs, minutes, normalizePhone, shortCode, uid } from "@/lib/utils";
 import { PRO_VENUE_LAYOUT, VENUE_LAYOUT } from "@/lib/mock/seed";
+import { PIN_SQUAD_ONLY, privacyOf } from "./privacy";
 import {
+  canSeeAttendee,
+  networkingOpenFor,
   activePinOf,
   connectionBetween,
   getAttendee,
@@ -190,7 +193,7 @@ export function upsertProfile(state: RougeState, userId: UUID, input: ProfileInp
     input = { ...input, full_name: name };
   }
   if (input.birth_date !== undefined) {
-    const err = checkBirthDate(input.birth_date, new Date(now));
+    const err = checkBirthDate(input.birth_date ?? "", new Date(now));
     if (err) return fail(err);
   }
   if (input.photos && input.photos.length > MAX_PHOTOS) return fail(`Máximo ${MAX_PHOTOS} fotos.`);
@@ -501,7 +504,8 @@ export function joinEvent(
       user_id: userId,
       mood_tag: mood,
       persona_id: personaId,
-      ghost_mode: false,
+      // Ajustes de privacidad: entrar en modo incógnito (fuera de la grilla) si la persona lo eligió.
+      ghost_mode: privacyOf(state, userId).incognito_default,
       visited_sectors: [],
       only_liked_can_icebreak: false,
       icebreaker_used: false,
@@ -568,8 +572,13 @@ function validatePair(state: RougeState, eventId: UUID, senderId: UUID, receiver
   if (sender.ghost_mode) return fail("Estás en Modo Solo Amigos. Desactivalo para conectar con gente nueva.");
   const receiver = getAttendee(state, eventId, receiverId);
   if (!receiver || isBlockedBetween(state, senderId, receiverId)) return fail(UNAVAILABLE);
+  // Networking solo para acreditados (si el evento lo pide) y solo con quien puedo ver (⇔ checkin_required / unavailable).
+  if (!networkingOpenFor(state, eventId, senderId)) return fail(CHECKIN_REQUIRED);
+  if (!canSeeAttendee(state, eventId, senderId, receiverId)) return fail(UNAVAILABLE);
   return null;
 }
+
+export const CHECKIN_REQUIRED = "En este evento el networking es para quienes ya se acreditaron en la puerta.";
 
 export function sendConnection(
   state: RougeState,
@@ -975,6 +984,7 @@ export function dropPin(state: RougeState, eventId: UUID, userId: UUID, input: D
   if (input.x < 0 || input.x > 100 || input.y < 0 || input.y > 100) return fail("Ubicación fuera del plano.");
   const sq = squadOf(state, eventId, userId);
   const shareWithSquad = input.shareWithSquad && !!sq;
+  if (input.matchIds.length && !privacyOf(state, userId).pin_share_matches) return fail(PIN_SQUAD_ONLY);
   const matchIds = [...new Set(input.matchIds)].filter((id) => isMatch(state, eventId, userId, id) && !isBlockedBetween(state, userId, id));
   if (!shareWithSquad && matchIds.length === 0) return fail("Elegí con quién compartir tu pin.");
 
@@ -1425,6 +1435,7 @@ export function upsertEvent(state: RougeState, input: Partial<RougeEvent> & Pick
   const base: RougeEvent = existing ?? {
     id: uid(),
     kind: "nightlife",
+    networking_checkin_only: false,
     slug,
     name: input.name,
     description: "",
