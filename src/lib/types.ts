@@ -754,6 +754,8 @@ export interface RougeState {
   platform_admin_ids: UUID[];
   /** Listas / lotes de ingreso del evento (free con horario límite). */
   ticket_lists: TicketList[];
+  /** Consola global (solo administradores de ROUGE en Supabase): tablero y matriz calculados en el servidor. */
+  superadmin?: { events: import("@/lib/engine/superadmin").GlobalEventRow[]; staff: import("@/lib/engine/superadmin").GlobalStaffRow[] } | null;
   /** Base de clientes de MI organización (dueño/a, producción): CRM para campañas. Supabase: RPC org_contacts. */
   org_contacts?: OrgContact[];
   campaigns?: Campaign[];

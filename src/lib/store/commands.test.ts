@@ -230,6 +230,11 @@ describe("contrato comandos ↔ schema.sql", () => {
     ["setPromoterScheme", () => runRemote(C.setPromoterScheme(s0().promoter_links[0].id, { ticket_price: 10000, tiers: [{ from: 1, percent: 15 }, { from: 31, percent: 20 }], bar_percent: 5 }), st())],
     ["createCampaign", () => runRemote(C.createCampaign(EV, { name: "Cumples", segment: "birthdays_week", template: "Hola {nombre}", benefit: "un trago" }), st())],
     ["markContacted", () => { const r = C.createCampaign(EV, { name: "VIP", segment: "vip_spenders", template: "Hola {nombre}", benefit: "" }).local(st()); const s = (r as { state: RougeState; data: { id: string } }); return runRemote(C.markContacted(s.data.id, ME, true), s.state); }],
+    ["saCheckIn", () => runRemote(C.saCheckIn(EV, id(8)), { ...s0(), current_user_id: DEMO_IDS.platformAdmin })],
+    ["saHideFromLobby", () => runRemote(C.saHideFromLobby(EV, id(8)), { ...s0(), current_user_id: DEMO_IDS.platformAdmin })],
+    ["saRemoveAttendee", () => runRemote(C.saRemoveAttendee(EV, id(8), true), { ...s0(), current_user_id: DEMO_IDS.platformAdmin })],
+    ["saRevokeCode", () => runRemote(C.saRevokeCode(s0().event_invite_codes[11].id), { ...s0(), current_user_id: DEMO_IDS.platformAdmin })],
+    ["saRevokeStaff", () => runRemote(C.saRevokeStaff(DEMO_IDS.organizer, DEMO_IDS.doorScanner), { ...s0(), current_user_id: DEMO_IDS.platformAdmin }, { sa_revoke_staff: 1 })],
     ["deleteAccount", () => runRemote(C.deleteAccount("@" + s0().profiles.find((p) => p.id === ME)!.username), s0())],
   ];
 

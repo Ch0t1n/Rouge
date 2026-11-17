@@ -8,7 +8,7 @@
 import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 import type { BarMenuItem, Profile, RougeEvent, RougeState, UUID } from "@/lib/types";
 import { lobbyPhase } from "@/lib/engine/selectors";
-import { assignmentCovers, withinAccessWindow } from "@/lib/engine/roles";
+import { assignmentCovers, PLATFORM_ROLE, withinAccessWindow } from "@/lib/engine/roles";
 import { BAR_MENU, STATE_VERSION } from "@/lib/mock/seed";
 
 /** Columnas legibles de `profiles` (el teléfono NO: column privileges). */
@@ -213,6 +213,15 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
     audit_log: audit,
     user_reports: reports,
     platform_admin_ids: platformAdmin ? [userId] : [],
+    superadmin: platformAdmin
+      ? await sb.rpc("superadmin_snapshot").then(
+          (r) => {
+            const d = r.data as NonNullable<RougeState["superadmin"]> | null;
+            return d ? { events: d.events, staff: d.staff.map((x) => ({ ...x, platform: PLATFORM_ROLE[x.role], active_now: !x.revoked_at })) } : null;
+          },
+          () => null,
+        )
+      : null,
     ticket_lists: lists.map((l) => ({ ...l, late_price: Number(l.late_price) })),
     qr_secrets: qrSecrets,
     org_contacts: orgContacts.map((c) => ({ ...c, total_spent: Number(c.total_spent) })),

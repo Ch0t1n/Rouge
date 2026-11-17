@@ -2405,6 +2405,97 @@ create policy campaign_contacts_rw on public.campaign_contacts for all to authen
   using (exists (select 1 from public.campaigns c where c.id = campaign_id and public.is_event_manager(c.event_id)))
   with check (exists (select 1 from public.campaigns c where c.id = campaign_id and public.is_event_manager(c.event_id)));
 
+-- [v1.7] CONSOLA GLOBAL (/superadmin): solo administradores de ROUGE (platform_admins). Espejo de engine/superadmin.ts.
+create or replace function public.superadmin_snapshot()
+returns jsonb language plpgsql stable security definer set search_path = public, extensions as $$
+begin
+  if not public.is_platform_admin() then raise exception 'forbidden'; end if;
+  return jsonb_build_object(
+    'events', (select coalesce(jsonb_agg(row_to_json(x) order by (x.phase = 'live') desc, x.inside desc), '[]'::jsonb) from (
+      select e.id as event_id, e.name, e.venue_name as venue, coalesce(o.full_name, '—') as organization,
+             case when now() < e.lobby_opens_at then 'upcoming' when now() >= e.lobby_expires_at then 'expired' when now() between e.starts_at and e.ends_at then 'live' else 'open' end as phase,
+             (select count(distinct coalesce(a.user_id::text, c.id::text)) from public.event_invite_codes c full join public.event_attendees a on a.user_id = c.used_by_user_id and a.event_id = c.event_id
+               where (c.event_id = e.id and c.checked_in_at is not null) or (a.event_id = e.id and a.checked_in_at is not null)) as inside,
+             greatest((select count(*) from public.event_invite_codes c where c.event_id = e.id and c.revoked_at is null), (select count(*) from public.event_attendees a where a.event_id = e.id)) as sold,
+             e.max_capacity as capacity,
+             (select coalesce(sum(l.late_price), 0) from public.event_invite_codes c join public.ticket_lists l on l.id = c.list_id where c.event_id = e.id and c.late_paid_at is not null) as door_revenue,
+             (select coalesce(sum(b.total_amount), 0) from public.bar_orders b where b.event_id = e.id and b.payment_status <> 'awaiting_payment') as bar_revenue,
+             (select count(*) from public.event_staff s where s.event_id = e.id) + 1 as staff_active,
+             (select count(*) from public.squad_members m join public.squads q on q.id = m.squad_id where q.event_id = e.id and m.safety_status = 'rescue_needed') as rescue_alerts,
+             (select count(*) from public.user_reports r where r.event_id = e.id and r.status = 'open') as open_reports
+      from public.events e left join public.profiles o on o.id = e.created_by
+      where e.lobby_expires_at > now() - interval '30 days') x),
+    'staff', (select coalesce(jsonb_agg(row_to_json(y)), '[]'::jsonb) from (
+      select a.organization_id, coalesce(o.full_name, '—') as organization, a.user_id, a.role, 'assignment' as source, a.scope, a.event_ids,
+             a.access_window, a.revoked_at, exists (select 1 from public.terminal_pins t where t.organization_id = a.organization_id and t.user_id = a.user_id) as has_pin
+      from public.staff_assignments a left join public.profiles o on o.id = a.organization_id
+      union all
+      select e.created_by, coalesce(o.full_name, '—'), s.user_id, s.role, 'event', 'specific_events', array_agg(s.event_id), false, null,
+             exists (select 1 from public.terminal_pins t where t.organization_id = e.created_by and t.user_id = s.user_id)
+      from public.event_staff s join public.events e on e.id = s.event_id left join public.profiles o on o.id = e.created_by
+      group by e.created_by, o.full_name, s.user_id, s.role) y));
+end $$;
+
+create or replace function public.superadmin_search(p_q text)
+returns table (user_id uuid, full_name text, username text, event_id uuid, event_name text, checked_in_at timestamptz, visible_in_lobby boolean, bar_spent numeric, squad text, banned boolean, code_id uuid)
+language sql stable security definer set search_path = public, extensions as $$
+  select p.id, p.full_name, p.username, e.id, e.name, a.checked_in_at,
+         not a.ghost_mode and (not e.require_checkin_for_lobby or a.checked_in_at is not null), a.total_spent,
+         (select q.name from public.squads q join public.squad_members m on m.squad_id = q.id where q.event_id = e.id and m.user_id = p.id and m.status = 'joined' limit 1),
+         exists (select 1 from public.event_bans b where b.event_id = e.id and b.user_id = p.id),
+         (select c.id from public.event_invite_codes c where c.event_id = e.id and c.used_by_user_id = p.id limit 1)
+  from public.event_attendees a join public.profiles p on p.id = a.user_id join public.events e on e.id = a.event_id
+  where public.is_platform_admin() and char_length(trim(p_q)) >= 2
+    and (p.full_name ilike '%' || trim(p_q) || '%' or p.username ilike '%' || ltrim(trim(p_q), '@') || '%'
+         or exists (select 1 from public.event_invite_codes c where c.event_id = e.id and c.used_by_user_id = p.id and upper(c.code) = upper(trim(p_q))))
+  order by e.starts_at desc limit 30;
+$$;
+
+create or replace function public.sa_check_in(p_event uuid, p_user uuid) returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if not public.is_platform_admin() then raise exception 'forbidden'; end if;
+  update public.event_attendees set checked_in_at = now(), checked_in_terminal = 'ROUGE HQ' where event_id = p_event and user_id = p_user and checked_in_at is null;
+  if not found then raise exception 'not_allowed'; end if;
+  perform public.write_audit((select created_by from public.events where id = p_event), p_event, 'door.check_in', p_user::text, '{"by":"superadmin"}'::jsonb);
+end $$;
+
+create or replace function public.sa_hide_from_lobby(p_event uuid, p_user uuid) returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if not public.is_platform_admin() then raise exception 'forbidden'; end if;
+  update public.event_attendees set ghost_mode = true where event_id = p_event and user_id = p_user;
+  perform public.write_audit((select created_by from public.events where id = p_event), p_event, 'attendee.removed', p_user::text, '{"hidden_from_lobby":true}'::jsonb);
+end $$;
+
+create or replace function public.sa_remove_attendee(p_event uuid, p_user uuid, p_ban boolean default false) returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if not public.is_platform_admin() then raise exception 'forbidden'; end if;
+  delete from public.squad_members m using public.squads q where q.id = m.squad_id and q.event_id = p_event and m.user_id = p_user;
+  delete from public.map_pins where event_id = p_event and user_id = p_user;
+  delete from public.event_attendees where event_id = p_event and user_id = p_user;
+  if p_ban then insert into public.event_bans (event_id, user_id, banned_by, reason) values (p_event, p_user, auth.uid(), 'ROUGE HQ') on conflict do nothing; end if;
+  perform public.write_audit((select created_by from public.events where id = p_event), p_event, 'attendee.removed', p_user::text, jsonb_build_object('ban', p_ban, 'by', 'superadmin'));
+end $$;
+
+create or replace function public.sa_revoke_code(p_code uuid) returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if not public.is_platform_admin() then raise exception 'forbidden'; end if;
+  update public.event_invite_codes set revoked_at = now() where id = p_code and revoked_at is null;
+end $$;
+
+create or replace function public.sa_revoke_staff(p_org uuid, p_user uuid) returns int language plpgsql security definer set search_path = public, extensions as $$
+declare v_a int; v_s int;
+begin
+  if not public.is_platform_admin() then raise exception 'forbidden'; end if;
+  update public.staff_assignments set revoked_at = now() where organization_id = p_org and user_id = p_user and revoked_at is null;
+  get diagnostics v_a = row_count;
+  delete from public.event_staff es using public.events e where e.id = es.event_id and e.created_by = p_org and es.user_id = p_user and es.user_id <> e.created_by;
+  get diagnostics v_s = row_count;
+  delete from public.terminal_pins where organization_id = p_org and user_id = p_user;
+  if v_a + v_s = 0 then raise exception 'not_staff'; end if;
+  perform public.write_audit(p_org, null, 'staff.revoked', p_user::text, jsonb_build_object('by', 'superadmin', 'removed', v_a + v_s));
+  return v_a + v_s;
+end $$;
+
 -- RLS de listas: gestor (dueño/a, producción) administra; puerta las ve.
 alter table public.event_secrets enable row level security;
 alter table public.ticket_lists  enable row level security;

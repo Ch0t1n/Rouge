@@ -5,7 +5,7 @@
 import { DEMO_IDS } from "@/lib/mock/seed";
 import type { UUID } from "@/lib/types";
 
-export type DemoRole = "asistente" | "amiga" | "duena" | "produccion" | "barra" | "mozo" | "seguridad" | "rrpp";
+export type DemoRole = "asistente" | "amiga" | "duena" | "produccion" | "barra" | "mozo" | "seguridad" | "rrpp" | "puerta" | "hq";
 
 export const DEMO_ROLES: Record<DemoRole, { id: UUID; name: string; label: string; emoji: string; home: string; side: "phone" | "panel" }> = {
   asistente: { id: DEMO_IDS.me, name: "Sofía", label: "Asistente", emoji: "✨", home: "/app", side: "phone" },
@@ -16,6 +16,8 @@ export const DEMO_ROLES: Record<DemoRole, { id: UUID; name: string; label: strin
   mozo: { id: DEMO_IDS.waiter, name: "Tomás", label: "Mozo", emoji: "🛵", home: "/ops/bar", side: "panel" },
   seguridad: { id: DEMO_IDS.security, name: "Marta", label: "Seguridad", emoji: "🛡️", home: "/ops/door", side: "panel" },
   rrpp: { id: DEMO_IDS.promoter, name: "Victoria", label: "RRPP", emoji: "📣", home: "/admin/rrpp", side: "panel" },
+  puerta: { id: DEMO_IDS.doorScanner, name: "Nicolás", label: "Puerta (invitado por link)", emoji: "🚪", home: "/ops/door", side: "panel" },
+  hq: { id: DEMO_IDS.platformAdmin, name: "ROUGE HQ", label: "Consola global", emoji: "🛰️", home: "/superadmin", side: "panel" },
 };
 
 export interface DemoStep {

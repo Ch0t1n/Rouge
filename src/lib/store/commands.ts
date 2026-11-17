@@ -24,6 +24,7 @@ import * as S from "@/lib/engine/security";
 import * as SC from "@/lib/engine/scan";
 import * as DO from "@/lib/engine/doorOffline";
 import * as CP from "@/lib/engine/campaigns";
+import * as SA from "@/lib/engine/superadmin";
 
 export interface Command<T> {
   name: string;
@@ -917,4 +918,39 @@ export const markContacted = (campaignId: UUID, userId: UUID, contacted: boolean
     if (row) must(await sb.from("campaign_contacts").upsert({ campaign_id: row.campaign_id, user_id: row.user_id, contacted_at: row.contacted_at, contacted_by: row.contacted_by }));
     else must(await sb.from("campaign_contacts").delete().eq("campaign_id", campaignId).eq("user_id", userId));
   },
+});
+
+// ── Consola global (solo administradores de ROUGE) ───────────────────
+
+export const saCheckIn = (eventId: UUID, userId: UUID): Command<undefined> => ({
+  name: "saCheckIn",
+  local: (s) => SA.saCheckIn(s, s.current_user_id, eventId, userId),
+  remote: async (sb) => void (await rpc(sb, "sa_check_in", { p_event: eventId, p_user: userId })),
+});
+
+export const saHideFromLobby = (eventId: UUID, userId: UUID): Command<undefined> => ({
+  name: "saHideFromLobby",
+  local: (s) => SA.saHideFromLobby(s, s.current_user_id, eventId, userId),
+  remote: async (sb) => void (await rpc(sb, "sa_hide_from_lobby", { p_event: eventId, p_user: userId })),
+});
+
+export const saRemoveAttendee = (eventId: UUID, userId: UUID, ban: boolean): Command<{ banned: boolean }> => ({
+  name: "saRemoveAttendee",
+  local: (s) => SA.saRemoveAttendee(s, s.current_user_id, eventId, userId, ban),
+  remote: async (sb, d) => {
+    await rpc(sb, "sa_remove_attendee", { p_event: eventId, p_user: userId, p_ban: ban });
+    return d;
+  },
+});
+
+export const saRevokeCode = (codeId: UUID): Command<undefined> => ({
+  name: "saRevokeCode",
+  local: (s) => SA.saRevokeCode(s, s.current_user_id, codeId),
+  remote: async (sb) => void (await rpc(sb, "sa_revoke_code", { p_code: codeId })),
+});
+
+export const saRevokeStaff = (orgId: UUID, userId: UUID): Command<{ removed: number }> => ({
+  name: "saRevokeStaff",
+  local: (s) => SA.saRevokeStaff(s, s.current_user_id, orgId, userId),
+  remote: async (sb) => ({ removed: await rpc<number>(sb, "sa_revoke_staff", { p_org: orgId, p_user: userId }) }),
 });
