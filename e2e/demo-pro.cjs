@@ -1,4 +1,4 @@
-// Demo · ROUGE Pro v1.8: privacidad por contexto, reuniones con sala/pin y la página /empresas (con la API de leads).
+// Demo · ROUGE PRO: privacidad por contexto, reuniones con sala/pin y la página /pro (switch, modal, pestañas, simulador, leads).
 const { chromium } = require("playwright");
 const { BASE: B, OUT: SP } = require("./env.cjs");
 const log = (...a) => console.log(...a);
@@ -54,19 +54,41 @@ const assert = (c, m) => { if (!c) throw new Error("✘ " + m); log("✔ " + m);
   await ph.waitForSelector("text=Tu ubicación: solo tu Squad");
   assert(await ph.locator("#pin-squad-only[aria-checked=true]").count(), "pin solo para el Squad (ajuste guardado)");
 
-  // ── /empresas: estimador y formulario ─────────────────────────────
-  const web = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage(); watch(web, "empresas");
+  // ── ROUGE PRO (/pro): switch desde la landing, modal de demo, pestañas, simulador y API de leads ──
+  const home = await (await browser.newContext({ viewport: { width: 1280, height: 860 } })).newPage(); watch(home, "home");
+  await home.goto(`${B}/`, { waitUntil: "networkidle" });
+  await home.click('nav[aria-label="Modo de ROUGE"] >> text=PRO');
+  await home.waitForURL("**/pro");
+  assert(await home.isVisible("text=El sistema operativo para eventos corporativos"), "el switch Nightlife ⇄ PRO del header lleva a /pro");
+  const web = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage(); watch(web, "pro");
   await web.goto(`${B}/empresas`, { waitUntil: "networkidle" });
-  assert(await web.isVisible("text=Agendar demo / Cotizar evento"), "/empresas: hero con CTA principal");
-  assert((await web.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)) <= 0, "/empresas: sin scroll horizontal en el celular");
-  await web.locator("#attendees-range").fill("9");
-  assert(await web.locator("article:has-text('Enterprise') >> text=Recomendado").count(), "estimador: +5.000 asistentes recomienda Enterprise");
-  await web.click('a:has-text("Cotizar Enterprise")');
-  await web.click('form button[type="submit"]');
-  assert(await web.isVisible("text=Contanos tu nombre."), "el formulario valida antes de enviar");
+  assert(web.url().endsWith("/pro"), "/empresas redirige a /pro");
+  assert((await web.title()).startsWith("ROUGE PRO | Plataforma Integral"), "/pro: metadata con el título ejecutivo");
+  // Modal de demo desde el navbar: valida antes de enviar y cierra con Escape
+  await web.click('header button:has-text("Solicitar Demo")');
+  const dialog = web.locator('[role="dialog"]');
+  await dialog.waitFor();
+  await dialog.locator('button[type="submit"]').click();
+  assert(await dialog.locator("text=Contanos tu nombre.").isVisible(), "el modal de demo valida antes de enviar");
+  await web.keyboard.press("Escape");
+  assert((await dialog.count()) === 0, "el modal se cierra con Escape");
+  // Pestañas de casos de uso con teclado
+  await web.click('[role="tab"]:has-text("Congresos y cumbres")');
+  await web.keyboard.press("ArrowRight");
+  assert(await web.locator('[role="tab"][aria-selected="true"]:has-text("Ferias y exposiciones")').count(), "casos de uso: pestañas navegables con flechas");
+  // Simulador: cambiar de momento actualiza el embudo
+  await web.click('[role="radio"]:has-text("09:00 · Apertura")');
+  assert(await web.locator("#simulador >> text=142").count(), "el simulador del organizador se actualiza por momento");
+  // Tablero de salas: una sala ocupada no se puede reservar
+  await web.click('button[aria-label="Directorio A 15:00: ocupada"]');
+  assert(await web.isVisible("text=el sistema no permite la doble reserva"), "tablero de salas: sin doble reserva");
   const r = await web.request.post(`${B}/api/leads`, { data: { name: "A", company: "", email: "x", event_type: "boda", attendees: 1 } });
   assert(r.status() === 422, "la API de leads rechaza datos inválidos (422)");
-  await web.screenshot({ path: `${SP}/empresas-mobile.png`, fullPage: true });
+  // Celular: sin scroll horizontal
+  const mob = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage(); watch(mob, "pro-mobile");
+  await mob.goto(`${B}/pro`, { waitUntil: "networkidle" });
+  assert((await mob.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)) <= 0, "/pro: sin scroll horizontal en el celular");
+  await mob.screenshot({ path: `${SP}/pro-mobile.png`, fullPage: true });
 
   assert(errors.length === 0, `sin errores de consola${errors.length ? ": " + errors.join(" | ") : ""}`);
   await browser.close();

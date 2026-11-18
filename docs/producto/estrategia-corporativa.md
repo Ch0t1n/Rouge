@@ -49,9 +49,10 @@ Todo lo que cambia entre las dos verticales vive en un solo archivo, `src/lib/en
 | Afinidad de la grilla | Musical (géneros en común) | **De negocio**: cruza lo que cada uno busca con lo que el otro ofrece, más el rubro |
 | Filtros de la grilla | Géneros | Qué ofrecen |
 | Vocabulario | Lobby, Match, Rompehielos, Squad, Line-up, Barra Express, Modo Solo Amigos | Networking, Contacto, Presentación, Equipo, Agenda, Barra y catering, Modo Solo Contactos |
-| Se apagan | — | Trago de regalo, pedidos al DJ, sorteo por género, RRPP, edad, Instagram y loop en la cara pública |
+| Se apagan | — | Trago de regalo, pedidos al DJ, sorteo por género, RRPP, edad, Instagram y loop en la cara pública; **Rescate y "Llegué a casa"** (v1.10) |
+| Equipos | Cada asistente arma su Squad e invita | **Los arma la organización** (v1.10): crea equipos, suma o mueve personas y comparte el link de cada uno |
 | Menú y plano base | Tragos y botellas; pista, cabina, VIP | Café y catering; auditorio, stands, salas de reunión, coffee |
-| Se mantienen | Todo | Plano y pines, Equipo con Rescate y Llegué a casa, barra con cobro, perks, sorteos, avisos, LED, CRM, puerta, API |
+| Se mantienen | Todo | Plano y pines, Equipo (chat y punto de encuentro), barra con cobro, perks, sorteos, avisos, LED, CRM, puerta, API |
 
 - El tipo se elige al crear el evento (*Eventos y accesos → Tipo de evento*). **No cambia una vez que entró alguien**:
   la regla está en el motor y en el trigger `events_kind_locked`.
@@ -142,7 +143,8 @@ de barra pesa poco, porque el catering suele estar incluido. Los ingresos extra 
 | ~~1~~ | ✅ **v1.8 — Perfil principal privado por contexto.** `profiles` solo legible por su dueño/a; los demás ven tarjetas saneadas (`profile_cards`) y perfiles profesionales saneados (`persona_cards`). | — |
 | ~~2~~ | ✅ **v1.8 — Reuniones 1 a 1 con sala, mesa o pin**, agenda "Mis reuniones", salas con cupo y chat al aceptar. | — |
 | 3 | **Facturación ARCA (factura A)** | Las empresas la exigen para pagar. | M |
-| ~~4~~ | ✅ **v1.8 — Página `/empresas`** con estimador de planes y formulario de leads (`/api/leads` → `b2b_leads` + webhook al equipo comercial). | — |
+| ~~4~~ | ✅ **v1.9 — ROUGE PRO en `/pro`** (reemplaza a `/empresas`): identidad ejecutiva, ventajas separadas para organizadores y asistentes, simulador del panel y demo ejecutiva con leads (`/api/leads` → `b2b_leads` + webhook). | — |
+| ~~4b~~ | ✅ **v1.10 — Ficha ejecutiva, pase con vCard y control multi-zona**: contacto por nivel de privacidad, categorías (SPEAKER, VIP, PRENSA, SPONSOR) y zonas con registro de lecturas. | — |
 | 5 | **Modo claro** para eventos corporativos | Más sobrio y mejor para salones con luz de día. | S–M |
 | 6 | **Preguntas al orador** con votos (reusar los pedidos de temas) | Reemplaza "Pedir tema" en la Agenda. | S |
 | 7 | **Login con Google Workspace / Microsoft** | SSO para empresas grandes. | M |

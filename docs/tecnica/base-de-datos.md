@@ -34,7 +34,7 @@ TypeScript (`src/lib/types.ts`) son su espejo 1:1.
 | `privacy_settings` | **[v1.8]** Ajustes de la cuenta: `incognito_default`, `pin_share_matches`, `pro_details_after_meeting`. RLS: cada uno los suyos. |
 | `venue_spots` | **[v1.8]** Salas, mesas y puntos de encuentro del evento (tipo, cupo de reuniones a la vez, posición en el plano, activo). Los ven asistentes y equipo; los gestiona dueño/a o producción. |
 | `meetings` | **[v1.8]** Reuniones 1 a 1: motivo, horario, 15/30 min, lugar (`spot` / `pin` / `tbd`), estado (`pending`, `accepted`, `rescheduled`, `declined`, `cancelled`; "completada" se deriva), quién propuso por última vez y chat. Solo las ven las dos personas; todo cambio por RPC. |
-| `b2b_leads` | **[v1.8]** Leads de `/empresas`. **Solo servidor** (RLS sin políticas). |
+| `b2b_leads` | **[v1.8]** Leads de `/pro` (nombre, empresa, cargo, email, WhatsApp, tipo de evento, asistentes). **Solo servidor** (RLS sin políticas). |
 | `profile_personas` | **[v1.7]** Perfiles adicionales de una cuenta (`kind` noche / corporativo): nombre visible, fotos, géneros y Spotify, o cargo, empresa, rubro, `looking_for` / `offering` y LinkedIn. Máx. 5 por cuenta (`personas_limit`). Legible solo por quien comparte con su dueño/a un evento donde se usó. |
 
 `events` suma `brand_id` (de quien creó el evento: trigger `events_brand_owner`), `logo_url`, `theme_primary` y `theme_accent`.
@@ -155,6 +155,19 @@ visitado; pedidos → `updated_at`; perfil → Instagram verificado (`profile_in
 | `drop_pin` | asistente | Respeta `pin_share_matches` (`pin_squad_only`). |
 | `join_event` | asistente | Entra en Modo Solo Amigos si `incognito_default`. |
 
+### Ficha ejecutiva, categorías y zonas (v1.10)
+
+| Objeto | Quién | Qué hace |
+|---|---|---|
+| `profile_personas` (+ `website_url`, `looking_for_note`, `offering_note`, `contact_email`, `contact_phone`, `privacy_level`) | dueño/a | Ficha ejecutiva. Bio de hasta 240 en corporativo (`personas_bio_len_chk`). El contacto NO es el teléfono de la cuenta. |
+| `persona_contact_visible(viewer, persona)` | interna | `strict`: solo tras reunión o contacto aceptado; `network`: también asistentes de un evento donde se usa; `public`: también equipo y organización. Nunca con bloqueo. `persona_cards` lo usa para el email y el teléfono. |
+| `attendee_tier_t` · `event_attendees.tier` · `event_invite_codes.tier` | organización | Categoría (attendee, speaker, vip, press, sponsor). La asigna el código al entrar (`join_event`) o `set_attendee_tier` (dueño/a y producción). No es escribible por el asistente. |
+| `generate_invite_codes(event, count, tier)` | organización | Lote de códigos con categoría. |
+| `event_zones` | lectura: quien está en el evento · gestión: dueño/a y producción | Puertas (`entrance`) y áreas (`area`) con `allowed_tiers` (vacío = todas). Hasta 20 por evento (`zones_limit`), nombre único. |
+| `zone_check_ins` | lectura: dueño/a, producción y seguridad · escritura: solo RPC | Registro de lecturas: zona, persona, código, personal, `granted`/`denied`, motivo y categoría. |
+| `create_team` · `set_team_member` · `delete_team` | dueño/a y producción | Equipos de la organización (corporativo): nombre único por evento, código `EQ-` del servidor, sumar/mover/quitar (máx. 12). En corporativo `create_squad`, `invite_to_squad`, `trigger_rescue` y `set_safety_status` responden `not_in_vertical`. |
+| `zone_check_in(event, zone, value)` | dueño/a, producción, seguridad | Escáner por zona (⇔ `zoneCheckIn`): identifica el QR en vivo (TOTP) o la entrada, valida la categoría y en puertas delega el ingreso en `door_scan`. En corporativo devuelve la cara profesional (sin edad). |
+
 Los valores nuevos del enum `mood_tag_t` se agregan con `alter type … add value` y en el script se comparan como texto
 (`mood::text`), igual que `promoter`, para que `schema.sql` se pueda aplicar en una sola transacción.
 
@@ -172,7 +185,8 @@ Ningún bucket acepta SVG (puede llevar scripts). Tipos y tamaños se re-aplican
 
 Publicadas en `supabase_realtime`: `messages`, `map_pins`, `connections`, `squad_members`, `squads`,
 `blast_deliveries`, `user_perks_qrs`, `bar_orders`, `song_requests`, `raffles`, `event_attendees`, `brands`,
-`squad_expenses`, `squad_settlements` y `profile_personas`. Realtime respeta
+`squad_expenses`, `squad_settlements`, `profile_personas`, `meetings`, `venue_spots`, `event_zones` y
+`zone_check_ins`. Realtime respeta
 RLS: cada usuario solo recibe lo que puede ver.
 
 ## Reglas para cambiar el esquema

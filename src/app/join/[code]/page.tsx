@@ -4,8 +4,9 @@ import * as C from "@/lib/store/commands";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Briefcase, CalendarClock, Check, DoorOpen, Lock, MapPin, Plus, Ticket, Users, UsersRound } from "lucide-react";
-import type { EventAttendee, MoodTag, Profile, RougeEvent, UUID } from "@/lib/types";
+import { Briefcase, CalendarClock, Check, DoorOpen, Lock, MapPin, PencilLine, Plus, Ticket, Users, UsersRound } from "lucide-react";
+import type { EventAttendee, MoodTag, Profile, ProfilePersona, RougeEvent, UUID } from "@/lib/types";
+import { CorporateProfileSheet } from "@/components/pro/CorporateProfileSheet";
 import { personaChoicesFor, proHeadline, vertical, type PersonaChoice } from "@/lib/engine/verticals";
 import { resolveAccessCode } from "@/lib/engine/actions";
 import { getSupabase } from "@/lib/supabase/client";
@@ -103,6 +104,17 @@ export default function JoinPage() {
   const persona: PersonaChoice | undefined =
     personaPick !== undefined ? (choices.find((c) => (c?.id ?? null) === personaPick) ?? choices[0]) : choices[0];
   useBrandTheme(preview?.theme.custom ? preview.theme : null);
+  // ROUGE Pro: la primera vez que entrás a un evento corporativo sin ficha ejecutiva, se abre el panel rápido para
+  // crearla acá mismo (sin salir del ingreso). "new" = crear; una persona = editarla.
+  const [proSheet, setProSheet] = useState<"new" | ProfilePersona | null>(null);
+  const [autoOpened, setAutoOpened] = useState(false);
+  const needsPro = kind === "corporate" && !!me && choices.length === 0;
+  useEffect(() => {
+    if (needsPro && !autoOpened) {
+      setAutoOpened(true);
+      setProSheet("new");
+    }
+  }, [needsPro, autoOpened]);
 
   if (preview === undefined) {
     return (
@@ -247,16 +259,16 @@ export default function JoinPage() {
               </p>
             </div>
             {choices.length === 0 ? (
-              <Link href={createProHref} className="flex items-center gap-3 rounded-2xl border border-dashed border-squad/50 bg-squad/[0.06] p-4">
-                <span className="grid size-11 shrink-0 place-items-center rounded-full bg-squad/15 text-squad">
+              <button type="button" onClick={() => setProSheet("new")} className="flex w-full items-center gap-3 rounded-2xl border border-dashed border-pro-sapphire/60 bg-pro-slate p-4 text-left" data-testid="create-corporate-profile">
+                <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-pro-sapphire/20 text-white">
                   <Briefcase className="size-5" />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block font-semibold">Crear mi perfil profesional</span>
-                  <span className="block text-xs text-muted">Cargo, empresa y qué buscás u ofrecés. Te toma 1 minuto.</span>
+                  <span className="block font-semibold text-white">Crear mi ficha ejecutiva</span>
+                  <span className="block text-xs text-pro-mist">Cargo, empresa y qué buscás u ofrecés. Te toma 1 minuto.</span>
                 </span>
-                <Plus className="size-5 text-squad" />
-              </Link>
+                <Plus className="size-5 text-white" />
+              </button>
             ) : (
               <div className="space-y-2" role="radiogroup" aria-label="Perfil para este evento">
                 {choices.map((c) => {
@@ -279,9 +291,16 @@ export default function JoinPage() {
                     </button>
                   );
                 })}
-                <Link href={createProHref} className="inline-flex min-h-touch items-center gap-1.5 px-1 text-sm text-muted hover:text-primary">
-                  <Plus className="size-4" /> Crear otro perfil {kind === "corporate" ? "profesional" : "para la noche"}
-                </Link>
+                <div className="flex flex-wrap items-center gap-x-4">
+                  {kind === "corporate" && persona && (
+                    <button type="button" onClick={() => setProSheet(persona)} className="inline-flex min-h-touch items-center gap-1.5 px-1 text-sm text-primary/90 hover:text-primary">
+                      <PencilLine className="size-4" /> Revisar mi ficha
+                    </button>
+                  )}
+                  <Link href={createProHref} className="inline-flex min-h-touch items-center gap-1.5 px-1 text-sm text-muted hover:text-primary">
+                    <Plus className="size-4" /> Crear otro perfil {kind === "corporate" ? "profesional" : "para la noche"}
+                  </Link>
+                </div>
               </div>
             )}
           </div>
@@ -301,6 +320,16 @@ export default function JoinPage() {
           )}
           {via === "single_use_code" && !existing && <p className="text-center text-xs text-muted">Este código es personal: queda asociado a tu perfil al entrar.</p>}
         </section>
+      )}
+      {proSheet && (
+        <CorporateProfileSheet
+          key={proSheet === "new" ? "new" : proSheet.id}
+          open
+          onClose={() => setProSheet(null)}
+          persona={proSheet === "new" ? null : proSheet}
+          title={proSheet === "new" ? `Tu ficha para ${event.name}` : undefined}
+          onSaved={(p) => setPersonaPick(p.id)}
+        />
       )}
     </Shell>
   );

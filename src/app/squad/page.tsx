@@ -47,7 +47,7 @@ import { SquadMapPanel } from "@/components/squad/SquadMapPanel";
 import { SquadAccounts } from "@/components/squad/SquadAccounts";
 import { VipSplitPanel } from "@/components/monetization/VipSplitPanel";
 import { APP_NAME } from "@/lib/brand";
-import { faceOf, verticalOf } from "@/lib/engine/verticals";
+import { faceOf, hasFeature, verticalOf } from "@/lib/engine/verticals";
 import { profileHref } from "@/lib/engine/privacy";
 
 /** Vocabulario de la vertical: "Squad" en la noche, "Equipo" en corporativo. */
@@ -170,6 +170,14 @@ const router = useRouter();
         );
       })}
 
+      {!hasFeature(state, event.id, "selfServeTeams") ? (
+        // Corporativo: los equipos los arma la organización; acá solo se entra con el link o la asignación.
+        <section className="rounded-3xl border border-squad/30 bg-squad/[0.06] p-5" data-testid="teams-by-organizer">
+          <UsersRound className="size-8 text-squad" />
+          <h2 className="mt-3 text-xl leading-tight">Los equipos los arma la organización</h2>
+          <p className="mt-1 text-sm text-muted">Cuando te sumen a uno lo vas a ver acá, con su chat y su punto de encuentro. Si te pasaron el link o el código de tu equipo, ingresalo abajo.</p>
+        </section>
+      ) : (
       <section className="relative overflow-hidden rounded-3xl border border-squad/30 bg-gradient-to-br from-squad/15 via-surface to-surface p-5">
         <UsersRound className="size-8 text-squad" />
         <h2 className="mt-3 text-2xl leading-tight">Armá tu {sq}</h2>
@@ -195,6 +203,7 @@ const router = useRouter();
           </Button>
         </div>
       </section>
+      )}
 
       <form
         className="glass flex items-end gap-2 rounded-3xl p-4"
@@ -238,6 +247,9 @@ const meId = state.current_user_id;
   const link = typeof window !== "undefined" ? `${window.location.origin}/join/${squad.invite_code}` : `/join/${squad.invite_code}`;
 
   const myRescuePin = activePinOf(state, event.id, meId, now);
+  // Corporativo: sin Rescate / Llegué a casa, y los integrantes los suma la organización.
+  const rescueOn = hasFeature(state, event.id, "rescue");
+  const selfServe = hasFeature(state, event.id, "selfServeTeams");
 
   const rescue = () => {
     const pin = activePinOf(state, event.id, meId, now);
@@ -254,6 +266,7 @@ const meId = state.current_user_id;
     <>
       {shareSheet.sheet}
       {/* Seguridad */}
+      {rescueOn && (
       <section className="grid grid-cols-2 gap-3">
         {member.safety_status === "rescue_needed" ? (
           <div className="col-span-2 space-y-2 rounded-3xl border border-sos bg-sos/10 p-4 shadow-glow-sos" role="status">
@@ -291,6 +304,7 @@ const meId = state.current_user_id;
           </button>
         )}
       </section>
+      )}
 
       {/* Integrantes */}
       <section className="glass rounded-3xl p-4">
@@ -321,9 +335,13 @@ const meId = state.current_user_id;
             );
           })}
         </ul>
-        <Button block variant="squad" className="mt-3" onClick={() => setInviteOpen(true)}>
-          <UserPlus /> Invitar a mi {sq}
-        </Button>
+        {selfServe ? (
+          <Button block variant="squad" className="mt-3" onClick={() => setInviteOpen(true)}>
+            <UserPlus /> Invitar a mi {sq}
+          </Button>
+        ) : (
+          <p className="mt-3 text-xs text-muted">Los integrantes los suma la organización del evento.</p>
+        )}
       </section>
 
       {/* Perk por squad */}
@@ -496,9 +514,11 @@ const meId = state.current_user_id;
           </div>
         }
       >
-        <p className="flex items-center gap-2 text-sm text-muted">
-          <ShieldAlert className="size-4 text-sos" /> Sin {sq} no vas a tener Botón de Rescate.
-        </p>
+        {rescueOn && (
+          <p className="flex items-center gap-2 text-sm text-muted">
+            <ShieldAlert className="size-4 text-sos" /> Sin {sq} no vas a tener Botón de Rescate.
+          </p>
+        )}
       </BottomSheet>
     </>
   );

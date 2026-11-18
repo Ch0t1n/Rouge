@@ -36,8 +36,8 @@ const SIDEBAR_KEY = "rouge:sidebar";
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? "/";
   // "/" (público) y "/organizadores" (oculto, para dueños y productoras): misma landing a ancho completo.
-  // "/empresas": página de ventas de ROUGE Pro (pública, a ancho completo, sin evento ni sesión).
-  const landing = pathname === "/" || pathname === "/organizadores" || pathname === "/empresas";
+  // "/pro": ROUGE PRO, la vertical corporativa (pública, a ancho completo, sin evento ni sesión).
+  const landing = pathname === "/" || pathname === "/organizadores" || pathname === "/pro";
   // /demo: página para anfitriones (guion + modo presentador), a ancho completo y pública.
   const demoPage = pathname === "/demo" || pathname.startsWith("/demo/");
   const expanded = landing || demoPage || pathname.startsWith("/admin") || pathname === "/ops" || pathname.startsWith("/ops/") || pathname.startsWith("/superadmin");

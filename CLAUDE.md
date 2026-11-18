@@ -62,7 +62,7 @@ src/
     profile/              # "Así te ven" + completitud · profile/edit (editor completo) · profile/personas (Mis perfiles + editor ?id=|?kind=&next=)
     settings/privacy/     # Ajustes de privacidad (incógnito, pin solo Squad, datos pro tras reunión) + lista negra + bloqueados
     meetings/             # Mis reuniones: para responder, próximas, enviadas, historial (aceptar, reprogramar, cancelar)
-    empresas/             # Página de ventas ROUGE Pro (pública, indexable, sin link desde "/"): estimador + formulario de leads
+    pro/                  # ROUGE PRO: landing corporativa con identidad ejecutiva propia (pública, indexable). /empresas redirige acá
     api/leads/            # POST de leads B2B (SOLO servidor): valida, honeypot + límite por IP, b2b_leads y webhook comercial
     u/[username]/         # Perfil de otro asistente (afinidad, Conectar, Rompehielos, bloquear)
     join/                 # Ingreso manual por código · join/[code]: link maestro, código único o link de Squad + Mood
@@ -100,7 +100,12 @@ src/
     chat/                 # MessageList (texto, fotos, system_alert), Composer (foto comprimida)
     squad/                # InviteToSquadButton ("Invitar a mi Squad" desde cualquier perfil)
     meetings/             # MeetingRequestSheet (pedir / reprogramar), LocationPicker (sala, pin o a definir), MeetingButton
-    corporate/            # CorporateLanding (/empresas)
+    pro/                  # ROUGE PRO (/pro): ProLanding, ProNavbar + ModeSwitch (Nightlife ⇄ PRO), ProHero (mock 3D con GSAP),
+                          # ProBentoGrid (ProAudienceSplit, ProOrganizerGrid, ProAttendeeGrid), ProSpotlights (Networking, Acceso, Privacidad),
+                          # ProUseCases, ProTelemetry (simulador), ProDemoForm (+ modal), ProFooter, content.ts (textos; "Próximamente" = soon)
+                          # [v1.10] Piezas ejecutivas de la APP en eventos corporativos: ExecutiveProfileCard (+ TierBadge),
+                          # CorporateProfileFields (borrador de la ficha), CorporateProfileSheet (panel rápido), CorporatePassView
+                          # (QR de acceso ⇄ vCard, .vcf, "Tus accesos"), fonts.ts (Inter + JetBrains Mono compartidas)
     perks/                # QrBlock (QR alto contraste)
     share/ShareSheet.tsx  # QR + compartir nativo + WhatsApp + copiar + PNG para CUALQUIER link (useShare, ShareButton)
     social/               # SocialLoginButtons, InstagramPhotoPicker, InstagramField (+ useInstagramReturn), InstagramCallback
@@ -109,7 +114,7 @@ src/
     landing/              # Landing 3D: Landing.tsx (composición por audiencia "public" | "organizers"), core/ (Lenis+ScrollTrigger, scrollStore, entry, audience),
                           # fx/ (Cursor, Magnetic, SplitReveal, TiltCard), three/ (Scene R3F + choreography), sections/ (8 secciones)
     scan/QrScanner.tsx    # Cámara → QR (BarcodeDetector nativo o jsQR); lo usan Puerta y la ventanilla de la barra
-    admin/                # AdminChrome (nav por permisos, NoAccess, badge de rol), BrandStudio, MenuEditor, PrintTicket, EventLifecyclePanel, RrppPanel, DoorScanner, TeamPanel, SecurityPanel, ApiKeysPanel, PrintCodes, AdminHeader, Panel, downloadCSV
+    admin/                # AdminChrome (nav por permisos, NoAccess, badge de rol), BrandStudio, MenuEditor, PrintTicket, EventLifecyclePanel, RrppPanel, DoorScanner (zona de control obligatoria + registro), ZonesPanel, OrganizerTeamsPanel (equipos corporativos), TeamPanel, SecurityPanel, ApiKeysPanel, PrintCodes, AdminHeader, Panel, downloadCSV
     venue/VenueMap.tsx    # Plano interactivo (zoom/paneo, sectores, pines)
     event/                # LineupBanner, MoodPicker
   lib/
@@ -129,7 +134,7 @@ src/
       settle.ts           # Cuentas de la mesa: ledger, saldos en centavos, transferencias mínimas, alias
       eventAdmin.ts       # Gestión del evento: menú, duplicar edición, expulsar/bloquear, eliminar (⇔ remove_attendee, events_delete)
       promoters.ts        # RRPP: link propio, comisión, promoterStats (⇔ ensure_promoter_link, promoter_stats)
-      door.ts             # Puerta: parseDoorValue, doorCheckIn, pase ROUGE:PASS (⇔ door_check_in)
+      door.ts             # Puerta y zonas: parseDoorValue, zoneCheckIn (⇔ zone_check_in), doorCheckIn, scannerZones, upsertZone, pase ROUGE:PASS
       profile.ts          # Validaciones de perfil, parser de Spotify, máscara de teléfono, completitud
       analytics.ts        # Métricas B2B, CRM, Smart Tags, liveWallData(), curvas de 15' (eventCurve/liveComparison)
       security.ts         # Staff por organización, invitaciones, kill switch, kiosco PIN, auditoría, reportes, borrado
@@ -162,6 +167,7 @@ src/
     media/compress.ts     # Compresión WebP, color dominante, transcodificación del loop (sin audio)
     media/mediaStore.ts   # Blobs en IndexedDB (`idb:<uuid>`) para el Modo Demo
     media/upload.ts       # uploadMedia(): Supabase Storage si hay sesión, si no IndexedDB
+    vcard.ts              # vCard 3.0 pura (buildVCard, personaVCard, escapes, plegado) + downloadVCard (descarga o compartir) — testeado
     leads.ts              # Leads B2B (validateLead ⇔ checks de b2b_leads), aviso comercial, planes y recomendación — testeado
 .claude/skills/           # Skills de Claude Code (auditorías, QA, diseño, seguridad); ver su README.md
 docs/                     # Documentación: producto, técnica, operaciones y api/ (guía para ticketeras)
@@ -389,11 +395,36 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
   (`referred_by`). Ve solo conteos (`promoter_stats`). Comisión por ingreso; con escáner se liquida por ingreso en puerta.
 - **Puerta:** `door_check_in` (dueño/a, producción, seguridad) valida códigos de 1 uso (`checked_in_at`, distinto de
   `is_used`) y pases `ROUGE:PASS:<evento>:<usuario>`; rechaza anulados, expulsados, otro evento y el link general.
-- **Sitio:** la landing pública (`/`) nunca muestra CRM, ventas, planes ni links a `/organizadores` (noindex) ni a `/empresas`.
-  `/empresas` (ROUGE Pro, indexable) se enlaza desde `/organizadores`; sus leads entran solo por `/api/leads` (service role).
+- **Zonas de control (v1.10):** `event_zones` (puerta `entrance` = acredita; área `area` = valida `allowed_tiers`, vacío =
+  todas). El escáner exige elegir la zona (sin zonas, una sola opción: la puerta principal virtual, `zone_id` null) y
+  usa `zone_check_in` (⇔ `zoneCheckIn`); `door_check_in` es la puerta principal. Toda lectura va a `zone_check_ins`
+  (solo por RPC; la ven dueño/a, producción y seguridad). Categoría (`tier`: attendee, speaker, vip, press, sponsor): la da
+  el código de 1 uso al entrar o `set_attendee_tier` (organización); el asistente nunca la escribe. En corporativo el
+  escáner muestra la cara profesional y nunca la edad ni la cara de la noche.
+  `zone_check_in` identifica el QR EN VIVO de la plataforma (`verify_dynamic_qr`, TOTP) o la entrada sin efectos, valida la
+  categoría de la zona y, si es una puerta, delega el ingreso en `door_scan` (atómico, terminal, listas free). Sin conexión
+  solo se controlan puertas (el padrón no trae categorías).
+- **Ficha ejecutiva y vCard (v1.10):** en un evento corporativo, perfil propio, perfil ajeno y pase usan
+  `ExecutiveProfileCard` / `CorporatePassView` (sin fotos de fiesta, loop, música, edad, Instagram, Squad ni Rescate).
+  Email y teléfono de contacto de la ficha son campos propios de `profile_personas` (nunca el teléfono de la cuenta) y
+  se ven según `privacy_level` (`personaContactVisible` ⇔ `persona_contact_visible`: strict por defecto). La vCard se arma
+  en el cliente SOLO con la ficha ya saneada; en la propia, la persona elige si incluye email y teléfono. Sin ficha
+  profesional, el ingreso a un evento corporativo abre `CorporateProfileSheet`.
+- **Sitio:** la landing pública (`/`) nunca muestra CRM, ventas, planes ni links a `/organizadores` (noindex). Su header lleva
+  el switch **Nightlife ⇄ PRO** (`ModeSwitch`) hacia `/pro`, la vertical corporativa (pública, indexable; `/empresas` redirige).
+  Los leads de `/pro` entran solo por `/api/leads` (service role).
+- **ROUGE PRO (`/pro`) — no negociable:** (1) identidad ejecutiva propia: solo colores `pro-*` y fuentes `font-pro` /
+  `font-pro-mono` (Inter + JetBrains Mono, de `components/pro/fonts.ts`); nunca `rouge`/`squad`/`vip` ni el tema del evento.
+  (2) Las ventajas **para quien organiza** y **para quien asiste** van SIEMPRE en bloques separados y rotulados
+  (`AudienceTag`; `PRO_ORGANIZER_MODULES` vs `PRO_ATTENDEE_BENEFITS` en `components/pro/content.ts`), igual que en la noche
+  `/` (asistentes) y `/organizadores` (organizadores). (3) Solo se promete lo que existe: lo demás lleva `soon: true`
+  ("Próximamente"). Los números de mocks y simulador dicen "datos de ejemplo".
 - **Verticales (ROUGE / ROUGE Pro):** `events.kind` = `nightlife` | `corporate`; todo lo que cambia vive en
   `engine/verticals.ts` (`vertical(kind)`, `verticalOf`, `hasFeature`, `copy`). Nada de `if (kind === …)` sueltos con textos:
-  usar `v.copy.*` y `v.features.*`. Moods `pro_*` solo en corporativo (`checkMoodForEvent` ⇔ `mood_kind` + trigger
+  usar `v.copy.*` y `v.features.*`. **Corporativo (v1.10): sin Rescate / "Llegué a casa" (`features.rescue`) y equipos que
+  arma la organización (`features.selfServeTeams` = false: `organizerCreateTeam`/`organizerSetTeamMember`/`organizerDeleteTeam`
+  ⇔ `create_team`/`set_team_member`/`delete_team`; `create_squad`, `invite_to_squad`, `trigger_rescue` y `set_safety_status`
+  → `not_in_vertical`).** Moods `pro_*` solo en corporativo (`checkMoodForEvent` ⇔ `mood_kind` + trigger
   `attendee_vertical`). Funciones apagadas en corporativo ⇒ `NOT_IN_VERTICAL` ⇔ `not_in_vertical`. El tipo no cambia con
   asistentes (`events_kind_locked`). Estrategia: `docs/producto/estrategia-corporativa.md`.
 - **Perfiles múltiples (no negociable):** una cuenta = Perfil principal (`profiles`, noche) + hasta 5 `profile_personas`.
@@ -422,6 +453,7 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
 | `rouge` | `#FF1E56` (hover `#E01145`) | Primario: matches, rompehielos, SOS — `shadow-glow-rouge` |
 | `squad` | `#00F0FF` | Amigos, pines de Squad — `shadow-glow-squad` |
 | `vip` | `#FFB800` | Monetización: barra, perks, sorteos, Mesa VIP, Punto Base |
+| `pro-*` | navy `#0B1120` · slate `#0F172A` · alabaster `#F8FAFC` · cobalt `#1D4ED8` / sapphire `#2563EB` · gold `#D97706` · emerald `#059669` | **Solo ROUGE PRO**: `/pro` y las piezas ejecutivas de la app en eventos corporativos (ficha, pase, panel de la ficha). Nunca en la noche |
 | `text-primary` | `#F8FAFC` | Texto principal |
 | `text-muted` | `#94A3B8` | Texto secundario |
 
@@ -488,8 +520,10 @@ diseño), gana la regla de ROUGE.
   monetización (trago en chat, Mesa VIP dividida, cola virtual, Wrapped).
 - [x] **Fase 13** — ROUGE Pro: eventos corporativos (`events.kind`), perfiles múltiples (`profile_personas`), privacidad
   por contexto (tarjetas saneadas, columnas privadas, ajustes), reuniones con sala/pin y `/empresas`.
-- [ ] **Próximo** — ver `docs/producto/competencia.md`: `docs/producto/estrategia-corporativa.md`: facturación ARCA, modo
-  claro corporativo, preguntas al orador, SSO, lista de espera, entradas propias, Mesa VIP con seña.
+- [x] **Fase 14** — ROUGE PRO (`/pro`): identidad ejecutiva, organizadores y asistentes separados, simulador, demo con modal y switch de modo.
+- [x] **Fase 15** — ROUGE PRO Fase 1: ficha ejecutiva con contacto por nivel de privacidad, pase corporativo con vCard y control multi-zona por categoría.
+- [ ] **Próximo** — ver `docs/producto/competencia.md` y `docs/producto/estrategia-corporativa.md`: facturación ARCA,
+  modo claro corporativo, preguntas al orador, SSO, lista de espera, entradas propias, Mesa VIP con seña.
 
 ## Convenciones
 

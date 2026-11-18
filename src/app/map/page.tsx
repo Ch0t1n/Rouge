@@ -19,7 +19,7 @@ import { TextField } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
 import { privacyOf, profileHref } from "@/lib/engine/privacy";
 import { displayStatus, meetingPlace, meetingPoint, meetingsOf, otherOf } from "@/lib/engine/meetings";
-import { faceOf } from "@/lib/engine/verticals";
+import { faceOf, hasFeature } from "@/lib/engine/verticals";
 import type { MapMark } from "@/components/venue/VenueMap";
 import { formatTime } from "@/lib/utils";
 
@@ -69,7 +69,9 @@ function LiveMap() {
   // Privacidad: si elegí "solo mi Squad", el pin nunca se comparte con matches.
   const squadOnly = !privacyOf(state, meId).pin_share_matches;
 
-  const initialMode: Mode = params.get("mode") === "base" && mine ? "base" : params.get("rescue") ? "rescue" : "pin";
+  // Corporativo: sin Botón de Rescate (feature "rescue").
+  const rescueOn = hasFeature(state, state.active_event_id, "rescue");
+  const initialMode: Mode = params.get("mode") === "base" && mine ? "base" : params.get("rescue") && rescueOn ? "rescue" : "pin";
   const [mode, setMode] = useState<Mode>(initialMode);
   const [draft, setDraft] = useState<{ x: number; y: number; sector?: VenueSector } | null>(null);
   const [shareSquad, setShareSquad] = useState(true);
@@ -201,10 +203,12 @@ function LiveMap() {
         />
         </div>
 
-        <div className="grid grid-cols-2 gap-2 lg:col-start-2">
-          <Button variant="danger" onClick={() => (mine ? setMode("rescue") : notify({ tone: "info", title: "Necesitás un Squad para el Botón de Rescate", cta: { label: "Armar Squad", href: "/squad" } }))}>
-            <Siren /> Rescate
-          </Button>
+        <div className={cn("grid gap-2 lg:col-start-2", rescueOn ? "grid-cols-2" : "grid-cols-1")}>
+          {rescueOn && (
+            <Button variant="danger" onClick={() => (mine ? setMode("rescue") : notify({ tone: "info", title: "Necesitás un Squad para el Botón de Rescate", cta: { label: "Armar Squad", href: "/squad" } }))}>
+              <Siren /> Rescate
+            </Button>
+          )}
           <Button variant="outline" disabled={!mine} onClick={() => setMode("base")}>
             <Flag className="text-vip" /> Punto Base
           </Button>

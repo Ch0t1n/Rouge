@@ -3,10 +3,11 @@ import { isFreeMail, leadNotification, recommendPlan, validateLead } from "./lea
 
 const base = { name: "Ana Pérez", company: "Cámara Pyme Sur", email: "Ana@CamaraSur.org", whatsapp: "11 2345-6789", event_type: "congress", attendees: "450", message: "Expo de marzo" };
 
-describe("leads B2B (/empresas)", () => {
+describe("leads B2B (/pro)", () => {
   it("valida y normaliza (email en minúsculas, WhatsApp E.164, asistentes numéricos)", () => {
     const r = validateLead(base);
-    expect(r).toMatchObject({ ok: true, lead: { email: "ana@camarasur.org", whatsapp: "+5491123456789", attendees: 450, event_type: "congress", source: "empresas" } });
+    expect(r).toMatchObject({ ok: true, lead: { email: "ana@camarasur.org", whatsapp: "+5491123456789", attendees: 450, event_type: "congress", source: "pro", job_title: null } });
+    expect(validateLead({ ...base, job_title: "  Directora de Eventos " })).toMatchObject({ ok: true, lead: { job_title: "Directora de Eventos" } });
   });
   it("rechaza datos inválidos con un mensaje por campo", () => {
     const r = validateLead({ ...base, name: "A", email: "no-es-mail", event_type: "boda", attendees: 3, whatsapp: "123" });

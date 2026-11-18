@@ -11,7 +11,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Campaign, CampaignContact, OrganizationSettings, VipReservation } from "@/lib/types";
 import type { EventFeatureFlags } from "@/lib/engine/features";
-import type { ApiKey, BarOrder, Connection, EventAttendee, EventInviteCode, LatePaymentMethod, MoodTag, PerkRule, Raffle, RaffleFilter, ReportReason, RougeEvent, RougeState, SongRequest, Squad, StaffRole, UUID } from "@/lib/types";
+import type { ApiKey, AttendeeTier, BarOrder, Connection, EventAttendee, EventInviteCode, LatePaymentMethod, MoodTag, PerkRule, Raffle, RaffleFilter, ReportReason, RougeEvent, RougeState, SongRequest, Squad, StaffRole, UUID } from "@/lib/types";
 import * as A from "@/lib/engine/actions";
 import type { Result } from "@/lib/engine/actions";
 import { can, NO_PERMISSION, type Permission } from "@/lib/engine/roles";
@@ -174,6 +174,12 @@ export const upsertPersona = (userId: UUID, input: A.PersonaInput): Command<Roug
       looking_for: p.looking_for,
       offering: p.offering,
       linkedin_url: p.linkedin_url,
+      website_url: p.website_url,
+      looking_for_note: p.looking_for_note,
+      offering_note: p.offering_note,
+      contact_email: p.contact_email,
+      contact_phone: p.contact_phone,
+      privacy_level: p.privacy_level,
     };
     const existed = before.profile_personas.some((x) => x.id === p.id);
     if (existed) must(await sb.from("profile_personas").update(fields).eq("id", p.id).eq("user_id", userId));
@@ -340,6 +346,33 @@ export const leaveSquad = (userId: UUID, squadId: UUID): Command<undefined> => (
   local: (s) => A.leaveSquad(s, userId, squadId),
   remote: async (sb) => {
     must(await sb.from("squad_members").delete().eq("squad_id", squadId).eq("user_id", userId));
+  },
+});
+
+// Equipos que arma la organización (corporativo). Dueño/a y producción.
+
+/** Crea un equipo vacío; el código de invitación lo genera el servidor. */
+export const organizerCreateTeam = (eventId: UUID, name: string): Command<Squad> => ({
+  name: "organizerCreateTeam",
+  optimistic: false,
+  local: guarded("admin.events", () => eventId, (s) => A.organizerCreateTeam(s, eventId, name)),
+  remote: async (sb) => rpc<Squad>(sb, "create_team", { p_event: eventId, p_name: name.trim() }),
+});
+
+/** Suma (add) o quita a un asistente de un equipo; si estaba en otro equipo del evento, lo mueve. */
+export const organizerSetTeamMember = (eventId: UUID, squadId: UUID, userId: UUID, add: boolean): Command<{ moved: boolean; grantedPerks: RougeState["user_perks_qrs"] }> => ({
+  name: "organizerSetTeamMember",
+  local: guarded("admin.events", () => eventId, (s) => A.organizerSetTeamMember(s, squadId, userId, add)),
+  remote: async (sb) => {
+    await rpc(sb, "set_team_member", { p_squad: squadId, p_user: userId, p_add: add });
+  },
+});
+
+export const organizerDeleteTeam = (eventId: UUID, squadId: UUID): Command<undefined> => ({
+  name: "organizerDeleteTeam",
+  local: guarded("admin.events", () => eventId, (s) => A.organizerDeleteTeam(s, squadId)),
+  remote: async (sb) => {
+    await rpc(sb, "delete_team", { p_squad: squadId });
   },
 });
 
@@ -630,11 +663,19 @@ export const upsertEvent = (input: Parameters<typeof A.upsertEvent>[1]): Command
   },
 });
 
-export const generateInviteCodes = (eventId: UUID, count: number): Command<EventInviteCode[]> => ({
+/** Lote de códigos de 1 uso. `tier`: categoría de esas entradas (VIP, SPEAKER…), que pasa a quien la use. */
+export const generateInviteCodes = (eventId: UUID, count: number, tier: AttendeeTier | null = null): Command<EventInviteCode[]> => ({
   name: "generateInviteCodes",
   optimistic: false,
-  local: guarded("admin.events", () => eventId, (s) => A.generateInviteCodes(s, eventId, count)),
-  remote: async (sb) => rpc<EventInviteCode[]>(sb, "generate_invite_codes", { p_event: eventId, p_count: count }),
+  local: guarded("admin.events", () => eventId, (s) => A.generateInviteCodes(s, eventId, count, Date.now(), tier)),
+  remote: async (sb) => rpc<EventInviteCode[]>(sb, "generate_invite_codes", { p_event: eventId, p_count: count, p_tier: tier }),
+});
+
+/** Categoría de un asistente (dueño/a y producción). */
+export const setAttendeeTier = (eventId: UUID, userId: UUID, tier: AttendeeTier): Command<EventAttendee> => ({
+  name: "setAttendeeTier",
+  local: guarded("admin.events", () => eventId, (s) => A.setAttendeeTier(s, eventId, userId, tier)),
+  remote: async (sb) => rpc<EventAttendee>(sb, "set_attendee_tier", { p_event: eventId, p_user: userId, p_tier: tier }),
 });
 
 /** Lista free con horario límite y precio de conversión tardía (dueño/a o producción). */
@@ -1171,4 +1212,34 @@ export const setOwnerSelfService = (orgId: UUID, allow: boolean): Command<Organi
   name: "setOwnerSelfService",
   local: (s) => E.setOwnerSelfService(s, s.current_user_id, orgId, allow),
   remote: async (sb) => void (await rpc(sb, "sa_set_owner_self_service", { p_org: orgId, p_allow: allow })),
+});
+
+/**
+ * Escaneo en una zona de control (v1.10). `zoneId` null = puerta principal. El servidor valida la categoría para la
+ * zona, acredita si es una puerta y registra la lectura (zone_check_ins).
+ */
+export const zoneCheckIn = (eventId: UUID, zoneId: UUID | null, value: string, terminal: string | null = null): Command<D.DoorResult> => ({
+  name: "zoneCheckIn",
+  optimistic: false,
+  local: guarded("door.scan", () => eventId, (s) => D.zoneCheckIn(s, eventId, zoneId, value, Date.now(), { terminal })),
+  remote: async (sb) => rpc<D.DoorResult>(sb, "zone_check_in", { p_event: eventId, p_zone: zoneId, p_value: value, p_terminal: terminal }),
+});
+
+/** Alta o edición de una zona de control (dueño/a y producción). Mismo id que el optimista. */
+export const upsertZone = (eventId: UUID, input: D.ZoneInput): Command<RougeState["event_zones"][number]> => ({
+  name: "upsertZone",
+  local: guarded("admin.events", () => eventId, (s) => D.upsertZone(s, eventId, input)),
+  remote: async (sb, z, before) => {
+    const fields = { name: z.name, kind: z.kind, allowed_tiers: z.allowed_tiers, sort_order: z.sort_order, is_active: z.is_active };
+    if (before.event_zones.some((x) => x.id === z.id)) must(await sb.from("event_zones").update(fields).eq("id", z.id).eq("event_id", eventId));
+    else must(await sb.from("event_zones").insert({ id: z.id, event_id: eventId, ...fields }));
+  },
+});
+
+export const deleteZone = (eventId: UUID, zoneId: UUID): Command<undefined> => ({
+  name: "deleteZone",
+  local: guarded("admin.events", () => eventId, (s) => D.deleteZone(s, zoneId)),
+  remote: async (sb) => {
+    must(await sb.from("event_zones").delete().eq("id", zoneId).eq("event_id", eventId));
+  },
 });

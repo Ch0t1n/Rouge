@@ -15,16 +15,19 @@
  *     diferencial (`doorSettleLate`).
  * Contraparte SQL: door_scan (dueño/a, producción y seguridad) y door_settle_late.
  */
-import type { LatePaymentMethod, RougeState, TicketList, UUID } from "@/lib/types";
+import { ATTENDEE_TIERS } from "@/lib/types";
+import type { AttendeeTier, EventZone, LatePaymentMethod, RougeState, TicketList, UUID, ZoneCheckIn } from "@/lib/types";
+import { uid } from "@/lib/utils";
+import { tierLabel, vertical } from "./verticals";
 import { eventQrSecret, isDynamicQr, verifyDynamicQr } from "./qr";
 import { featureOn } from "./features";
 import { ageOf } from "./privacy";
 
-export type DoorStatus = "ok" | "already" | "invalid" | "revoked" | "banned" | "other_event" | "not_attendee" | "general_link" | "static_qr" | "expired_qr" | "late_free" | "module_off";
+export type DoorStatus = "ok" | "already" | "invalid" | "revoked" | "banned" | "other_event" | "not_attendee" | "general_link" | "static_qr" | "expired_qr" | "late_free" | "module_off" | "zone_denied";
 
 export interface DoorResult {
   status: DoorStatus;
-  kind: "code" | "pass" | null;
+  kind: "code" | "pass" | "vcard" | null;
   user_id: UUID | null;
   name: string | null;
   username: string | null;
@@ -36,6 +39,15 @@ export interface DoorResult {
   terminal?: string | null;
   /** Fuera de horario free: lista, precio del diferencial y código a cobrar. */
   late?: { code_id: UUID; list: string; price: number; free_until: string } | null;
+  /** [v1.10] Zona donde se escaneó (null = Puerta principal virtual) y categoría de la persona. */
+  zone_id?: UUID | null;
+  zone_name?: string | null;
+  zone_kind?: EventZone["kind"];
+  tier?: AttendeeTier | null;
+  company?: string | null;
+  job_title?: string | null;
+  /** Categorías que habilita la zona (vacío = todas). Para explicar un rechazo. */
+  allowed_tiers?: AttendeeTier[];
 }
 
 export const PASS_PREFIX = "ROUGE:PASS:";
@@ -54,6 +66,7 @@ export const DOOR_MESSAGES: Record<DoorStatus, string> = {
   expired_qr: "QR vencido o falso: pedí el QR en vivo",
   late_free: "Fuera de horario Free",
   module_off: "La puerta no está activa en este evento",
+  zone_denied: "Acceso denegado para esta zona",
 };
 
 /** Lista de un código y si ya pasó su horario free (sin diferencial cobrado). */
@@ -181,3 +194,187 @@ export function doorCounts(state: RougeState, eventId: UUID) {
   const people = new Set<string>([...attendees.filter((a) => a.checked_in_at).map((a) => a.user_id), ...codes.filter((c) => c.checked_in_at).map((c) => c.used_by_user_id ?? `code:${c.id}`)]);
   return { inside: people.size, capacity: state.events.find((e) => e.id === eventId)?.max_capacity ?? 0 };
 }
+
+// ═════════════════════════════════════════════════════════════════════
+// [v1.10] ZONAS DE CONTROL (espejo de la RPC zone_check_in)
+// ═════════════════════════════════════════════════════════════════════
+//
+// El personal elige ANTES de escanear en qué zona controla:
+//   - `entrance` (Puerta principal, Puerta B…): valida la categoría y el ingreso lo hace doorCheckIn (atómico, QR en
+//     vivo, terminal, listas free), como siempre.
+//   - `area` (Sala VIP, Auditorio A, Almuerzo ejecutivo): valida que la categoría (`tier`) esté habilitada. No acredita.
+// Sin zonas cargadas hay una sola opción, la "Puerta principal" virtual (`zone_id` null): la noche no cambia.
+// Toda lectura queda en `zone_check_ins`. En corporativo se muestra la cara profesional (nunca la de la noche ni la edad).
+
+export const ZONE_NAME_MIN = 2;
+export const ZONE_NAME_MAX = 40;
+export const MAX_ZONES = 20;
+
+export type ScannerZone = Omit<EventZone, "id" | "event_id" | "created_at"> & { id: UUID | null };
+export const MAIN_DOOR: ScannerZone = { id: null, name: "Puerta principal", kind: "entrance", allowed_tiers: [], sort_order: -1, is_active: true };
+
+export const zonesOf = (s: RougeState, eventId: UUID, includeInactive = false) =>
+  (s.event_zones ?? []).filter((z) => z.event_id === eventId && (includeInactive || z.is_active)).sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
+
+/** Opciones del selector "Zona de control activa" del escáner. */
+export function scannerZones(s: RougeState, eventId: UUID): ScannerZone[] {
+  const zones = zonesOf(s, eventId);
+  return zones.some((z) => z.kind === "entrance") ? zones : [MAIN_DOOR, ...zones];
+}
+
+export const tierAllowed = (zone: Pick<EventZone, "allowed_tiers">, tier: AttendeeTier | null | undefined) =>
+  zone.allowed_tiers.length === 0 || zone.allowed_tiers.includes(tier ?? "attendee");
+
+/** "Requiere VIP / SPEAKER". */
+export const requiredTiersLabel = (tiers: AttendeeTier[]) => (tiers.length ? `Requiere ${tiers.map(tierLabel).join(" / ")}` : "Abierta a todas las categorías");
+
+/** Zonas a las que puede pasar una categoría (para el pase del asistente). */
+export const zonesForTier = (s: RougeState, eventId: UUID, tier: AttendeeTier) => zonesOf(s, eventId).filter((z) => z.kind === "area" && tierAllowed(z, tier));
+
+export interface ZoneInput {
+  id?: UUID;
+  name: string;
+  kind: EventZone["kind"];
+  allowed_tiers: AttendeeTier[];
+  is_active?: boolean;
+}
+
+type ZoneResult<T> = { ok: true; state: RougeState; data: T } | { ok: false; error: string };
+
+/** Alta o edición de una zona (⇔ checks de `event_zones` en SQL). Dueño/a y producción. */
+export function upsertZone(s: RougeState, eventId: UUID, input: ZoneInput, now = Date.now()): ZoneResult<EventZone> {
+  if (!s.events.some((e) => e.id === eventId)) return { ok: false, error: "Evento inexistente." };
+  const all = s.event_zones ?? [];
+  const existing = input.id ? all.find((z) => z.id === input.id) : undefined;
+  if (input.id && existing && existing.event_id !== eventId) return { ok: false, error: "Esa zona no existe." };
+  const name = input.name.trim().replace(/\s+/g, " ");
+  if (name.length < ZONE_NAME_MIN || name.length > ZONE_NAME_MAX) return { ok: false, error: `El nombre de la zona va de ${ZONE_NAME_MIN} a ${ZONE_NAME_MAX} caracteres.` };
+  if (input.kind !== "entrance" && input.kind !== "area") return { ok: false, error: "Tipo de zona inválido." };
+  const tiers = [...new Set(input.allowed_tiers)];
+  if (tiers.some((t) => !ATTENDEE_TIERS.some((x) => x.id === t))) return { ok: false, error: "Categoría inválida." };
+  const others = zonesOf(s, eventId, true).filter((z) => z.id !== existing?.id);
+  if (others.some((z) => z.name.toLowerCase() === name.toLowerCase())) return { ok: false, error: "Ya hay una zona con ese nombre." };
+  if (!existing && others.length >= MAX_ZONES) return { ok: false, error: `Hasta ${MAX_ZONES} zonas por evento.` };
+  const zone: EventZone = {
+    id: existing?.id ?? input.id ?? uid(),
+    event_id: eventId,
+    name,
+    kind: input.kind,
+    allowed_tiers: tiers,
+    sort_order: existing?.sort_order ?? others.length,
+    is_active: input.is_active ?? existing?.is_active ?? true,
+    created_at: existing?.created_at ?? new Date(now).toISOString(),
+  };
+  const list = existing ? all.map((z) => (z.id === zone.id ? zone : z)) : [...all, zone];
+  return { ok: true, state: { ...s, event_zones: list }, data: zone };
+}
+
+/** Baja de una zona: sus lecturas quedan en el registro (sin zona). */
+export function deleteZone(s: RougeState, zoneId: UUID): ZoneResult<undefined> {
+  if (!(s.event_zones ?? []).some((z) => z.id === zoneId)) return { ok: false, error: "Esa zona no existe." };
+  return {
+    ok: true,
+    state: { ...s, event_zones: s.event_zones.filter((z) => z.id !== zoneId), zone_check_ins: (s.zone_check_ins ?? []).map((c) => (c.zone_id === zoneId ? { ...c, zone_id: null } : c)) },
+    data: undefined,
+  };
+}
+
+/** Quién es, con la cara del evento: en corporativo el perfil profesional (o neutra), nunca la de la noche. */
+function zonePerson(s: RougeState, eventId: UUID, userId: UUID | null) {
+  const p = userId ? s.profiles.find((x) => x.id === userId) : undefined;
+  if (!p) return {};
+  const kind = s.events.find((e) => e.id === eventId)?.kind ?? "nightlife";
+  if (kind !== "corporate") return {};
+  const att = s.event_attendees.find((a) => a.event_id === eventId && a.user_id === p.id);
+  const persona = att?.persona_id ? s.profile_personas.find((x) => x.id === att.persona_id) : undefined;
+  return {
+    name: persona?.display_name || p.full_name,
+    username: null,
+    photo: persona?.photos?.[0]?.url ?? null,
+    age: vertical(kind).features.showAge ? ageOf(p) : null,
+    company: persona?.company || null,
+    job_title: persona?.job_title || null,
+  };
+}
+
+/** Identifica lo escaneado sin efectos: usuario, código y un rechazo previo (QR vencido, captura, anulado…). */
+function identify(state: RougeState, eventId: UUID, raw: string, now: number): { kind: DoorResult["kind"]; userId: UUID | null; codeId: UUID | null; status: DoorStatus | null; label?: string | null } {
+  const v = raw.trim();
+  if (/^BEGIN:VCARD/i.test(v)) return { kind: "vcard", userId: null, codeId: null, status: "invalid", label: "Es una tarjeta personal (vCard), no un pase" };
+  if (isDynamicQr(v)) {
+    const secret = eventQrSecret(state, eventId);
+    const chk = secret ? verifyDynamicQr(v, secret, now) : ({ ok: false, reason: "forged" } as const);
+    if (!chk.ok) return { kind: "pass", userId: null, codeId: null, status: chk.reason === "format" ? "invalid" : "expired_qr" };
+    if (chk.kind !== "PASS") return { kind: "pass", userId: null, codeId: null, status: "invalid" };
+    return { kind: "pass", userId: chk.ref, codeId: null, status: null };
+  }
+  if (v.toUpperCase().startsWith(PASS_PREFIX)) return { kind: "pass", userId: null, codeId: null, status: "static_qr" };
+  const parsed = parseDoorValue(v);
+  if (!parsed || parsed.kind !== "code") return { kind: null, userId: null, codeId: null, status: "invalid" };
+  const ev = state.events.find((e) => e.id === eventId);
+  if ((ev && (ev.slug.toUpperCase() === parsed.code || ev.master_invite_code.toUpperCase() === parsed.code)) || state.promoter_links.some((l) => l.code.toUpperCase() === parsed.code)) return { kind: "code", userId: null, codeId: null, status: "general_link" };
+  const code = state.event_invite_codes.find((c) => c.code.toUpperCase() === parsed.code);
+  if (!code) return { kind: "code", userId: null, codeId: null, status: "invalid" };
+  if (code.event_id !== eventId) return { kind: "code", userId: null, codeId: null, status: "other_event" };
+  return { kind: "code", userId: code.used_by_user_id, codeId: code.id, status: code.revoked_at ? "revoked" : null, label: code.label };
+}
+
+/**
+ * Valida una lectura en una zona y la registra (⇔ RPC zone_check_in). `zoneId` null = Puerta principal virtual.
+ * En una puerta el ingreso lo hace doorCheckIn; en un área solo se valida la categoría.
+ */
+export function zoneCheckIn(state: RougeState, eventId: UUID, zoneId: UUID | null, raw: string, now = Date.now(), opts: { terminal?: string | null } = {}): ZoneResult<DoorResult> {
+  let zone: ScannerZone = MAIN_DOOR;
+  if (zoneId) {
+    const z = (state.event_zones ?? []).find((x) => x.id === zoneId && x.event_id === eventId && x.is_active);
+    if (!z) return { ok: false, error: "Esa zona no existe o está desactivada." };
+    zone = z;
+  }
+  if (!featureOn(state, eventId, "enableTicketing")) return { ok: true, state, data: { ...empty("module_off"), zone_id: zone.id, zone_name: zone.name, zone_kind: zone.kind } };
+  const id = identify(state, eventId, raw, now);
+  const att = id.userId ? state.event_attendees.find((a) => a.event_id === eventId && a.user_id === id.userId) : undefined;
+  const code = id.codeId ? state.event_invite_codes.find((c) => c.id === id.codeId) : undefined;
+  let status = id.status;
+  if (!status && id.userId && state.event_bans.some((b) => b.event_id === eventId && b.user_id === id.userId)) status = "banned";
+  if (!status && id.kind === "pass" && !att) status = "not_attendee";
+  const tier: AttendeeTier | null = id.userId || code ? (att?.tier ?? code?.tier ?? "attendee") : null;
+  if (!status && !tierAllowed(zone, tier)) status = "zone_denied";
+
+  let next = state;
+  let base: DoorResult;
+  if (!status && zone.kind === "entrance") {
+    const r = doorCheckIn(state, eventId, raw, now, opts);
+    next = r.state;
+    base = r.data;
+  } else {
+    const p = id.userId ? state.profiles.find((x) => x.id === id.userId) : undefined;
+    base = {
+      ...empty(status ?? "ok", id.kind),
+      user_id: p?.id ?? null,
+      name: p?.full_name ?? code?.holder_name ?? null,
+      username: p?.username ?? null,
+      photo: p?.photos?.[0]?.url ?? null,
+      age: p ? ageOf(p) : null,
+      label: id.label ?? null,
+      checked_in_at: att?.checked_in_at ?? code?.checked_in_at ?? null,
+    };
+  }
+  const data: DoorResult = { ...base, ...zonePerson(state, eventId, base.user_id), tier, zone_id: zone.id, zone_name: zone.name, zone_kind: zone.kind, allowed_tiers: zone.allowed_tiers };
+  const log: ZoneCheckIn = {
+    id: uid(),
+    event_id: eventId,
+    zone_id: zone.id,
+    user_id: data.user_id,
+    code_id: code?.id ?? null,
+    staff_id: state.current_user_id || null,
+    status: data.status === "ok" ? "granted" : "denied",
+    reason: data.status,
+    tier,
+    created_at: new Date(now).toISOString(),
+  };
+  return { ok: true, state: { ...next, zone_check_ins: [log, ...(next.zone_check_ins ?? [])] }, data };
+}
+
+/** Últimas lecturas del evento (más nuevas primero). */
+export const recentZoneCheckIns = (s: RougeState, eventId: UUID, limit = 20) =>
+  (s.zone_check_ins ?? []).filter((c) => c.event_id === eventId).sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, limit);

@@ -6,9 +6,12 @@
  * puede probar el 100% de los flujos en cualquier momento.
  */
 import type {
+  AttendeeTier,
   Brand,
   TicketList,
   BrandPaymentAccount,
+  EventZone,
+  ZoneCheckIn,
   PromoterLink,
   PayoutAlias,
   SquadExpense,
@@ -45,7 +48,7 @@ import type {
 import { DEMO_PHOTOS } from "@/lib/demo/photos";
 import { pinHash } from "@/lib/engine/security";
 
-export const STATE_VERSION = 14;
+export const STATE_VERSION = 15;
 
 /**
  * Últimas 3 fechas de la organización (demo): curvas de 15' de ingresos en puerta y ventas de barra, alineadas al
@@ -245,18 +248,26 @@ interface ProSeed {
   mood: MoodTag;
   bio: string;
   linkedin?: string;
+  /** Ficha ejecutiva (v1.10). */
+  tier?: AttendeeTier;
+  website?: string;
+  lookingNote?: string;
+  offeringNote?: string;
+  email?: string;
+  phone?: string;
+  privacy?: ProfilePersona["privacy_level"];
 }
 const PRO_SEEDS: ProSeed[] = [
-  { n: 1, label: "Trabajo", job: "Diseñadora UX freelance", company: "Estudio Benítez", industry: "services", looking: ["clients", "partners"], offering: ["software", "marketing"], mood: "pro_selling", bio: "Diseño apps y webs para pymes. Si tu negocio necesita vender online, charlemos.", linkedin: "https://www.linkedin.com/in/sofia-benitez-ux" },
+  { n: 1, label: "Trabajo", job: "Diseñadora UX freelance", company: "Estudio Benítez", industry: "services", looking: ["clients", "partners"], offering: ["software", "marketing"], mood: "pro_selling", bio: "Diseño apps y webs para pymes. Si tu negocio necesita vender online, charlemos.", linkedin: "https://www.linkedin.com/in/sofia-benitez-ux", website: "https://estudiobenitez.com.ar", lookingNote: "Pymes y fábricas que quieran vender online", offeringNote: "Tiendas online, apps y branding en 6 semanas", email: "sofia@estudiobenitez.com.ar", phone: "+5491140001001", privacy: "strict" },
   { n: 4, label: "Mi estudio", job: "Arquitecta · Socia", company: "Duarte & Asoc.", industry: "construction", looking: ["clients", "suppliers"], offering: ["advisory"], mood: "pro_buying", bio: "Locales comerciales y oficinas. Busco proveedores de iluminación y mobiliario." },
-  { n: 5, label: "Laburo", job: "CTO", company: "Logix Software", industry: "tech", looking: ["clients", "talent"], offering: ["software", "logistics"], mood: "pro_selling", bio: "Software de stock y logística para distribuidoras. 40 clientes en el país.", linkedin: "https://www.linkedin.com/in/mateo-sosa-logix" },
-  { n: 10, label: "Inversiones", job: "Director", company: "Aguirre Capital", industry: "finance", looking: ["partners"], offering: ["investment", "mentoring"], mood: "pro_networking", bio: "Invierto en pymes industriales y de alimentos con tracción. Ticket USD 50–250 mil." },
+  { n: 5, label: "Laburo", job: "CTO", company: "Logix Software", industry: "tech", looking: ["clients", "talent"], offering: ["software", "logistics"], mood: "pro_selling", bio: "Software de stock y logística para distribuidoras. 40 clientes en el país.", linkedin: "https://www.linkedin.com/in/mateo-sosa-logix", website: "https://logix.com.ar", lookingNote: "Distribuidoras y talento backend", offeringNote: "Stock, ruteo y facturación en la nube", email: "mateo@logix.com.ar", privacy: "public" },
+  { n: 10, label: "Inversiones", job: "Director", company: "Aguirre Capital", industry: "finance", looking: ["partners"], offering: ["investment", "mentoring"], mood: "pro_networking", bio: "Invierto en pymes industriales y de alimentos con tracción. Ticket USD 50–250 mil.", tier: "vip", lookingNote: "Pymes industriales con facturación creciente", offeringNote: "Capital, directorio y red de contactos" },
   { n: 8, label: "Pyme", job: "Fundador", company: "Vera Alimentos", industry: "food", looking: ["investment", "export", "software"], offering: ["suppliers"], mood: "pro_funding", bio: "Snacks saludables. Estamos en 300 dietéticas y queremos exportar a Chile y Uruguay." },
-  { n: 21, label: "Trabajo", job: "Dueña", company: "Textil Norte", industry: "fashion", looking: ["marketing", "software", "financing"], offering: ["suppliers"], mood: "pro_buying", bio: "Fabricamos uniformes para empresas. Queremos vender online." },
-  { n: 22, label: "Trabajo", job: "Contador público", company: "Estudio Ledesma", industry: "services", looking: ["clients"], offering: ["advisory", "financing"], mood: "pro_selling", bio: "Impuestos, ARCA y crédito para pymes. Primera consulta sin cargo en el evento." },
+  { n: 21, label: "Trabajo", job: "Dueña", company: "Textil Norte", industry: "fashion", looking: ["marketing", "software", "financing"], offering: ["suppliers"], mood: "pro_buying", bio: "Fabricamos uniformes para empresas. Queremos vender online.", website: "https://textilnorte.com.ar", lookingNote: "Tienda online y crédito para maquinaria", email: "carla@textilnorte.com.ar", phone: "+5491150002021", privacy: "network" },
+  { n: 22, label: "Trabajo", job: "Contador público", company: "Estudio Ledesma", industry: "services", looking: ["clients"], offering: ["advisory", "financing"], mood: "pro_selling", bio: "Impuestos, ARCA y crédito para pymes. Primera consulta sin cargo en el evento.", tier: "sponsor", email: "ezequiel@estudioledesma.com.ar", privacy: "network" },
   { n: 23, label: "Trabajo", job: "Gerenta comercial", company: "Fletes Sur", industry: "logistics", looking: ["clients", "partners"], offering: ["logistics", "export"], mood: "pro_partners", bio: "Distribución y última milla en AMBA y Cuyo. Buscamos alianzas con e-commerce." },
   { n: 24, label: "Trabajo", job: "Coordinadora de RR.HH.", company: "Metalúrgica Rossi", industry: "manufacturing", looking: ["talent", "advisory"], offering: ["suppliers"], mood: "pro_hiring", bio: "Buscamos técnicos y un responsable comercial. Pasá por el stand A3." },
-  { n: 25, label: "Trabajo", job: "Mentor", company: "Red de Mentores Pyme", industry: "education", looking: ["partners"], offering: ["mentoring", "advisory"], mood: "pro_learning", bio: "30 años en comercio exterior. Mentoreo gratis a emprendedores que quieran exportar." },
+  { n: 25, label: "Trabajo", job: "Mentor", company: "Red de Mentores Pyme", industry: "education", looking: ["partners"], offering: ["mentoring", "advisory"], mood: "pro_learning", bio: "30 años en comercio exterior. Mentoreo gratis a emprendedores que quieran exportar.", tier: "speaker" },
 ];
 /** Cuentas nuevas del encuentro (solo vienen a eventos de trabajo). */
 const PRO_ONLY: { n: number; username: string; full_name: string; age: number; phone: string }[] = [
@@ -427,6 +438,7 @@ export function createSeedState(now = Date.now()): RougeState {
       // Los últimos 6 los emitió la ticketera por API (con su número de entrada).
       external_ref: i >= 18 ? `TKT-${48210 + i}` : null,
       label: i >= 18 ? (i % 2 ? "VIP" : "General") : null,
+      tier: i >= 18 && i % 2 ? "vip" : null,
       source: i >= 18 ? "api" : "panel",
       api_key_id: null,
       revoked_at: null,
@@ -471,6 +483,7 @@ export function createSeedState(now = Date.now()): RougeState {
     referred_by: REFERRED.has(p.n) ? DEMO_IDS.promoter : null,
     // La fiesta está en vivo: casi todos ya pasaron por la puerta (Joaquín y los dos últimos todavía no).
     checked_in_at: p.n === 8 || p.n >= 12 ? null : t(START - 10 + p.n * 4),
+    tier: "attendee",
     joined_at: t(START - 40 + i * 6),
   }));
 
@@ -757,6 +770,8 @@ export function createSeedState(now = Date.now()): RougeState {
     lobby_expires_at: t(PRO_END + 7 * 24 * 60),
     max_capacity: 400,
     master_invite_code: "PYME26",
+    // QR en vivo (TOTP) del encuentro: sin este secreto el pase corporativo no se puede mostrar en el demo.
+    qr_secret: "demo-qr-secret-encuentro-pyme-00000000000000",
     created_by: DEMO_IDS.organizer,
     created_at: t(-60 * 24 * 14),
     brand_id: DEMO_IDS.proBrand,
@@ -804,6 +819,12 @@ export function createSeedState(now = Date.now()): RougeState {
     offering: p.offering,
     linkedin_url: p.linkedin ?? null,
     created_at: t(-60 * 24 * 10),
+    website_url: p.website ?? null,
+    looking_for_note: p.lookingNote ?? "",
+    offering_note: p.offeringNote ?? "",
+    contact_email: p.email ?? null,
+    contact_phone: p.phone ?? null,
+    privacy_level: p.privacy ?? "strict",
   }));
   const proAttendees: EventAttendee[] = PRO_SEEDS.map((p, i) => ({
     id: id(3100 + p.n),
@@ -820,8 +841,29 @@ export function createSeedState(now = Date.now()): RougeState {
     visited_sectors: i % 2 ? ["Coffee & Networking"] : ["Auditorio", "Coffee & Networking"],
     referred_by: null,
     checked_in_at: t(PRO_START + 5 + i * 3),
+    tier: p.tier ?? "attendee",
     joined_at: t(PRO_START - 60 * 24 + i * 30),
   }));
+  // ── [v1.10] Zonas de control del encuentro y últimas lecturas del escáner ──
+  const zone = (n: number, name: string, kind: EventZone["kind"], allowed: AttendeeTier[]): EventZone => ({
+    id: id(20000 + n), event_id: proEvent.id, name, kind, allowed_tiers: allowed, sort_order: n, is_active: true, created_at: t(-60 * 24 * 3),
+  });
+  const event_zones: EventZone[] = [
+    zone(1, "Acreditación", "entrance", []),
+    zone(2, "Auditorio A", "area", []),
+    zone(3, "Sala VIP", "area", ["vip", "speaker", "sponsor"]),
+    zone(4, "Almuerzo Ejecutivo", "area", ["vip", "speaker", "sponsor"]),
+    zone(5, "Sala de prensa", "area", ["press", "speaker"]),
+  ];
+  const read = (n: number, zoneN: number, user: number, status: ZoneCheckIn["status"], reason: string, tier: AttendeeTier, minAgo: number): ZoneCheckIn => ({
+    id: id(20100 + n), event_id: proEvent.id, zone_id: id(20000 + zoneN), user_id: id(user), code_id: null, staff_id: DEMO_IDS.security, status, reason, tier, created_at: t(-minAgo),
+  });
+  const zone_check_ins: ZoneCheckIn[] = [
+    read(1, 3, 10, "granted", "ok", "vip", 22),
+    read(2, 3, 21, "denied", "zone_denied", "attendee", 18),
+    read(3, 2, 21, "granted", "ok", "attendee", 15),
+    read(4, 5, 25, "granted", "ok", "speaker", 9),
+  ];
   const proConn = (n: number, from: number, to: number, status: Connection["status"], minAgo: number, extra: Partial<Connection> = {}): Connection => ({
     ...conn(100 + n, from, to, status, minAgo, extra),
     event_id: proEvent.id,
@@ -843,20 +885,21 @@ export function createSeedState(now = Date.now()): RougeState {
     base_pin_x: 79,
     base_pin_y: 63,
     base_pin_label: "Sala 3 — Ronda de negocios",
-    created_by: id(21),
+    // Corporativo: los equipos los arma la organización.
+    created_by: DEMO_IDS.organizer,
     created_at: t(PRO_START + 60),
   };
   const proMembers: SquadMember[] = [
-    { ...member(101, DEMO_IDS.proTeam, 21, null, 80), squad_id: DEMO_IDS.proTeam },
-    { ...member(102, DEMO_IDS.proTeam, 1, 21, 75), squad_id: DEMO_IDS.proTeam },
-    { ...member(103, DEMO_IDS.proTeam, 22, 21, 70), squad_id: DEMO_IDS.proTeam },
+    { ...member(101, DEMO_IDS.proTeam, 21, 999, 80), squad_id: DEMO_IDS.proTeam },
+    { ...member(102, DEMO_IDS.proTeam, 1, 999, 75), squad_id: DEMO_IDS.proTeam },
+    { ...member(103, DEMO_IDS.proTeam, 22, 999, 70), squad_id: DEMO_IDS.proTeam },
   ];
   const PC = { connection: id(6101) };
   const proMessages: Message[] = [
     { ...msg(101, 21, 68, "Hola Sofía! Te vi en la charla. Necesitamos una tienda online para los uniformes, ¿hacés eso?", PC), event_id: proEvent.id },
     { ...msg(102, 1, 64, "¡Hola Carla! Sí, justo hago tiendas para fábricas. ¿Te paso casos?", PC), event_id: proEvent.id },
     { ...msg(103, 21, 60, "Dale. Me sumé a la Mesa 12 de la ronda, vení que está Ezequiel también.", PC), event_id: proEvent.id },
-    { ...msg(104, 21, 59, "👋 Sofía se sumó al equipo", { squad: DEMO_IDS.proTeam }, "system_alert"), event_id: proEvent.id },
+    { ...msg(104, 21, 59, "👋 La organización sumó a Sofía al equipo", { squad: DEMO_IDS.proTeam }, "system_alert"), event_id: proEvent.id },
   ];
   const proBlasts: EventBlast[] = [
     { id: id(13101), event_id: proEvent.id, title: "🤝 Ronda de negocios en las salas", message: "La ronda empieza ahora en las Salas de reunión. Mirá tus contactos recomendados en Networking.", target_segment: { kind: "all" }, cta_label: "Ver networking", cta_link: "/lobby", is_flash_promo: false, expires_at: null, created_at: t(PRO_START + 95) },
@@ -919,6 +962,8 @@ export function createSeedState(now = Date.now()): RougeState {
     privacy_settings,
     venue_spots,
     meetings,
+    event_zones,
+    zone_check_ins,
     instagram_links,
     user_blocks,
     events: [event, proEvent],

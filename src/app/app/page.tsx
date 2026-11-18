@@ -40,6 +40,7 @@ import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Wordmark } from "@/components/brand/Wordmark";
 import { APP_NAME } from "@/lib/brand";
 import { passValue } from "@/lib/engine/door";
+import { CorporatePassView } from "@/components/pro/CorporatePassView";
 import { verticalOf } from "@/lib/engine/verticals";
 import { awaitsMe, displayStatus, meetingPlace, meetingsOf } from "@/lib/engine/meetings";
 import { CalendarClock } from "lucide-react";
@@ -177,18 +178,25 @@ function Home() {
           <button type="button" onClick={() => setPass(true)} className="glass flex w-full items-center gap-3 rounded-2xl p-4 text-left transition hover:bg-white/10" data-testid="my-pass">
             <QrCode className="size-6 shrink-0 text-squad" />
             <span className="min-w-0 flex-1 text-sm">
-              <b className="block">Mi entrada</b>
+              <b className="block">{pro ? "Mi pase y tarjeta" : "Mi entrada"}</b>
               <span className="text-muted">{attendee.checked_in_at ? `Ya entraste a las ${new Date(attendee.checked_in_at).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })} ✓` : "Mostrá este QR en la puerta"}</span>
             </span>
             <ChevronRight className="size-5 text-muted" />
           </button>
         )}
-        <BottomSheet open={pass} onClose={() => setPass(false)} title="Mi entrada" description="Mostralo en la puerta: el personal ve tu foto y tu nombre.">
+        {pro ? (
+          // ROUGE Pro: pase ejecutivo con categoría, QR de acceso (dinámico) ⇄ tarjeta vCard y "Guardar contacto (.vcf)".
+          <BottomSheet open={pass} onClose={() => setPass(false)} title="Mi pase" description="Acceso, categoría y tu tarjeta personal." className="border-pro-line bg-pro-navy">
+            <CorporatePassView eventId={event.id} />
+          </BottomSheet>
+        ) : (
+          <BottomSheet open={pass} onClose={() => setPass(false)} title="Mi entrada" description="Mostralo en la puerta: el personal ve tu foto y tu nombre.">
           <div className="space-y-3 text-center">
             <DynamicQr eventId={event.id} kind="PASS" refId={me.id} label={`${me.full_name} · ${event.name}`} tone="squad" />
             <p className="text-xs text-muted">Si tenés la entrada de la ticketera, también sirve su QR.</p>
           </div>
         </BottomSheet>
+        )}
 
         {/* Flash promo (Text Blast) */}
         {data.flash && (

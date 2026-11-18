@@ -8,6 +8,7 @@
  * con RLS + funciones RPC (ver supabase/schema.sql).
  */
 import type {
+  AttendeeTier,
   BarMenuItem,
   BarOrder,
   BarOrderItem,
@@ -69,18 +70,23 @@ import { isSafeCtaLink } from "@/lib/security/paths";
 const off = (state: RougeState, eventId: UUID, ...keys: FeatureKey[]) => (keys.every((k) => featureOn(state, eventId, k)) ? null : fail(FEATURE_DISABLED));
 import {
   COMPANY_MAX,
+  DEFAULT_PERSONA_PRIVACY,
   JOB_TITLE_MAX,
   MAX_PERSONAS,
+  NEED_NOTE_MAX,
   NEEDS_MAX,
   NOT_IN_VERTICAL,
   PERSONA_LABEL_MAX,
   checkMoodForEvent,
   checkPersonaForEvent,
   hasFeature,
+  parseContactEmail,
   parseLinkedin,
+  parseWebsite,
+  personaBioMax,
   vertical,
 } from "./verticals";
-import { BUSINESS_NEEDS, EVENT_KINDS, INDUSTRIES } from "@/lib/types";
+import { ATTENDEE_TIERS, BUSINESS_NEEDS, EVENT_KINDS, INDUSTRIES, PERSONA_PRIVACY_LEVELS } from "@/lib/types";
 
 export type Result<T = undefined> = { ok: true; state: RougeState; data: T } | { ok: false; error: string };
 
@@ -290,7 +296,8 @@ export function upsertPersona(state: RougeState, userId: UUID, input: PersonaInp
   if (!display_name) return fail("Ingresá el nombre con el que te van a ver.");
   if (display_name.length > NAME_MAX) return fail(`El nombre tiene un máximo de ${NAME_MAX} caracteres.`);
   const bio = (merged.bio ?? "").trim();
-  if (bio.length > BIO_MAX) return fail(`La bio tiene un máximo de ${BIO_MAX} caracteres.`);
+  const bioMax = personaBioMax(input.kind);
+  if (bio.length > bioMax) return fail(`La bio tiene un máximo de ${bioMax} caracteres.`);
   const photos = merged.photos ?? [];
   if (photos.length > MAX_PHOTOS) return fail(`Máximo ${MAX_PHOTOS} fotos.`);
 
@@ -311,6 +318,12 @@ export function upsertPersona(state: RougeState, userId: UUID, input: PersonaInp
     offering: [],
     linkedin_url: null,
     created_at: existing?.created_at ?? iso(now),
+    website_url: null,
+    looking_for_note: "",
+    offering_note: "",
+    contact_email: null,
+    contact_phone: null,
+    privacy_level: DEFAULT_PERSONA_PRIVACY,
   };
 
   if (input.kind === "corporate") {
@@ -333,7 +346,27 @@ export function upsertPersona(state: RougeState, userId: UUID, input: PersonaInp
       linkedin_url = parseLinkedin(merged.linkedin_url);
       if (!linkedin_url) return fail("Link de LinkedIn inválido (ej. linkedin.com/in/tu-nombre).");
     }
-    persona = { ...persona, job_title, company, industry, looking_for, offering, linkedin_url };
+    let website_url: string | null = null;
+    if (merged.website_url) {
+      website_url = parseWebsite(merged.website_url);
+      if (!website_url) return fail("Sitio web inválido (ej. tuempresa.com).");
+    }
+    const looking_for_note = (merged.looking_for_note ?? "").trim().replace(/\s+/g, " ");
+    const offering_note = (merged.offering_note ?? "").trim().replace(/\s+/g, " ");
+    if (looking_for_note.length > NEED_NOTE_MAX || offering_note.length > NEED_NOTE_MAX) return fail(`El detalle de qué buscás u ofrecés tiene un máximo de ${NEED_NOTE_MAX} caracteres.`);
+    let contact_email: string | null = null;
+    if (merged.contact_email) {
+      contact_email = parseContactEmail(merged.contact_email);
+      if (!contact_email) return fail("Email de contacto inválido.");
+    }
+    let contact_phone: string | null = null;
+    if (merged.contact_phone) {
+      contact_phone = normalizePhone(merged.contact_phone);
+      if (!contact_phone) return fail("Teléfono de contacto inválido.");
+    }
+    const privacy_level = merged.privacy_level ?? DEFAULT_PERSONA_PRIVACY;
+    if (!PERSONA_PRIVACY_LEVELS.some((l) => l.id === privacy_level)) return fail("Nivel de privacidad inválido.");
+    persona = { ...persona, job_title, company, industry, looking_for, offering, linkedin_url, website_url, looking_for_note, offering_note, contact_email, contact_phone, privacy_level };
   } else {
     const genres = merged.music_genres ?? [];
     const err = checkGenres(genres);
@@ -522,6 +555,8 @@ export function joinEvent(
       icebreaker_used: false,
       total_spent: 0,
       joined_via: via,
+      // La categoría de la entrada (VIP, SPEAKER…) viene del código de 1 uso; si no, asistente.
+      tier: inviteCode?.tier ?? "attendee",
       referred_by: promoter && promoter.user_id !== userId && vertical(event.kind).features.promoters ? promoter.user_id : null,
       checked_in_at: null,
       last_active_at: iso(now),
@@ -770,6 +805,8 @@ export function sendIcebreaker(
 export function createSquad(state: RougeState, eventId: UUID, userId: UUID, name: string, now = Date.now()): Result<Squad> {
   const disabled = off(state, eventId, "enableSquads");
   if (disabled) return disabled;
+  // Corporativo: los equipos los arma la organización (organizerCreateTeam).
+  if (!hasFeature(state, eventId, "selfServeTeams")) return fail(NOT_IN_VERTICAL);
   const gate = requireInteractive(state, eventId, now);
   if (gate) return gate;
   if (!getAttendee(state, eventId, userId)) return fail("No estás en este evento.");
@@ -802,6 +839,7 @@ export function createSquad(state: RougeState, eventId: UUID, userId: UUID, name
 export function inviteToSquad(state: RougeState, squadId: UUID, inviterId: UUID, inviteeId: UUID, now = Date.now()): Result<SquadMember> {
   const squad = state.squads.find((s) => s.id === squadId);
   if (!squad) return fail("Squad inexistente.");
+  if (!hasFeature(state, squad.event_id, "selfServeTeams")) return fail(NOT_IN_VERTICAL);
   const gate = requireInteractive(state, squad.event_id, now);
   if (gate) return gate;
   const members = squadMembers(state, squadId, "any");
@@ -872,6 +910,75 @@ export function declineSquadInvite(state: RougeState, userId: UUID, memberId: UU
   return ok({ ...state, squad_members: state.squad_members.filter((m) => !(m.id === memberId && m.user_id === userId && m.status === "invited")) }, undefined);
 }
 
+// ── Equipos armados por la organización (corporativo) ────────────────
+// Permiso: dueño/a y producción (guarded "admin.events" en commands ⇔ is_event_manager en SQL).
+
+/** Crea un equipo vacío del evento (⇔ RPC create_team). El código de invitación lo genera el servidor. */
+export function organizerCreateTeam(state: RougeState, eventId: UUID, name: string, now = Date.now()): Result<Squad> {
+  if (!getEvent(state, eventId)) return fail("Evento inexistente.");
+  const clean = name.trim().replace(/\s+/g, " ");
+  if (!clean) return fail("Poné un nombre para el equipo.");
+  if (clean.length > 32) return fail("El nombre del equipo tiene un máximo de 32 caracteres.");
+  if (state.squads.some((s) => s.event_id === eventId && s.name.toLowerCase() === clean.toLowerCase())) return fail("Ya hay un equipo con ese nombre.");
+  const squad: Squad = {
+    id: uid(),
+    event_id: eventId,
+    name: clean,
+    invite_code: shortCode(6, "EQ"),
+    has_vip_table_to_share: false,
+    base_pin_x: null,
+    base_pin_y: null,
+    base_pin_label: null,
+    created_by: state.current_user_id,
+    created_at: iso(now),
+  };
+  return ok({ ...state, squads: [...state.squads, squad] }, squad);
+}
+
+/**
+ * Suma (o quita) a un asistente de un equipo (⇔ RPC set_team_member). Si estaba en otro equipo del evento, se mueve.
+ * El equipo de la organización no tiene que estar con el lobby abierto (se arma antes del evento).
+ */
+export function organizerSetTeamMember(state: RougeState, squadId: UUID, userId: UUID, add: boolean, now = Date.now()): Result<{ moved: boolean; grantedPerks: UserPerkQR[] }> {
+  const squad = state.squads.find((s) => s.id === squadId);
+  if (!squad) return fail("Ese equipo no existe.");
+  if (!add) {
+    return ok({ ...state, squad_members: state.squad_members.filter((m) => !(m.squad_id === squadId && m.user_id === userId)) }, { moved: false, grantedPerks: [] });
+  }
+  if (!getAttendee(state, squad.event_id, userId)) return fail("Esa persona no está en el evento.");
+  const current = squadOf(state, squad.event_id, userId);
+  if (current?.squad.id === squadId) return ok(state, { moved: false, grantedPerks: [] });
+  const joined = squadMembers(state, squadId);
+  if (joined.some((m) => isBlockedBetween(state, m.user_id, userId))) return fail(UNAVAILABLE);
+  if (joined.length >= MAX_SQUAD_SIZE) return fail(`El equipo está completo (máximo ${MAX_SQUAD_SIZE}).`);
+  const otherSquads = new Set(state.squads.filter((s) => s.event_id === squad.event_id && s.id !== squadId).map((s) => s.id));
+  let next: RougeState = {
+    ...state,
+    squad_members: [
+      ...state.squad_members.filter((m) => !(m.user_id === userId && (otherSquads.has(m.squad_id) || m.squad_id === squadId))),
+      { id: uid(), squad_id: squadId, user_id: userId, invited_by: state.current_user_id || null, status: "joined", safety_status: "ok", joined_at: iso(now) },
+    ],
+  };
+  const name = getProfile(state, userId)?.full_name.split(" ")[0] ?? "Alguien";
+  next = { ...next, messages: [...next.messages, systemMessage(squad.event_id, squadId, userId, `👋 La organización sumó a ${name} al equipo`, now)] };
+  const r = applySquadPerkRules(next, squadId, now);
+  return ok(r.state, { moved: !!current, grantedPerks: r.granted });
+}
+
+/** Borra un equipo de la organización con sus integrantes y su chat (⇔ RPC delete_team). */
+export function organizerDeleteTeam(state: RougeState, squadId: UUID): Result {
+  if (!state.squads.some((s) => s.id === squadId)) return fail("Ese equipo no existe.");
+  return ok(
+    {
+      ...state,
+      squads: state.squads.filter((s) => s.id !== squadId),
+      squad_members: state.squad_members.filter((m) => m.squad_id !== squadId),
+      messages: state.messages.filter((m) => m.squad_id !== squadId),
+    },
+    undefined,
+  );
+}
+
 export function updateSquad(
   state: RougeState,
   squadId: UUID,
@@ -916,6 +1023,7 @@ export function triggerRescue(
   coords?: { x: number; y: number },
   now = Date.now(),
 ): Result<MapPin> {
+  if (!hasFeature(state, eventId, "rescue")) return fail(NOT_IN_VERTICAL);
   const sq = squadOf(state, eventId, userId);
   if (!sq) return fail("Necesitás un Squad para usar el Botón de Rescate.");
   const last = activePinOf(state, eventId, userId, now);
@@ -951,6 +1059,7 @@ export function triggerRescue(
 }
 
 export function resolveRescue(state: RougeState, eventId: UUID, userId: UUID, now = Date.now()): Result {
+  if (!hasFeature(state, eventId, "rescue")) return fail(NOT_IN_VERTICAL);
   const sq = squadOf(state, eventId, userId);
   if (!sq) return fail("No estás en un Squad.");
   const name = getProfile(state, userId)?.full_name.split(" ")[0] ?? "Alguien";
@@ -968,6 +1077,7 @@ export function resolveRescue(state: RougeState, eventId: UUID, userId: UUID, no
 }
 
 export function markHomeSafe(state: RougeState, eventId: UUID, userId: UUID, now = Date.now()): Result {
+  if (!hasFeature(state, eventId, "rescue")) return fail(NOT_IN_VERTICAL);
   const sq = squadOf(state, eventId, userId);
   if (!sq) return fail("No estás en un Squad.");
   const name = getProfile(state, userId)?.full_name.split(" ")[0] ?? "Alguien";
@@ -1527,18 +1637,28 @@ export function revokeApiKey(state: RougeState, userId: UUID, keyId: UUID, now =
   return ok({ ...state, api_keys: state.api_keys.map((k) => (k.id === keyId ? { ...k, revoked_at: k.revoked_at ?? iso(now) } : k)) }, undefined);
 }
 
-export function generateInviteCodes(state: RougeState, eventId: UUID, count: number, now = Date.now()): Result<EventInviteCode[]> {
+export function generateInviteCodes(state: RougeState, eventId: UUID, count: number, now = Date.now(), tier: AttendeeTier | null = null): Result<EventInviteCode[]> {
   if (!getEvent(state, eventId)) return fail("Evento inexistente.");
   if (count < 1 || count > 1000) return fail("Generá entre 1 y 1000 códigos por lote.");
+  if (tier && !ATTENDEE_TIERS.some((t) => t.id === tier)) return fail("Categoría inválida.");
   const taken = new Set(state.event_invite_codes.map((c) => c.code));
   const codes: EventInviteCode[] = [];
   while (codes.length < count) {
     const code = shortCode(ACCESS_CODE_LENGTH);
     if (taken.has(code)) continue;
     taken.add(code);
-    codes.push({ id: uid(), event_id: eventId, code, is_used: false, used_by_user_id: null, used_at: null, external_ref: null, label: null, source: "panel", api_key_id: null, revoked_at: null, checked_in_at: null, created_at: iso(now) });
+    codes.push({ id: uid(), event_id: eventId, code, is_used: false, used_by_user_id: null, used_at: null, external_ref: null, label: null, source: "panel", api_key_id: null, revoked_at: null, checked_in_at: null, tier, created_at: iso(now) });
   }
   return ok({ ...state, event_invite_codes: [...state.event_invite_codes, ...codes] }, codes);
+}
+
+/** Categoría de un asistente (VIP, SPEAKER, PRENSA…). Dueño/a y producción (⇔ RPC set_attendee_tier). */
+export function setAttendeeTier(state: RougeState, eventId: UUID, userId: UUID, tier: AttendeeTier): Result<EventAttendee> {
+  if (!ATTENDEE_TIERS.some((t) => t.id === tier)) return fail("Categoría inválida.");
+  const att = getAttendee(state, eventId, userId);
+  if (!att) return fail("Esa persona no está en este evento.");
+  const next = { ...att, tier };
+  return ok({ ...state, event_attendees: state.event_attendees.map((a) => (a.id === att.id ? next : a)) }, next);
 }
 
 // ═════════════════════════════════════════════════════════════════════

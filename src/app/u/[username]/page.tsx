@@ -19,6 +19,7 @@ import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
 import { profileAccess } from "@/lib/engine/privacy";
 import { MeetingButton } from "@/components/meetings/MeetingButton";
+import { ExecutiveProfileCard } from "@/components/pro/ExecutiveProfileCard";
 
 export default function UserProfilePage() {
   return (
@@ -100,13 +101,30 @@ function UserProfile() {
         }
       />
       <div className="px-4">
-        <ProfileView profile={other} mood={theirs && !theirs.ghost_mode ? theirs.mood_tag : null} affinity={affinity} actions={
-            <div className="space-y-2">
-              <ConnectActions target={other} />
-              <MeetingButton target={other} />
-              <InviteToSquadButton target={other} />
-            </div>
-          } />
+        {kind === "corporate" ? (
+          // ROUGE Pro: ficha ejecutiva. Sin fotos de fiesta, loop, música, Squad ni Rescate: conectar y pedir reunión.
+          <ExecutiveProfileCard
+            face={other}
+            tier={theirs?.tier}
+            eventName={state.events.find((e) => e.id === eventId)?.name}
+            affinity={affinity?.percent}
+            highlights={affinity?.highlights}
+            actions={
+              <div className="space-y-2">
+                <ConnectActions target={other} />
+                <MeetingButton target={other} />
+              </div>
+            }
+          />
+        ) : (
+          <ProfileView profile={other} mood={theirs && !theirs.ghost_mode ? theirs.mood_tag : null} affinity={affinity} actions={
+              <div className="space-y-2">
+                <ConnectActions target={other} />
+                <MeetingButton target={other} />
+                <InviteToSquadButton target={other} />
+              </div>
+            } />
+        )}
       </div>
 
       <BottomSheet open={menu} onClose={() => setMenu(false)} title={`@${other.username}`}>

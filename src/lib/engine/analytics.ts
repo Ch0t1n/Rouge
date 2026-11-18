@@ -1,7 +1,7 @@
 /**
  * Métricas B2B para el panel del organizador, CRM y Pantalla LED.
  */
-import type { Gender, RougeState, UUID } from "@/lib/types";
+import type { AttendeeTier, Gender, RougeState, UUID } from "@/lib/types";
 import { activePinOf, getEvent, getProfile, lineupNow, squadMembers, squadOf, topSongs } from "./selectors";
 import { faceOf, industryLabel, needLabel } from "./verticals";
 import { ageOf } from "./privacy";
@@ -32,6 +32,12 @@ export interface CrmRow {
   looking_for: string[];
   offering: string[];
   linkedin_url: string | null;
+  /** Ficha ejecutiva: sitio y contacto que su dueño/a deja ver a la organización (privacy_level "public"). */
+  website_url: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  /** Categoría de la entrada (VIP, SPEAKER…). */
+  tier: AttendeeTier;
   mood: string | null;
   squad_size: number;
   matches: number;
@@ -75,6 +81,10 @@ export function crmRows(s: RougeState, eventId: UUID): CrmRow[] {
         looking_for: (pro?.looking_for ?? []).map(needLabel),
         offering: (pro?.offering ?? []).map(needLabel),
         linkedin_url: pro?.linkedin_url ?? null,
+        website_url: pro?.website_url ?? null,
+        contact_email: pro?.contact_email ?? null,
+        contact_phone: pro?.contact_phone ?? null,
+        tier: a.tier ?? "attendee",
         mood: a.mood_tag,
         squad_size: size,
         matches,
