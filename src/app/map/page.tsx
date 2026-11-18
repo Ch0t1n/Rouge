@@ -20,6 +20,7 @@ import { Switch } from "@/components/ui/switch";
 import { privacyOf, profileHref } from "@/lib/engine/privacy";
 import { displayStatus, meetingPlace, meetingPoint, meetingsOf, otherOf } from "@/lib/engine/meetings";
 import { faceOf, hasFeature } from "@/lib/engine/verticals";
+import { sessionPhase, sessionsOf } from "@/lib/engine/schedule";
 import type { MapMark } from "@/components/venue/VenueMap";
 import { formatTime } from "@/lib/utils";
 
@@ -66,6 +67,12 @@ function LiveMap() {
         onClick: () => router.push(`/meetings#${m.id}`),
       }];
     });
+  // [v1.11] ?spot=<id>: "Ubicar sala en el mapa" desde la agenda → pin de la sala resaltado y plano centrado en él.
+  const focusSpot = state.venue_spots.find((x) => x.id === params.get("spot") && x.event_id === event.id && x.coord_x != null && x.coord_y != null);
+  const spotSessions = focusSpot ? sessionsOf(state, event.id).filter((x) => x.spot_id === focusSpot.id && sessionPhase(x, now) !== "past") : [];
+  const spotMarks: MapMark[] = focusSpot
+    ? [{ key: `spot-${focusSpot.id}`, x: focusSpot.coord_x!, y: focusSpot.coord_y!, icon: "🎤", tone: "squad", label: focusSpot.name, emphasis: true }]
+    : [];
   // Privacidad: si elegí "solo mi Squad", el pin nunca se comparte con matches.
   const squadOnly = !privacyOf(state, meId).pin_share_matches;
 
@@ -199,8 +206,23 @@ function LiveMap() {
           basePin={mine?.squad.base_pin_x != null ? { x: mine.squad.base_pin_x, y: mine.squad.base_pin_y!, label: mine.squad.base_pin_label ?? "Punto Base" } : null}
           onTap={onTap}
           onPinClick={setInspect}
-          marks={meetingMarks}
+          marks={[...spotMarks, ...meetingMarks]}
+          focusPoint={focusSpot ? { x: focusSpot.coord_x!, y: focusSpot.coord_y! } : null}
         />
+        {focusSpot && (
+          <div className="glass mt-3 flex items-start gap-3 rounded-2xl p-3" data-testid="focused-room">
+            <MapPin className="mt-0.5 size-5 shrink-0 text-squad" />
+            <div className="min-w-0 flex-1 text-sm">
+              <b className="block">{focusSpot.name}</b>
+              <span className="text-xs text-muted">
+                {spotSessions.length ? spotSessions.slice(0, 2).map((x) => `${x.start_time} · ${x.title}`).join(" — ") : "Sala del evento"}
+              </span>
+            </div>
+            <Link href="/agenda" className="shrink-0 text-xs font-semibold text-muted underline-offset-4 hover:text-primary hover:underline">
+              Agenda
+            </Link>
+          </div>
+        )}
         </div>
 
         <div className={cn("grid gap-2 lg:col-start-2", rescueOn ? "grid-cols-2" : "grid-cols-1")}>

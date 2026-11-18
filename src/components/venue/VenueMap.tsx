@@ -35,6 +35,8 @@ interface VenueMapProps {
   className?: string;
   /** Oculta los controles de zoom (miniaturas, minimapas de barra) */
   compact?: boolean;
+  /** Centra y acerca el plano en ese punto al montar o cuando cambia (ej. "Ubicar sala en el mapa"). */
+  focusPoint?: { x: number; y: number } | null;
   children?: ReactNode;
 }
 
@@ -88,6 +90,7 @@ export function VenueMap({
   onPinClick,
   className,
   compact,
+  focusPoint,
   children,
 }: VenueMapProps) {
   const H = W / layout.aspect;
@@ -105,6 +108,16 @@ export function VenueMap({
     const maxY = ((z - 1) * el.clientHeight) / 2;
     return { z, x: clamp(v.x, -maxX, maxX), y: clamp(v.y, -maxY, maxY) };
   }, []);
+
+  // Enfoque: zoom 2,2× con el punto en el centro (acotado a los bordes del plano).
+  const fx = focusPoint?.x;
+  const fy = focusPoint?.y;
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (fx == null || fy == null || !el) return;
+    const z = 2.2;
+    setView(clampView({ z, x: -((fx / 100) - 0.5) * el.clientWidth * z, y: -((fy / 100) - 0.5) * el.clientHeight * z }));
+  }, [fx, fy, clampView]);
 
   const zoomBy = (factor: number) => setView((v) => clampView({ ...v, z: v.z * factor }));
 

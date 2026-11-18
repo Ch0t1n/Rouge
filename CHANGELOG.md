@@ -4,6 +4,45 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Sin publicar]
 
+### Agregado (v1.11 · ROUGE PRO Fase 2: agenda multi-track, Mi Agenda y Q&A / encuestas en vivo)
+- **Agenda & Charlas** en el panel (`/admin/agenda`, solo eventos corporativos; dueño/a y producción):
+  `OrganizerScheduleManager` crea, edita y borra charlas con título, descripción, **track**, **sala** (vinculada a un pin
+  del plano indoor, `venue_spots`), día, horario, cupo y hasta 6 **oradores** (nombre, cargo, empresa, foto; opcionalmente
+  vinculados a un perfil del evento). Varias salas en paralelo, pero la misma sala no tiene dos charlas a la vez
+  (`room_busy`). Botón **Activar En Vivo / Terminar en vivo** por charla y moderación en el mismo lugar.
+- **Agenda para asistentes** (`/agenda`, `CorporateScheduleView`): filtros por **Día**, **Sala** y **Track**, toggle
+  **Ver solo Mi Agenda**, charlas agrupadas por franja ("2 en paralelo"), tarjetas con horario, duración, badge de track
+  con tonos formales, sala, oradores y cupo, y **⭐ Agendar / Agendado ✓**. Banda "En vivo" y acceso desde el inicio.
+- **Choques de horario:** al agendar una charla que se superpone, aviso con el nombre y la hora de la otra
+  ("Se superpone con «…» a las 15:00 hs") y dos salidas: **Reemplazar** (sale la otra en la misma operación) o
+  **Agendar igual**. El cupo de la charla se respeta en el servidor (`session_full`).
+- **Ubicar sala en el mapa:** abre el plano (`/map?spot=<id>`) acercado y centrado en el pin de la sala, resaltado, con
+  las charlas que vienen en esa sala.
+- **Sala en vivo por charla** (`/agenda/<id>`, `SessionLiveInteraction`): **Preguntas al orador** (con nombre ·
+  empresa o anónima; lista por votos ▲; no se vota la propia; hasta 5 abiertas por persona) y **Encuestas rápidas**
+  (voto en un toque, porcentajes con barras después de votar, voto cambiable mientras está abierta). Vista de
+  moderación: **Destacar** (una por charla), **Marcar como respondida**, **Reabrir**, **Ocultar/Mostrar**, lanzar y
+  cerrar encuestas. Terminar el en vivo cierra la encuesta abierta.
+- SQL: `event_sessions` (+ trigger `session_check`, column privileges: `enrolled_count` e `is_live_now` solo por RPC),
+  `session_enrollments`, `session_questions`, `session_question_authors` (la autoría nunca viaja con la pregunta),
+  `session_question_votes`, `session_polls`, `session_poll_votes`; RPCs `enroll_session`, `unenroll_session`,
+  `set_session_live`, `ask_question`, `vote_question`, `moderate_question`, `launch_poll`, `close_poll`, `vote_poll`.
+- Motor `engine/schedule.ts` (espejo 1:1) y comandos nuevos en `commands.ts`. Feature `agenda` en `verticals.ts`.
+- Tests: `schedule.test.ts`, contrato de los 12 comandos nuevos, caso de integración real, escenario SQL en Postgres 16
+  y E2E `demo-pro-agenda.cjs`.
+
+### Cambiado (v1.11)
+- Modo Demo: versión 16 del estado (6 charlas en 3 tracks y 3 salas con pin, una en vivo con preguntas y encuesta).
+- `/pro`: "Preguntas al orador" deja de figurar como "Próximamente"; la tarjeta de agenda para asistentes describe
+  Mi Agenda, Q&A y encuestas.
+
+
+### Corregido (v1.11)
+- **Editar un evento en Supabase fallaba** ("permission denied for table events"): `upsertEvent` mandaba `id` en el
+  UPDATE, columna sin privilegio de update. Test de contrato que valida las columnas contra el `grant update` de events.
+- Integración real: usuarios de prueba con autogestión (regla v1.8 para crear eventos), asistencia acotada al evento y
+  pase en vivo (TOTP) en la puerta.
+
 ### Cambiado
 - **SEO / Google:** la landing (`/`) se renderiza en el servidor (antes Google recibía solo la pantalla "Cargando").
   Nuevos `robots.txt`, `sitemap.xml`, URL canónica `https://www.rougepass.com` (`SITE_URL`, pisable con

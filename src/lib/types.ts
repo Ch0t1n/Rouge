@@ -649,6 +649,114 @@ export interface Meeting {
   updated_at: ISODate;
 }
 
+// ── Agenda multi-track, "Mi Agenda" y Q&A / encuestas en vivo (ROUGE Pro, v1.11) ─────────────
+
+/** Orador/a de una charla. `user_id` lo vincula (opcional) con su perfil en el evento. */
+export interface SessionSpeaker {
+  user_id: UUID | null;
+  name: string;
+  /** Cargo ("Directora de Innovación"). */
+  role: string;
+  company: string;
+  avatar_url: string | null;
+}
+
+/**
+ * Charla o sesión de la agenda de un evento corporativo (tabla `event_sessions`). Horario local del evento
+ * (Argentina, UTC-3): `day` = "AAAA-MM-DD", `start_time` / `end_time` = "HH:MM" del mismo día.
+ * `spot_id` = pin del plano indoor (sala/punto de `venue_spots`) al que salta "Ubicar sala en el mapa".
+ */
+export interface EventSession {
+  id: UUID;
+  event_id: UUID;
+  title: string;
+  description: string;
+  /** Track temático ("Tecnología & IA", "Negocios & Finanzas", "Liderazgo"). */
+  track: string;
+  /** Sala ("Auditorio Principal", "Sala Directorio B"). */
+  room_name: string;
+  spot_id: UUID | null;
+  day: string;
+  start_time: string;
+  end_time: string;
+  speakers: SessionSpeaker[];
+  /** Lugares para agendar (null = sin límite). */
+  capacity: number | null;
+  /** Personas que la agendaron (contador del servidor: las inscripciones de otros no son legibles). */
+  enrolled_count: number;
+  /** "En vivo": la organización la activó y habilita Q&A y encuestas. */
+  is_live_now: boolean;
+  created_at: ISODate;
+  updated_at: ISODate;
+}
+
+/** Charla en "Mi Agenda" (tabla `session_enrollments`; cada persona ve solo las suyas). */
+export interface SessionEnrollment {
+  session_id: UUID;
+  event_id: UUID;
+  user_id: UUID;
+  created_at: ISODate;
+}
+
+export type QuestionStatus = "open" | "answered" | "hidden";
+
+/**
+ * Pregunta al orador (tabla `session_questions`). Nunca guarda quién la hizo: la autoría vive aparte
+ * (`session_question_authors`, solo legible por su autor/a). `author_label` = "Nombre · Empresa" o null si es anónima.
+ */
+export interface SessionQuestion {
+  id: UUID;
+  session_id: UUID;
+  event_id: UUID;
+  body: string;
+  is_anonymous: boolean;
+  author_label: string | null;
+  status: QuestionStatus;
+  is_featured: boolean;
+  upvotes: number;
+  created_at: ISODate;
+  answered_at: ISODate | null;
+}
+
+/** Autoría de una pregunta (Supabase: solo las mías). */
+export interface SessionQuestionAuthor {
+  question_id: UUID;
+  user_id: UUID;
+}
+
+/** Voto ▲ a una pregunta (Supabase: solo los míos; el total está en `upvotes`). */
+export interface SessionQuestionVote {
+  question_id: UUID;
+  user_id: UUID;
+  created_at: ISODate;
+}
+
+export interface PollOption {
+  id: string;
+  label: string;
+}
+
+/** Encuesta rápida en vivo de una charla (tabla `session_polls`). `results` = votos por opción (lo suma el servidor). */
+export interface SessionPoll {
+  id: UUID;
+  session_id: UUID;
+  event_id: UUID;
+  question: string;
+  options: PollOption[];
+  results: Record<string, number>;
+  status: "open" | "closed";
+  created_at: ISODate;
+  closed_at: ISODate | null;
+}
+
+/** Mi voto en una encuesta (Supabase: solo los míos). */
+export interface SessionPollVote {
+  poll_id: UUID;
+  user_id: UUID;
+  option_id: string;
+  created_at: ISODate;
+}
+
 // ── Conexiones ───────────────────────────────────────────────────────
 
 export type ConnectionType = "regular" | "icebreaker";
@@ -983,6 +1091,19 @@ export interface RougeState {
   event_zones: EventZone[];
   /** Lecturas del escáner por zona (staff de puerta del evento activo; las más recientes). */
   zone_check_ins: ZoneCheckIn[];
+  /** [v1.11] Agenda de los eventos corporativos cargados. */
+  event_sessions: EventSession[];
+  /** "Mi Agenda" (Supabase: solo las mías). */
+  session_enrollments: SessionEnrollment[];
+  /** Preguntas al orador (las ocultas solo para la moderación y su autor/a). */
+  session_questions: SessionQuestion[];
+  /** Autoría de preguntas (Supabase: solo las mías). */
+  session_question_authors: SessionQuestionAuthor[];
+  /** Votos ▲ (Supabase: solo los míos). */
+  session_question_votes: SessionQuestionVote[];
+  session_polls: SessionPoll[];
+  /** Votos de encuestas (Supabase: solo los míos). */
+  session_poll_votes: SessionPollVote[];
   /** Cuentas de Instagram conectadas (demo: todas las personas; Supabase: solo la mía). */
   instagram_links: InstagramLink[];
   user_blocks: UserBlock[];

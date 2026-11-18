@@ -19,7 +19,7 @@ export const NAV_ITEMS = [
 ] as const;
 
 /** Rutas donde se muestra la navegación inferior (móvil). En tablet/PC manda el sidebar. */
-export const NAV_ROUTES: readonly string[] = [...NAV_ITEMS.map((i) => i.href), "/profile", "/perks", "/meetings"];
+export const NAV_ROUTES: readonly string[] = [...NAV_ITEMS.map((i) => i.href), "/profile", "/perks", "/meetings", "/agenda"];
 
 export const isNavActive = (href: string, pathname: string) => (href === "/app" ? pathname === "/app" : pathname === href || pathname.startsWith(href + "/") || (href === "/inbox" && pathname.startsWith("/chat/")));
 

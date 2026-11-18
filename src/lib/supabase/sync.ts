@@ -166,6 +166,18 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
       : Promise.resolve([] as RougeState["zone_check_ins"]),
   ]);
 
+  // [v1.11] Agenda de los eventos corporativos (RLS: quien está en el evento) y, de cada persona, solo lo suyo
+  // (Mi Agenda, autoría de sus preguntas y sus votos). Los totales llegan como contadores del servidor.
+  const [sessions, enrollments, questions, questionAuthors, questionVotes, polls, pollVotes] = await Promise.all([
+    q<RougeState["event_sessions"][number]>(sb.from("event_sessions").select("*")).catch(() => []),
+    q<RougeState["session_enrollments"][number]>(sb.from("session_enrollments").select("*").eq("user_id", userId)).catch(() => []),
+    byEvent<RougeState["session_questions"][number]>("session_questions").catch(() => []),
+    q<RougeState["session_question_authors"][number]>(sb.from("session_question_authors").select("*").eq("user_id", userId)).catch(() => []),
+    q<RougeState["session_question_votes"][number]>(sb.from("session_question_votes").select("*").eq("user_id", userId)).catch(() => []),
+    byEvent<RougeState["session_polls"][number]>("session_polls").catch(() => []),
+    q<RougeState["session_poll_votes"][number]>(sb.from("session_poll_votes").select("*").eq("user_id", userId)).catch(() => []),
+  ]);
+
   // Cara de cada contacto en el evento donde se conocieron (chats e inbox de eventos pasados): su fila pública de
   // asistente en esos eventos (persona_id). Solo contrapartes de mis conexiones y reuniones: acotado.
   const otherEventIds = [...new Set([...connections.map((c) => c.event_id), ...meetings.map((m) => m.event_id)].filter((id) => id !== eventId))];
@@ -273,6 +285,13 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
     meetings: meetings.map((m) => ({ ...m, pin_x: m.pin_x ?? null, pin_y: m.pin_y ?? null })),
     event_zones: zones.map((z) => ({ ...z, allowed_tiers: z.allowed_tiers ?? [] })),
     zone_check_ins: zoneReads,
+    event_sessions: sessions.map((x) => ({ ...x, description: x.description ?? "", spot_id: x.spot_id ?? null, speakers: x.speakers ?? [], capacity: x.capacity ?? null, enrolled_count: Number(x.enrolled_count ?? 0), is_live_now: !!x.is_live_now })),
+    session_enrollments: enrollments,
+    session_questions: questions.map((x) => ({ ...x, author_label: x.author_label ?? null, answered_at: x.answered_at ?? null, upvotes: Number(x.upvotes ?? 0) })),
+    session_question_authors: questionAuthors,
+    session_question_votes: questionVotes,
+    session_polls: polls.map((p) => ({ ...p, options: p.options ?? [], results: p.results ?? {}, closed_at: p.closed_at ?? null })),
+    session_poll_votes: pollVotes,
     instagram_links: igRows.map((r) => ({ user_id: userId, username: r.username, account_type: r.account_type, connected_at: r.connected_at })),
     user_blocks: blocks,
     events: events.map((e) => ({ ...e, kind: e.kind ?? "nightlife", networking_checkin_only: e.networking_checkin_only ?? false, brand_id: e.brand_id ?? null, logo_url: e.logo_url ?? null, theme_primary: e.theme_primary ?? null, theme_accent: e.theme_accent ?? null, qr_secret: e.id === eventId ? eventSecret : null, features: e.features ?? null, lifecycle_status: e.lifecycle_status ?? "live" })),
@@ -331,7 +350,7 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
 }
 
 /** Tablas publicadas en `supabase_realtime` (ver schema.sql) que disparan una re-sincronización. */
-const REALTIME_TABLES = ["user_reports", "staff_assignments", "messages", "map_pins", "connections", "squad_members", "squads", "blast_deliveries", "user_perks_qrs", "bar_orders", "song_requests", "raffles", "event_attendees", "brands", "squad_expenses", "squad_settlements", "profile_personas", "meetings", "venue_spots", "event_zones", "zone_check_ins"];
+const REALTIME_TABLES = ["user_reports", "staff_assignments", "messages", "map_pins", "connections", "squad_members", "squads", "blast_deliveries", "user_perks_qrs", "bar_orders", "song_requests", "raffles", "event_attendees", "brands", "squad_expenses", "squad_settlements", "profile_personas", "meetings", "venue_spots", "event_zones", "zone_check_ins", "event_sessions", "session_enrollments", "session_questions", "session_question_authors", "session_question_votes", "session_polls", "session_poll_votes"];
 
 /**
  * Escucha cambios relevantes. Realtime respeta RLS: cada usuario solo recibe

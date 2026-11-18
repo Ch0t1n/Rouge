@@ -3,8 +3,12 @@
  * violaciones de RLS/constraints) a mensajes para el usuario.
  * Nunca revela bloqueos: "unavailable" → mensaje genérico.
  */
+import { SCHEDULE_ERRORS } from "@/lib/engine/schedule";
+
 const MESSAGES: Record<string, string> = {
   not_authenticated: "Tu sesión expiró. Volvé a ingresar.",
+  // [v1.11] Agenda, Mi Agenda, Q&A y encuestas (mismos textos que el motor)
+  ...SCHEDULE_ERRORS,
   // [v1.7] Seguridad operativa
   invalid_role: "Elegí un rol válido.",
   invalid_scope: "Elegí a qué eventos se suma.",

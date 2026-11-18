@@ -29,6 +29,18 @@ module.exports = {
    * Habilita la demo visible (personas, cambio de persona, "Simular…") en un contexto, como si se hubiera
    * entrado por /demo. El sitio principal no la muestra (ver src/lib/demo/access.ts).
    */
+  /**
+   * Pase EN VIVO (QR dinámico TOTP, igual que engine/qr.ts) para escanear en la puerta del demo. El pase fijo
+   * `ROUGE:PASS:` se rechaza como captura. Secretos del demo: DEMO_QR_SECRETS (src/lib/mock/seed.ts).
+   */
+  livePass: (eventSecret, userId, now = Date.now()) => {
+    const crypto = require("crypto");
+    const hmac = (k, m) => crypto.createHmac("sha256", k).update(m).digest("hex");
+    const step = Math.floor(now / 20_000);
+    const sig = hmac(hmac(eventSecret, `PASS:${userId}`), `PASS:${userId}:${step}`).slice(0, 10).toUpperCase();
+    return `ROUGE:T1:PASS:${userId}:${step}:${sig}`;
+  },
+  DEMO_QR_SECRETS: { night: "demo-qr-secret-bresh-sabado-0000000000000000", pro: "demo-qr-secret-encuentro-pyme-00000000000000" },
   unlockDemo: (ctx) => ctx.addInitScript(() => { try { localStorage.setItem("rouge:demo-access", "1"); } catch {} }),
   /** Link del magic link dentro del mail. */
   VERIFY_RE: new RegExp(`${escape(SUPABASE_URL)}/auth/v1/verify[^\\s"<>]+`),

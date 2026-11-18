@@ -25,6 +25,7 @@ import { useEventFeatures, useRequireProfile } from "@/lib/store/hooks";
 import { buttonVariants } from "@/components/ui/button";
 import { useNow, useRouge } from "@/lib/store/RougeContext";
 import { LineupBanner } from "@/components/event/LineupBanner";
+import { AgendaHomeCard } from "@/components/pro/AgendaHomeCard";
 import { PersonaSwitcher } from "@/components/layout/PersonaSwitcher";
 import { VenueMap } from "@/components/venue/VenueMap";
 import { Avatar } from "@/components/ui/avatar";
@@ -197,6 +198,9 @@ function Home() {
           </div>
         </BottomSheet>
         )}
+
+        {/* [v1.11] ROUGE Pro: agenda multi-track (en vivo ahora y mi próxima charla) */}
+        {v.features.agenda && <AgendaHomeCard eventId={event.id} />}
 
         {/* Flash promo (Text Blast) */}
         {data.flash && (

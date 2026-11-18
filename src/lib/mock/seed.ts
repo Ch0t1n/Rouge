@@ -5,6 +5,7 @@
  * está "en vivo" (empezó hace 2 h, el DJ invitado está en cabina), así se
  * puede probar el 100% de los flujos en cualquier momento.
  */
+import { localParts } from "@/lib/engine/schedule";
 import type {
   AttendeeTier,
   Brand,
@@ -44,11 +45,19 @@ import type {
   UserBlock,
   UserPerkQR,
   VenueLayout,
+  EventSession,
+  SessionEnrollment,
+  SessionPoll,
+  SessionPollVote,
+  SessionQuestion,
+  SessionQuestionAuthor,
+  SessionQuestionVote,
+  SessionSpeaker,
 } from "@/lib/types";
 import { DEMO_PHOTOS } from "@/lib/demo/photos";
 import { pinHash } from "@/lib/engine/security";
 
-export const STATE_VERSION = 15;
+export const STATE_VERSION = 16;
 
 /**
  * Últimas 3 fechas de la organización (demo): curvas de 15' de ingresos en puerta y ventas de barra, alineadas al
@@ -920,6 +929,10 @@ export function createSeedState(now = Date.now()): RougeState {
     spot(6, proEvent.id, "Mesa coffee 2", "table", 1, 34, 69),
     spot(7, proEvent.id, "Mesa coffee 3", "table", 1, 46, 69),
     spot(8, proEvent.id, "Stand Red Pyme", "point", null, 26, 38),
+    // [v1.11] Salas de la agenda (pines del plano indoor a los que salta "Ubicar sala en el mapa").
+    spot(14, proEvent.id, "Auditorio Principal", "point", null, 50, 14),
+    spot(15, proEvent.id, "Sala Directorio B", "room", 1, 78, 65),
+    spot(16, proEvent.id, "Aula Taller", "point", null, 26, 44),
     spot(11, event.id, "Mesa VIP 4", "table", 1, 85, 76),
     spot(12, event.id, "Columna dorada · Barra Central", "point", null, 50, 57),
     spot(13, event.id, "Fogonero del patio", "point", null, 15, 76),
@@ -945,6 +958,49 @@ export function createSeedState(now = Date.now()): RougeState {
     { user_id: id(9), incognito_default: true, pin_share_matches: false, pro_details_after_meeting: false, updated_at: t(-60 * 24) },
   ];
 
+  // ── [v1.11] Agenda multi-track: dos salas en paralelo, una charla en vivo con Q&A y encuesta ─────
+  // Horarios locales del evento (UTC-3) redondeados al cuarto de hora; Sofi agendó la charla en vivo y el panel de
+  // las +50, que se superpone con "Exportar sin intermediarios" (para mostrar el aviso de conflicto).
+  const at = (minFromNow: number) => localParts(Math.round((now + minFromNow * 60_000) / 900_000) * 900_000);
+  const sessionAt = (n: number, from: number, to: number, data: Omit<EventSession, "id" | "event_id" | "day" | "start_time" | "end_time" | "created_at" | "updated_at">): EventSession => {
+    const a = at(from);
+    const b = at(to);
+    // Si cruza la medianoche local, termina 23:59 (una charla no cruza de día).
+    const end = b.day === a.day && b.time > a.time ? b.time : "23:59";
+    return { id: id(21000 + n), event_id: proEvent.id, day: a.day, start_time: a.time, end_time: end, created_at: t(-60 * 24 * 4), updated_at: t(-60 * 24), ...data };
+  };
+  const ext = (name: string, role: string, company: string): SessionSpeaker => ({ user_id: null, name, role, company, avatar_url: null });
+  const AUD = id(18014);
+  const DIR = id(18015);
+  const AULA = id(18016);
+  const event_sessions: EventSession[] = [
+    sessionAt(1, -110, -50, { title: "Keynote: Financiamiento para pymes en 2027", description: "Líneas de crédito, garantías y mercado de capitales para pymes: qué cambia el año que viene y cómo prepararse.", track: "Negocios & Finanzas", room_name: "Auditorio Principal", spot_id: AUD, speakers: [ext("Lic. Martín Ocampo", "Economista jefe", "Banco Federal"), { user_id: id(22), name: "Ezequiel Ledesma", role: "Contador público", company: "Estudio Ledesma", avatar_url: null }], capacity: null, enrolled_count: 164, is_live_now: false }),
+    sessionAt(2, -20, 40, { title: "IA aplicada a la pyme: casos reales", description: "Atención al cliente, stock y ventas con IA generativa en empresas de menos de 50 personas. Sin humo: costos, errores y resultados.", track: "Tecnología & IA", room_name: "Auditorio Principal", spot_id: AUD, speakers: [ext("Dra. Valeria Ruiz", "Directora de Innovación", "Nodo IA"), { user_id: id(5), name: "Mateo Sosa", role: "CTO", company: "Logix Software", avatar_url: null }], capacity: null, enrolled_count: 142, is_live_now: true }),
+    sessionAt(3, -10, 35, { title: "Liderar equipos chicos que crecen rápido", description: "Cómo pasar de 5 a 25 personas sin perder la cultura: roles, rituales y conversaciones difíciles.", track: "Liderazgo", room_name: "Sala Directorio B", spot_id: DIR, speakers: [ext("Paula Ferrer", "Head of People", "Grupo Andes")], capacity: 30, enrolled_count: 28, is_live_now: false }),
+    sessionAt(4, 45, 90, { title: "Exportar sin intermediarios", description: "Primer embarque paso a paso: precios FOB, documentación, cobro y los errores que más caros salen.", track: "Negocios & Finanzas", room_name: "Sala Directorio B", spot_id: DIR, speakers: [{ user_id: id(25), name: "Héctor Giménez", role: "Mentor", company: "Red de Mentores Pyme", avatar_url: null }], capacity: 30, enrolled_count: 19, is_live_now: false }),
+    sessionAt(5, 50, 110, { title: "Panel: Vender online sin morir en el intento", description: "Tiendas propias, marketplaces y logística: tres pymes cuentan qué les funcionó y qué no.", track: "Tecnología & IA", room_name: "Auditorio Principal", spot_id: AUD, speakers: [ext("Lucía Herrera", "Gerenta de E-commerce", "Almacén Digital"), { user_id: id(23), name: "Romina Acosta", role: "Gerenta comercial", company: "Fletes Sur", avatar_url: null }], capacity: null, enrolled_count: 85, is_live_now: false }),
+    sessionAt(6, 60, 105, { title: "Taller: finanzas del emprendedor", description: "Flujo de caja, precios y sueldo propio con una planilla que te llevás. Cupo limitado.", track: "Liderazgo", room_name: "Aula Taller", spot_id: AULA, speakers: [ext("Cr. Damián Paz", "Docente", "Escuela de Negocios del Sur")], capacity: 20, enrolled_count: 20, is_live_now: false }),
+  ];
+  const session_enrollments: SessionEnrollment[] = [2, 5].map((n) => ({ session_id: id(21000 + n), event_id: proEvent.id, user_id: DEMO_IDS.me, created_at: t(-60 * 3) }));
+  const LIVE = id(21002);
+  const question = (n: number, author: number, body: string, upvotes: number, minAgo: number, extra: Partial<SessionQuestion> = {}): SessionQuestion => ({
+    id: id(21100 + n), session_id: LIVE, event_id: proEvent.id, body, is_anonymous: false, author_label: null, status: "open", is_featured: false, upvotes, created_at: t(-minAgo), answered_at: null, ...extra,
+  });
+  const session_questions: SessionQuestion[] = [
+    question(1, 21, "¿Qué herramienta recomiendan para responder WhatsApp con IA sin perder el tono de la marca?", 23, 14, { author_label: "Carla Medina · Textil Norte", is_featured: true }),
+    question(2, 24, "¿Cuánto cuesta por mes, en serio, una implementación chica?", 17, 12, { is_anonymous: true }),
+    question(3, 1, "¿Cómo cuidan los datos de los clientes cuando usan modelos externos?", 9, 9, { author_label: "Sofía Benítez · Estudio Benítez" }),
+    question(4, 8, "¿La IA reemplaza al equipo de ventas o lo ayuda?", 31, 16, { author_label: "Joaquín Vera · Vera Alimentos", status: "answered", answered_at: t(-6) }),
+    question(5, 23, "Vendo cursos, escribime por privado 😉", 0, 5, { is_anonymous: true, status: "hidden" }),
+  ];
+  const session_question_authors: SessionQuestionAuthor[] = session_questions.map((q, i) => ({ question_id: q.id, user_id: id([21, 24, 1, 8, 23][i]) }));
+  const session_question_votes: SessionQuestionVote[] = [{ question_id: id(21101), user_id: DEMO_IDS.me, created_at: t(-8) }];
+  const session_polls: SessionPoll[] = [
+    { id: id(21201), session_id: LIVE, event_id: proEvent.id, question: "¿Tu pyme ya usa IA en el día a día?", options: [{ id: "o1", label: "Sí, todos los días" }, { id: "o2", label: "A veces, para tareas puntuales" }, { id: "o3", label: "Todavía no, pero quiero" }, { id: "o4", label: "No la necesitamos" }], results: { o1: 18, o2: 41, o3: 52, o4: 6 }, status: "open", created_at: t(-4), closed_at: null },
+    { id: id(21202), session_id: LIVE, event_id: proEvent.id, question: "¿Qué área querés automatizar primero?", options: [{ id: "o1", label: "Atención al cliente" }, { id: "o2", label: "Ventas" }, { id: "o3", label: "Administración" }], results: { o1: 47, o2: 29, o3: 33 }, status: "closed", created_at: t(-15), closed_at: t(-10) },
+  ];
+  const session_poll_votes: SessionPollVote[] = [{ poll_id: id(21202), user_id: DEMO_IDS.me, option_id: "o1", created_at: t(-12) }];
+
   const proStaff: EventStaff[] = (["manager", "bartender", "security"] as StaffRole[]).map((role) => ({
     event_id: proEvent.id,
     user_id: STAFF.find((m) => m.role === role)!.id,
@@ -964,6 +1020,13 @@ export function createSeedState(now = Date.now()): RougeState {
     meetings,
     event_zones,
     zone_check_ins,
+    event_sessions,
+    session_enrollments,
+    session_questions,
+    session_question_authors,
+    session_question_votes,
+    session_polls,
+    session_poll_votes,
     instagram_links,
     user_blocks,
     events: [event, proEvent],

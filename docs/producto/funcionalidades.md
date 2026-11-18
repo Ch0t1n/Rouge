@@ -497,6 +497,24 @@ Un mismo ROUGE para fiestas y boliches y para eventos de empresas, pymes y netwo
   p. ej. "Requiere VIP / SPEAKER"). Cada lectura queda registrada con zona, hora, personal y resultado. Sin zonas, la
   puerta funciona como siempre.
 
+## 32. Agenda multi-track, Mi Agenda y Q&A / encuestas en vivo (ROUGE Pro)
+
+- **Para quien organiza** (*Panel → Agenda & Charlas*, solo eventos corporativos): cargá charlas con título,
+  descripción, track ("Tecnología & IA", "Negocios & Finanzas", "Liderazgo"…), sala (elegida de los pines del plano o
+  escrita a mano), día, horario, cupo y oradores (nombre, cargo, empresa y foto; se pueden vincular a un perfil del
+  evento). Puede haber varias salas a la vez, pero no dos charlas en la misma sala y horario. **Activar En Vivo** abre las
+  preguntas y las encuestas de esa charla; **Moderar** destaca, marca como respondida u oculta preguntas y lanza o
+  cierra encuestas de opción múltiple (2 a 6 opciones; lanzar otra cierra la anterior).
+- **Para quien asiste** (*Inicio → Agenda* o `/agenda`): filtros por día, sala y track, y **Ver solo Mi Agenda**. Cada
+  charla muestra horario, duración, track, sala, oradores y lugares libres. **⭐ Agendar** suma la charla a Mi Agenda; si
+  se superpone con otra, avisa "Se superpone con «…» a las 15:00 hs" y deja **Reemplazar** o **Agendar igual**.
+  **Ubicar sala en el mapa** abre el plano centrado en esa sala.
+- **En la charla** (*tocar la tarjeta*): pestañas **Preguntas al orador** (con tu nombre y empresa o anónima, votos ▲,
+  la más votada arriba y la destacada primero) y **Encuestas rápidas** (votás en un toque y ves los porcentajes; podés
+  cambiar el voto mientras esté abierta). Solo funcionan con la charla en vivo.
+- **Privacidad:** quién hizo una pregunta anónima no lo sabe nadie (ni la organización): la autoría se guarda aparte y
+  solo la ve su autor/a. Qué charlas agendó cada persona y qué votó también es privado; se ven solo los totales.
+
 ## 30. ROUGE PRO (/pro)
 
 - **`/pro`** es la página de la vertical corporativa (congresos, ferias, eventos internos, coworks), con identidad

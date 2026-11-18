@@ -20,6 +20,7 @@ Este documento resume qué se guarda, quién lo ve y cómo se protege.
 | Teléfono / email | ✔ | ✘ (privilegios por columna; el email vive en Auth) | ✘ | Teléfono vía `event_crm` |
 | Perfil profesional (cargo, empresa, LinkedIn) | ✔ | Si comparten el evento (`persona_cards`): LinkedIn solo tras reunión o contacto aceptado; empresa y cargo ocultos si lo eligió | Solo lo que ven los asistentes | ✔ completo (CRM) |
 | **[v1.10]** Email y teléfono de contacto de la ficha ejecutiva | ✔ | `strict`: solo tras reunión o contacto aceptado; `network`/`public`: asistentes de ese evento | Solo con `public` | Solo con `public` |
+| **[v1.11]** Mi Agenda, autoría de preguntas anónimas y votos (Q&A y encuestas) | ✔ lo suyo | ✘ (solo totales: agendados, votos ▲, resultados) | ✘ | ✘ (ni la autoría de las anónimas; solo totales) |
 | **[v1.10]** Categoría (tier) y registro de zonas | ✔ su categoría | Ven la categoría (badge) | Seguridad: registro de lecturas | ✔ (cambian la categoría) |
 | Gasto, cómo entró, RRPP, hora de ingreso, sectores visitados | ✔ (`my_attendances`) | ✘ (solo "acreditado sí/no" y las zonas en común) | Seguridad: hora de ingreso | ✔ (`event_attendance`) |
 | Pin en el plano | ✔ | Solo su Squad y los matches que eligió (o solo el Squad, si lo configuró) | **[v1.8]** Solo alertas de rescate | Solo alertas de rescate (conteo en `event_stats`) |
@@ -78,6 +79,11 @@ Este documento resume qué se guarda, quién lo ve y cómo se protege.
   podía ver; en la propia, la persona elige si incluye email y teléfono.
 - **[v1.10] Zonas con QR en vivo:** `zone_check_in` valida el mismo QR dinámico (TOTP) que la puerta: en una sala o área
   una captura o el pase fijo tampoco sirven.
+- **[v1.11] Agenda y Q&A:** la pregunta nunca guarda a su autor/a (`session_questions` no tiene esa columna, así que
+  tampoco viaja por Realtime): la autoría vive en `session_question_authors`, legible solo por su autor/a. Una pregunta no
+  anónima solo lleva la firma "Nombre · Empresa" de la cara profesional del evento, calculada en el servidor. Las
+  inscripciones y los votos se escriben solo por RPC y cada persona lee los suyos; los totales son contadores del
+  servidor. `enrolled_count` e `is_live_now` no se escriben por tabla (privilegios por columna).
 - **Cuentas de la mesa:** gastos y transferencias visibles solo para integrantes del Squad; el alias o CBU/CVU para
   cobrar lo ven solo quienes comparten un Squad con esa persona.
 - **Marca:** los colores pasan el mismo control de contraste en el motor y en Postgres; el rescate y el Squad no se

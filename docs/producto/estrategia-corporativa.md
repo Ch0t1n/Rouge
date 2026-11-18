@@ -146,7 +146,7 @@ de barra pesa poco, porque el catering suele estar incluido. Los ingresos extra 
 | ~~4~~ | ✅ **v1.9 — ROUGE PRO en `/pro`** (reemplaza a `/empresas`): identidad ejecutiva, ventajas separadas para organizadores y asistentes, simulador del panel y demo ejecutiva con leads (`/api/leads` → `b2b_leads` + webhook). | — |
 | ~~4b~~ | ✅ **v1.10 — Ficha ejecutiva, pase con vCard y control multi-zona**: contacto por nivel de privacidad, categorías (SPEAKER, VIP, PRENSA, SPONSOR) y zonas con registro de lecturas. | — |
 | 5 | **Modo claro** para eventos corporativos | Más sobrio y mejor para salones con luz de día. | S–M |
-| 6 | **Preguntas al orador** con votos (reusar los pedidos de temas) | Reemplaza "Pedir tema" en la Agenda. | S |
+| ~~6~~ | ✅ **v1.11 — Agenda multi-track, Mi Agenda, preguntas al orador con votos y encuestas en vivo.** | — |
 | 7 | **Login con Google Workspace / Microsoft** | SSO para empresas grandes. | M |
 | 8 | Evento **híbrido** (jornada corporativa + fiesta de cierre en el mismo evento) | Es el segmento puente: congreso + fiesta. | M |
 | 9 | Encuesta NPS y **reporte post-evento** para el organizador | Para medir el ROI y renovar el contrato. | S |

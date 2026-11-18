@@ -208,6 +208,97 @@ describe("schema.sql: RLS y RPCs resisten ataques (PGlite)", () => {
     r = await as("B", `select phone_normalized from public.profiles where id = $1`, [U.A]);
     check("el teléfono ajeno sigue siendo ilegible", !r.ok);
 
+    // ── ROUGE Pro (v1.10 + v1.11): zonas, categorías y agenda con Q&A / encuestas en un evento corporativo
+    const PRO = "22222222-2222-2222-2222-222222222222";
+    await su(`insert into public.events (id, kind, slug, name, starts_at, ends_at, lobby_opens_at, lobby_expires_at, created_by)
+      values ($1, 'corporate', 'summit-test', 'Summit', now() - interval '1 hour', now() + interval '6 hours', now() - interval '2 hours', now() + interval '7 hours', $2)`, [PRO, U.O]);
+    for (const w of ["A", "C"]) {
+      const persona = (await su(`insert into public.profile_personas (user_id, kind, label, display_name, job_title, company, looking_for)
+        values ($1, 'corporate', 'Trabajo', $2, 'CTO', 'Acme', '{clients}') returning id`, [U[w], `Pro ${w}`]))[0].id;
+      await su(`insert into public.event_attendees (event_id, user_id, persona_id, mood_tag) values ($1, $2, $3, 'pro_learning')`, [PRO, U[w], persona]);
+    }
+    // Zonas y categorías
+    r = await as("A", `insert into public.event_zones (event_id, name, kind) values ($1, 'Backstage', 'area') returning id`, [PRO]);
+    check("un asistente no crea zonas de control", !r.ok);
+    r = await as("O", `insert into public.event_zones (event_id, name, kind, allowed_tiers) values ($1, 'Sala VIP', 'area', '{vip}') returning id`, [PRO]);
+    check("la organización crea una zona", r.ok && rows(r).length === 1, err(r));
+    const zone = rows(r)[0]?.id;
+    r = await as("A", `select public.zone_check_in($1, $2, 'X')`, [PRO, zone]);
+    check("un asistente no puede escanear zonas", !r.ok && /forbidden/.test(err(r)), err(r));
+    r = await as("O", `select public.zone_check_in($1, $2, $3) as x`, [PRO, zone, `ROUGE:PASS:${PRO}:${U.A}`]);
+    check("el pase fijo (captura) se rechaza también en una zona", r.ok && (rows(r)[0]?.x as { status?: string })?.status === "static_qr", JSON.stringify(r));
+    r = await as("A", `select id from public.zone_check_ins`);
+    check("un asistente no lee el registro de lecturas", denied(r));
+    r = await as("A", `select public.set_attendee_tier($1, $2, 'vip')`, [PRO, U.A]);
+    check("nadie se sube de categoría a sí mismo (set_attendee_tier)", !r.ok && /forbidden/.test(err(r)), err(r));
+    r = await as("A", `update public.event_attendees set tier = 'vip' where event_id = $1 and user_id = auth.uid() returning id`, [PRO]);
+    check("la categoría no se escribe por tabla", !r.ok);
+
+    // Agenda
+    const day = String((await su(`select ((now() at time zone 'America/Argentina/Buenos_Aires')::date)::text as d`))[0].d);
+    r = await as("A", `insert into public.event_sessions (event_id, title, track, room_name, day, start_time, end_time) values ($1, 'Charla falsa', 'Liderazgo', 'Sala 1', $2, '23:00', '23:30') returning id`, [PRO, day]);
+    check("un asistente no carga charlas", !r.ok);
+    r = await as("O", `insert into public.event_sessions (event_id, title, track, room_name, day, start_time, end_time, capacity) values ($1, 'Keynote', 'Tecnología', 'Auditorio', $2, '23:00', '23:59', 1) returning id`, [PRO, day]);
+    check("la organización carga una charla", r.ok && rows(r).length === 1, err(r));
+    const sess = rows(r)[0]?.id;
+    r = await as("O", `update public.event_sessions set enrolled_count = 999 where id = $1 returning id`, [sess]);
+    check("el contador de agendados no se escribe por tabla (ni la organización)", !r.ok);
+    r = await as("O", `update public.event_sessions set is_live_now = true where id = $1 returning id`, [sess]);
+    check("'En vivo' no se escribe por tabla (solo set_session_live)", !r.ok);
+    r = await as("B", `select id from public.event_sessions where event_id = $1`, [PRO]);
+    check("quien no está en el evento no ve la agenda", denied(r));
+    r = await as("B", `select public.enroll_session($1)`, [sess]);
+    check("quien no está en el evento no agenda", !r.ok);
+    r = await as("A", `select (public.enroll_session($1)).enrolled_count as n`, [sess]);
+    check("A agenda la charla", r.ok && rows(r)[0]?.n === 1, err(r));
+    r = await as("C", `select public.enroll_session($1)`, [sess]);
+    check("el cupo se respeta en el servidor", !r.ok && /session_full/.test(err(r)), err(r));
+    r = await as("C", `select * from public.session_enrollments`);
+    check("nadie ve la agenda de otra persona", denied(r));
+    r = await as("A", `insert into public.session_enrollments (session_id, event_id, user_id) values ($1, $2, $3)`, [sess, PRO, U.C]);
+    check("no se agenda a otra persona por tabla", !r.ok);
+    // Q&A
+    r = await as("A", `select public.ask_question($1, '¿Hay grabación?', true)`, [sess]);
+    check("sin 'En vivo' no hay preguntas", !r.ok && /not_live/.test(err(r)), err(r));
+    r = await as("C", `select public.set_session_live($1, true)`, [sess]);
+    check("un asistente no pone la charla en vivo", !r.ok && /forbidden/.test(err(r)), err(r));
+    await as("O", `select public.set_session_live($1, true)`, [sess]);
+    r = await as("A", `select (public.ask_question($1, '¿Hay grabación?', true)).id as id`, [sess]);
+    const qid = rows(r)[0]?.id;
+    check("A pregunta en anónimo", r.ok && !!qid, err(r));
+    r = await as("C", `select * from public.session_questions where id = $1`, [qid]);
+    check("la pregunta anónima no trae autor/a (ni firma)", r.ok && rows(r).length === 1 && rows(r)[0].author_label === null && !Object.keys(rows(r)[0]).some((k) => /user|author_id/.test(k)), JSON.stringify(r));
+    r = await as("C", `select * from public.session_question_authors`);
+    check("nadie ve quién hizo cada pregunta", denied(r));
+    r = await as("O", `select * from public.session_question_authors`);
+    check("ni la organización ve la autoría de las anónimas", denied(r));
+    r = await as("A", `select public.vote_question($1)`, [qid]);
+    check("no se vota la propia pregunta", !r.ok && /own_question/.test(err(r)), err(r));
+    r = await as("C", `update public.session_questions set upvotes = 500 where id = $1 returning id`, [qid]);
+    check("los votos no se escriben por tabla", denied(r));
+    r = await as("C", `select public.moderate_question($1, 'hide')`, [qid]);
+    check("un asistente no modera", !r.ok && /forbidden/.test(err(r)), err(r));
+    await as("O", `select public.moderate_question($1, 'hide')`, [qid]);
+    r = await as("C", `select id from public.session_questions where id = $1`, [qid]);
+    check("una pregunta oculta no la ve el público", denied(r));
+    r = await as("A", `select id from public.session_questions where id = $1`, [qid]);
+    check("su autor/a sí ve que quedó oculta", r.ok && rows(r).length === 1, err(r));
+    r = await as("C", `select public.question_author_label($1, $2)`, [PRO, U.A]);
+    check("los helpers de la agenda no están en public", !r.ok && /does not exist/.test(err(r)), err(r));
+    // Encuestas
+    r = await as("C", `select public.launch_poll($1, '¿Sirvió?', array['Sí','No'])`, [sess]);
+    check("un asistente no lanza encuestas", !r.ok && /forbidden/.test(err(r)), err(r));
+    r = await as("O", `select (public.launch_poll($1, '¿Sirvió?', array['Sí','No'])).id as id`, [sess]);
+    const poll = rows(r)[0]?.id;
+    r = await as("C", `insert into public.session_poll_votes (poll_id, user_id, option_id) values ($1, $2, 'o1')`, [poll, U.C]);
+    check("no se vota por tabla (relleno de votos)", !r.ok);
+    r = await as("C", `select (public.vote_poll($1, 'o1')).results as x`, [poll]);
+    check("C vota en la encuesta", r.ok && (rows(r)[0]?.x as Record<string, number>)?.o1 === 1, JSON.stringify(r));
+    r = await as("C", `select (public.vote_poll($1, 'o1')).results as x`, [poll]);
+    check("votar dos veces la misma opción no suma", r.ok && (rows(r)[0]?.x as Record<string, number>)?.o1 === 1, JSON.stringify(r));
+    r = await as("A", `select * from public.session_poll_votes`);
+    check("nadie ve el voto de otra persona", denied(r));
+
     // ── API v1 para ticketeras (claves y códigos por entrada)
     const asService = async (sql: string, p: unknown[] = []): Promise<Q> => {
       await db.exec("reset role");

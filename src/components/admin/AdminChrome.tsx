@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import { BarChart3, CalendarCog, Gift, Lock, LogOut, Megaphone, Martini, Palette, ScanLine, Share2, ShieldCheck, UtensilsCrossed, Tv, Users } from "lucide-react";
+import { BarChart3, CalendarClock, CalendarCog, Gift, Lock, LogOut, Megaphone, Martini, Palette, ScanLine, Share2, ShieldCheck, UtensilsCrossed, Tv, Users } from "lucide-react";
 import { useRouge } from "@/lib/store/RougeContext";
 import { canAccessPath, NO_PERMISSION, permissionForPath, ROLE_META, roleHome } from "@/lib/engine/roles";
 import { getProfile } from "@/lib/engine/selectors";
@@ -18,6 +18,7 @@ import { hasFeature } from "@/lib/engine/verticals";
 export const ADMIN_NAV = [
   { href: "/admin", label: "Resumen", icon: BarChart3 },
   { href: "/admin/events", label: "Eventos y accesos", icon: CalendarCog },
+  { href: "/admin/agenda", label: "Agenda & Charlas", icon: CalendarClock },
   { href: "/admin/brand", label: "Marca y cobros", icon: Palette },
   { href: "/admin/menu", label: "Menú de la barra", icon: UtensilsCrossed },
   { href: "/admin/crm", label: "CRM", icon: Users },
@@ -39,7 +40,14 @@ export function AdminChrome({ children }: { children: ReactNode }) {
   const access = (href: string) => canAccessPath(state, state.active_event_id, state.current_user_id, href);
   const allowed = signedIn && access(pathname).ok;
   // RRPP es solo de la noche: en eventos corporativos (ROUGE Pro) no aparece.
-  const nav = ADMIN_NAV.filter((n) => can(permissionForPath(n.href)!) && access(n.href).ok && (n.href !== "/admin/rrpp" || hasFeature(state, state.active_event_id, "promoters")));
+  // RRPP es solo de la noche y la agenda multi-track solo de ROUGE Pro (eventos corporativos).
+  const nav = ADMIN_NAV.filter(
+    (n) =>
+      can(permissionForPath(n.href)!) &&
+      access(n.href).ok &&
+      (n.href !== "/admin/rrpp" || hasFeature(state, state.active_event_id, "promoters")) &&
+      (n.href !== "/admin/agenda" || hasFeature(state, state.active_event_id, "agenda")),
+  );
   // Módulos del evento activo (v1.8): las secciones de un módulo apagado se ven atenuadas y no se abren.
   const features = useEventFeatures();
   const moduleOn = (href: string) => isPathEnabled(features, href);

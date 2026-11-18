@@ -184,6 +184,7 @@ export const ADMIN_ROUTE_PERMISSION: [string, Permission][] = [
   ["/ops/door", "door.scan"],
   ["/ops/bar", "bar.operate"],
   ["/admin/events", "admin.events"],
+  ["/admin/agenda", "admin.events"],
   ["/admin/brand", "admin.events"],
   ["/admin/menu", "admin.events"],
   ["/admin/crm", "admin.crm"],
