@@ -26,6 +26,8 @@
 
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  /* Ancho del sidebar de escritorio (0 en móvil). Lo usan los elementos fixed (barras inferiores, sheets). */
+  --sidebar-w: 0px;
 
   color-scheme: dark;
 }
@@ -108,7 +110,24 @@
   }
 }
 
+/* Sidebar de escritorio: riel de íconos en tablet, expandible en PC (AppShell fija data-sidebar en <html>). */
+@media (min-width: 768px) {
+  :root[data-sidebar] {
+    --sidebar-w: 80px;
+  }
+}
+@media (min-width: 1024px) {
+  :root[data-sidebar="expanded"] {
+    --sidebar-w: 248px;
+  }
+}
+
 @layer utilities {
+  /* Elemento fixed que respeta el sidebar de escritorio (barras inferiores, overlays de la app). */
+  .fixed-app-x {
+    left: var(--sidebar-w);
+    right: 0;
+  }
   .no-scrollbar {
     scrollbar-width: none;
   }

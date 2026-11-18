@@ -4,6 +4,7 @@ import * as C from "@/lib/store/commands";
 import { useMemo, useState } from "react";
 import { ArrowRight, Camera, Clock, PackageCheck, Printer, ScanLine } from "lucide-react";
 import { QrScanner } from "@/components/scan/QrScanner";
+import { isDynamicQr, isStaticAppQr, QR_REJECT_MESSAGES } from "@/lib/engine/qr";
 import type { BarOrder, BarOrderStatus } from "@/lib/types";
 import { nextOrderStatus, redeemPickupCode, setOrderStatus } from "@/lib/engine/actions";
 import { DELIVERY_META, STATUS_META } from "@/lib/engine/bar";
@@ -48,6 +49,15 @@ export default function AdminBarPosPage() {
   const deliver = async (value: string) => {
     const raw = value.trim();
     if (!raw) return;
+    if (isDynamicQr(raw)) {
+      const d = await exec(C.redeemDynamicQr(event.id, raw));
+      if (d.ok) {
+        notify(d.data.kind === "PERK" ? { tone: "vip", title: `🎁 ${d.data.perk.title} canjeado`, description: `Para ${getProfile(state, d.data.perk.user_id)?.full_name ?? "el asistente"}.` } : { tone: "squad", title: `✅ Pedido ${d.data.order.pickup_code} entregado`, description: d.data.order.items_json.map((i) => `${i.qty}× ${i.name}`).join(", ") });
+        setCode("");
+      }
+      return;
+    }
+    if (isStaticAppQr(raw)) return notify({ tone: "rouge", title: "QR estático", description: QR_REJECT_MESSAGES.static });
     if (/^ROUGE:/.test(raw) && !/^ROUGE:ORDER:/.test(raw) && can("perks.redeem")) {
       const p = await exec(C.redeemPerk(raw));
       if (p.ok) {

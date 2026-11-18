@@ -1,12 +1,13 @@
 // Demo · lobby por afinidad, conexiones, Rompehielos, Ghost Mode, chat 1:1, ingreso por códigos
 const { chromium, devices } = require("playwright");
 // Ver e2e/README.md. Configuración por variables de entorno (ver e2e/env.cjs).
-const { BASE: B, OUT: SP, FIXTURE_PHOTO } = require("./env.cjs");
+const { BASE: B, OUT: SP, FIXTURE_PHOTO, unlockDemo } = require("./env.cjs");
 
 const log = (...a) => console.log(...a);
 (async () => {
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ ...devices["iPhone 14 Pro"] });
+  await unlockDemo(ctx); // personas y "Simular…" solo tras entrar por /demo
   const p = await ctx.newPage();
   const errors = [];
   p.on("pageerror", (e) => errors.push("pageerror " + e.message));
@@ -99,11 +100,12 @@ const log = (...a) => console.log(...a);
   await p.fill('input[type="tel"]', "11 6666-7777");
   await p.click("text=Continuar");
   await p.setInputFiles('[data-testid="photo-input"]', FIXTURE_PHOTO);
+  await p.click('[role="dialog"] button:has-text("Usar foto")');
   await p.waitForSelector('img[alt="Foto 1"]', { timeout: 30000 });
   await p.click("text=Continuar");
   await p.click('button[aria-pressed]:has-text("Reggaetón")');
   await p.click("text=Continuar");
-  await p.click("text=Entrar a ROUGE");
+  await p.click("text=Entrar a Rouge Pass");
   await p.waitForURL("**/join/SQ-PIBAS");
   log("✔ vuelve a /join tras onboarding");
   await p.screenshot({ path: `${SP}/p3-join.png`, fullPage: true });

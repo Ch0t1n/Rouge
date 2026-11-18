@@ -122,6 +122,8 @@ export interface Profile {
   /** true solo si coincide con la cuenta conectada por OAuth (trigger profile_instagram). */
   instagram_verified: boolean;
   is_verified: boolean;
+  /** Aceptó Términos y Privacidad y declaró ser mayor de 18 (onboarding). */
+  terms_accepted_at?: ISODate | null;
   created_at: ISODate;
 }
 
@@ -284,7 +286,43 @@ export interface RougeEvent {
   /** Colores de esta edición (si no, los de la marca; si no, los de ROUGE). */
   theme_primary: string | null;
   theme_accent: string | null;
+  /** Privacidad: solo aparece en la grilla quien ya ingresó por la puerta (checked_in_at). */
+  require_checkin_for_lobby?: boolean;
+  /**
+   * Secreto de los QR dinámicos del evento (TOTP). NUNCA llega a los asistentes: en Supabase solo lo reciben la puerta
+   * y la barra (RPC event_qr_secret) para validar sin conexión. En el Modo Demo vive en el estado.
+   */
+  qr_secret?: string | null;
+  /** Módulos activos del evento (null = todos, eventos anteriores a v1.8). Ver engine/features.ts. */
+  features?: import("@/lib/engine/features").EventFeatureFlags | null;
+  /** Ciclo de vida: borrador (no se puede entrar), preventa, en vivo, terminado. */
+  lifecycle_status?: EventLifecycle;
 }
+
+export type EventLifecycle = "draft" | "presale" | "live" | "ended";
+
+/** Configuración de la organización (cuenta del dueño/a). La edita ROUGE HQ. */
+export interface OrganizationSettings {
+  organization_id: UUID;
+  /** true = el dueño/a crea sus eventos y prende/apaga módulos desde /admin/events con el mismo creador. */
+  allow_owner_self_service: boolean;
+  updated_at: ISODate;
+}
+
+/**
+ * Lista / lote de ingreso (ej. "Lista Free de Vicky"). Hasta `free_until` entra gratis; después, en la puerta se
+ * cobra `late_price` (conversión tardía) antes de dejar pasar.
+ */
+export interface TicketList {
+  id: UUID;
+  event_id: UUID;
+  name: string;
+  free_until: ISODate | null;
+  late_price: number;
+  created_at: ISODate;
+}
+
+export type LatePaymentMethod = "cash" | "mercadopago" | "transfer";
 
 /** Equipo del evento (tabla `event_staff`). Quien crea el evento es "owner" aunque no tenga fila. */
 export type StaffRole = "owner" | "manager" | "bartender" | "waiter" | "security" | "promoter";
@@ -293,6 +331,111 @@ export interface EventStaff {
   event_id: UUID;
   user_id: UUID;
   role: StaffRole;
+  created_at: ISODate;
+}
+
+// ── Staff por organización, terminales y auditoría ─────────────────
+
+/**
+ * Organización = la cuenta del dueño/a (quien crea los eventos y las marcas). `organization_id` es su user id:
+ * cada dueño/a gestiona SOLO su staff y sus eventos.
+ */
+export type StaffScope = "all_org_events" | "specific_events";
+
+/** Alta de staff de una organización (vía invitación de 1 uso). Complementa a `event_staff` (alta por @usuario). */
+export interface StaffAssignment {
+  id: UUID;
+  organization_id: UUID;
+  user_id: UUID;
+  role: Exclude<StaffRole, "owner">;
+  scope: StaffScope;
+  /** Solo con scope = specific_events. */
+  event_ids: UUID[];
+  /** Puerta y barra: permisos activos solo de 2 h antes del inicio a 1 h después del cierre de cada evento. */
+  access_window: boolean;
+  /** Kill switch: baja inmediata (se conserva la fila para la auditoría). */
+  revoked_at: ISODate | null;
+  created_by: UUID;
+  created_at: ISODate;
+}
+
+/** Invitación de staff de un solo uso (link / QR). Caduca a las 2 h. Solo se guarda el hash del token. */
+export interface StaffInvite {
+  id: UUID;
+  organization_id: UUID;
+  role: Exclude<StaffRole, "owner">;
+  scope: StaffScope;
+  event_ids: UUID[];
+  access_window: boolean;
+  token_hash: string;
+  expires_at: ISODate;
+  used_at: ISODate | null;
+  used_by: UUID | null;
+  revoked_at: ISODate | null;
+  created_by: UUID;
+  created_at: ISODate;
+}
+
+/**
+ * PIN personal (4-6 dígitos) para operar una terminal en Modo Kiosco (tablet fija en barra o puerta).
+ * Demo: `pin_hash` = sha256(org:user:pin). Supabase: bcrypt en el servidor, el cliente nunca lo recibe (null).
+ */
+export interface TerminalPin {
+  organization_id: UUID;
+  user_id: UUID;
+  pin_hash: string | null;
+  updated_at: ISODate;
+}
+
+export type AuditAction =
+  | "staff.invited"
+  | "staff.joined"
+  | "staff.revoked"
+  | "staff.role_changed"
+  | "staff.pin_set"
+  | "kiosk.unlocked"
+  | "kiosk.failed"
+  | "door.check_in"
+  | "door.rejected"
+  | "bar.delivered"
+  | "perk.redeemed"
+  | "courtesy.issued"
+  | "menu.price_changed"
+  | "code.revoked"
+  | "attendee.removed"
+  | "report.created"
+  | "account.deleted"
+  | "event.created"
+  | "event.updated"
+  | "event.modules_changed";
+
+/** Registro inmutable (append-only) de acciones sensibles. En SQL: sin UPDATE/DELETE, lo escriben triggers y RPCs. */
+export interface AuditEntry {
+  id: UUID;
+  organization_id: UUID | null;
+  event_id: UUID | null;
+  /** Cuenta que ejecutó la acción (en kiosco: la cuenta de la terminal). */
+  actor_id: UUID | null;
+  /** Persona que operó la terminal con su PIN (Modo Kiosco). */
+  operator_id: UUID | null;
+  action: AuditAction;
+  target: string | null;
+  details: Record<string, string | number | boolean | null>;
+  created_at: ISODate;
+}
+
+export type ReportReason = "harassment" | "fake_profile" | "underage" | "violence" | "spam" | "other";
+
+/** Reporte de un asistente: alerta en vivo al panel de seguridad del evento. */
+export interface UserReport {
+  id: UUID;
+  event_id: UUID | null;
+  reporter_id: UUID;
+  reported_user_id: UUID;
+  reason: ReportReason;
+  details: string;
+  status: "open" | "reviewed";
+  reviewed_by: UUID | null;
   created_at: ISODate;
 }
 
@@ -315,6 +458,17 @@ export interface EventInviteCode {
   checked_in_at: ISODate | null;
   /** Categoría de la entrada (v1.10). Al usarla, la asistencia toma esta categoría. null = asistente. */
   tier: AttendeeTier | null;
+  /** Terminal (dispositivo) que lo escaneó: si otra terminal lo intenta, ve cuál y a qué hora. */
+  checked_in_terminal?: string | null;
+  /** Lista / lote (Free con conversión tardía). */
+  list_id?: UUID | null;
+  /** Diferencial cobrado en puerta por llegar después del horario free. */
+  late_paid_at?: ISODate | null;
+  late_payment_method?: LatePaymentMethod | null;
+  /** Titular (para la búsqueda manual en la puerta: nombre, DNI, email). Solo staff de puerta / gestor. */
+  holder_name?: string | null;
+  holder_dni?: string | null;
+  holder_email?: string | null;
   created_at: ISODate;
 }
 
@@ -326,7 +480,18 @@ export interface PromoterLink {
   code: string;
   /** Lo que se le paga al RRPP por cada ingreso (lo fija dueño/a o producción). */
   commission_per_entry: number;
+  /** Esquema escalonado (v1.7): precio de la entrada para calcular el % y tramos marginales por cantidad vendida. */
+  ticket_price?: number;
+  commission_tiers?: CommissionTier[];
+  /** % adicional sobre lo que consumieron en barra quienes entraron por su link. */
+  bar_commission_percent?: number;
   created_at: ISODate;
+}
+
+/** Tramo de comisión: desde la entrada N (1-based) en adelante se paga `percent` % del precio de la entrada. */
+export interface CommissionTier {
+  from: number;
+  percent: number;
 }
 
 export type ApiScope = "codes:read" | "codes:write";
@@ -374,6 +539,7 @@ export interface EventAttendee {
   referred_by: UUID | null;
   /** Escaneado en la puerta con su pase de la app o su entrada. Privado: solo la persona y el equipo. */
   checked_in_at: ISODate | null;
+  checked_in_terminal?: string | null;
   /** Lo que ven los demás asistentes: si está acreditado/a, sin la hora (columna generada en SQL). */
   is_checked_in?: boolean;
   /** Categoría de la entrada: define a qué zonas puede pasar (v1.10). La asigna el organizador o su código. */
@@ -795,11 +961,27 @@ export interface BarOrder {
   /** Id del pago en Mercado Pago (o "demo-…" en el Modo Demo). */
   payment_ref: string | null;
   paid_at: ISODate | null;
+  /** Trago regalado desde el chat: a quién le llega el QR (se emite al acreditarse el pago). */
+  gift_to?: UUID | null;
+  /** Parte de una reserva de Mesa VIP dividida (Vaquita): el QR grupal se libera al 100 % pagado. */
+  vip_reservation_id?: UUID | null;
   created_at: ISODate;
   updated_at: ISODate;
 }
 
 // ── Cuentas de la mesa ───────────────────────────────────────────────
+
+/** Reserva de Mesa VIP dividida entre el Squad: una parte (pedido) por integrante, cada uno paga la suya. */
+export interface VipReservation {
+  id: UUID;
+  event_id: UUID;
+  squad_id: UUID;
+  item_id: string;
+  label: string;
+  total_amount: number;
+  created_by: UUID;
+  created_at: ISODate;
+}
 
 /** Gasto cargado a mano por un integrante del Squad (mesa, entradas, taxi…). */
 export interface SquadExpense {
@@ -833,6 +1015,46 @@ export interface SquadSettlement {
 export interface PayoutAlias {
   user_id: UUID;
   alias: string;
+}
+
+// ── Campañas por WhatsApp (sin API paga) ────────────────────────────
+
+/** Cliente de la organización (asistió a alguno de sus eventos). El teléfono solo lo ve el staff gestor. */
+export interface OrgContact {
+  user_id: UUID;
+  full_name: string;
+  phone: string | null;
+  birth_date: string;
+  /** Consumo acumulado en la barra en todos los eventos de la organización. */
+  total_spent: number;
+  events_count: number;
+  last_event_at: ISODate;
+  /** RRPP por el que entró por primera vez. */
+  referred_by: UUID | null;
+}
+
+export type CampaignSegment = "birthdays_week" | "vip_spenders" | "inactive_30d" | "rrpp_guests" | "all";
+
+export interface Campaign {
+  id: UUID;
+  organization_id: UUID;
+  event_id: UUID | null;
+  name: string;
+  segment: CampaignSegment;
+  /** RRPP puntual para el segmento rrpp_guests (null = todos). */
+  promoter_id: UUID | null;
+  template: string;
+  benefit: string;
+  created_by: UUID;
+  created_at: ISODate;
+}
+
+/** Marca de "Contactado" (el mensaje se manda desde WhatsApp del organizador: wa.me). */
+export interface CampaignContact {
+  campaign_id: UUID;
+  user_id: UUID;
+  contacted_at: ISODate;
+  contacted_by: UUID;
 }
 
 // ── Estado global ────────────────────────────────────────────────────
@@ -914,10 +1136,37 @@ export interface RougeState {
   squad_settlements: SquadSettlement[];
   payout_aliases: PayoutAlias[];
   /** Supabase: números por RRPP calculados en el servidor (RPC promoter_stats). El RRPP no ve a los asistentes. */
-  promoter_stats?: { user_id: UUID; link_id: UUID | null; code: string | null; commission_per_entry: number; entries: number; checked_in: number; billable: number; to_pay: number }[] | null;
+  promoter_stats?: { user_id: UUID; link_id: UUID | null; code: string | null; commission_per_entry: number; entries: number; checked_in: number; billable: number; to_pay: number; bar_spend?: number }[] | null;
   /** Modo Demo: evento al que pertenece `bar_menu` y menús de los otros eventos (en Supabase se carga el del activo). */
   bar_menu_event_id?: UUID;
   demo_menus?: Record<UUID, BarMenuItem[]>;
   /** Solo staff en Modo Supabase: conteos de conexiones (que son privadas por RLS). */
   admin_stats?: AdminStats | null;
+  /** Staff de MI organización (dueño/a) o mis propias asignaciones (staff). */
+  staff_assignments: StaffAssignment[];
+  /** Invitaciones de staff de mi organización (sin el token). */
+  staff_invites: StaffInvite[];
+  /** PINs de terminal (demo: con hash; Supabase: solo si existe, pin_hash null). */
+  terminal_pins: TerminalPin[];
+  /** Auditoría de mi organización (dueño/a y producción). */
+  audit_log: AuditEntry[];
+  /** Reportes: los míos (asistente) o los del evento (seguridad, dueño/a, producción). */
+  user_reports: UserReport[];
+  /** Administradores globales de ROUGE (consola /superadmin). */
+  platform_admin_ids: UUID[];
+  /** Configuración de organizaciones (la mía; ROUGE HQ: todas). */
+  organization_settings?: OrganizationSettings[];
+  /** Listas / lotes de ingreso del evento (free con horario límite). */
+  ticket_lists: TicketList[];
+  /** Consola global (solo administradores de ROUGE en Supabase): tablero y matriz calculados en el servidor. */
+  superadmin?: { events: import("@/lib/engine/superadmin").GlobalEventRow[]; staff: import("@/lib/engine/superadmin").GlobalStaffRow[] } | null;
+  /** Base de clientes de MI organización (dueño/a, producción): CRM para campañas. Supabase: RPC org_contacts. */
+  org_contacts?: OrgContact[];
+  campaigns?: Campaign[];
+  vip_reservations?: VipReservation[];
+  campaign_contacts?: CampaignContact[];
+  /** Curvas de 15' de las últimas fechas de la organización (tablero minuto a minuto). Supabase: RPC org_event_curves. */
+  event_curves_history?: { event_id: UUID; name: string; starts_at: ISODate; points: { m: number; entries: number; sales: number }[] }[];
+  /** Secretos de MIS credenciales dinámicas (pase, perks, pedidos). Supabase: RPC my_qr_secrets. */
+  qr_secrets?: { event_id: UUID; kind: "PASS" | "PERK" | "ORDER"; ref: string; secret: string }[];
 }

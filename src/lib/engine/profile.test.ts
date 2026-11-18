@@ -99,6 +99,6 @@ describe("completitud", () => {
   it("suma pesos", () => {
     const s = createSeedState(NOW);
     const me = s.profiles.find((p) => p.id === ME)!;
-    expect(profileCompleteness(me).percent).toBe(90); // le falta el loop de video
+    expect(profileCompleteness(me).percent).toBe(60); // tiene 1 foto real (pide 2) y le falta el loop de video
   });
 });

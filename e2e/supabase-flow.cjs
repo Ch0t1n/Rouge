@@ -40,11 +40,12 @@ async function onboard(page, name, user, phone, genres) {
   await page.click("text=Continuar");
   await page.waitForSelector("text=Tu mejor versión");
   await page.setInputFiles('[data-testid="photo-input"]', FIXTURE_PHOTO);
+  await page.click('[role="dialog"] button:has-text("Usar foto")');
   await page.waitForSelector('img[alt="Foto 1"]', { timeout: 30000 });
   await page.click("text=Continuar");
   for (const g of genres) await page.click(`button[aria-pressed]:has-text("${g}")`);
   await page.click("text=Continuar");
-  await page.click("text=Entrar a ROUGE");
+  await page.click("text=Entrar a Rouge Pass");
 }
 
 (async () => {

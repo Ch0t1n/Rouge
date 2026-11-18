@@ -12,7 +12,8 @@ import { useRouge } from "@/lib/store/RougeContext";
 import { cn, formatMoney, toCSV, whatsappLink } from "@/lib/utils";
 import { AdminHeader, downloadCSV } from "@/components/admin/AdminChrome";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import Link from "next/link";
 import { faceOf, tierLabel, verticalOf } from "@/lib/engine/verticals";
 
 type SortKey = "total_spent" | "squad_size" | "matches" | "age" | "full_name";
@@ -87,14 +88,19 @@ export default function AdminCrmPage() {
   );
 
   return (
-    <main className="mx-auto max-w-7xl space-y-6 px-5 py-6 lg:px-10 lg:py-10">
+    <main className="mx-auto max-w-7xl 2xl:max-w-[1600px] space-y-6 px-5 py-6 lg:px-10 lg:py-10">
       <AdminHeader
         title="CRM de asistentes"
         subtitle={`${all.length} asistentes registrados · datos para remarketing y fidelización (con consentimiento del usuario).`}
         actions={
-          <Button variant="vip" onClick={exportCsv} disabled={!rows.length}>
-            <Download /> Exportar CSV ({rows.length})
-          </Button>
+          <>
+            <Link href="/admin/blasts#whatsapp" className={buttonVariants({ variant: "glass" })}>
+              <MessageCircle /> Campaña por WhatsApp
+            </Link>
+            <Button variant="vip" onClick={exportCsv} disabled={!rows.length}>
+              <Download /> Exportar CSV ({rows.length})
+            </Button>
+          </>
         }
       />
 
@@ -102,7 +108,7 @@ export default function AdminCrmPage() {
         <label className="relative min-w-[240px] flex-1">
           <span className="sr-only">Buscar</span>
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={pro ? "Buscar por nombre o empresa" : "Buscar por nombre, @username o género musical"} className="min-h-touch w-full rounded-2xl border border-white/10 bg-white/[0.04] pl-9 pr-3 text-sm focus:border-vip/50 focus:outline-none" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={pro ? "Buscar por nombre o empresa (atajo: /)" : "Buscar por nombre, @username o género musical (atajo: /)"} data-admin-search className="min-h-touch w-full rounded-2xl border border-white/10 bg-white/[0.04] pl-9 pr-3 text-sm focus:border-vip/50 focus:outline-none" />
         </label>
         <button type="button" onClick={() => setTag(null)} className={cn("min-h-[40px] rounded-full px-3 text-xs font-semibold", !tag ? "bg-vip text-background" : "bg-white/[0.05] text-muted")}>
           Todos
@@ -115,9 +121,10 @@ export default function AdminCrmPage() {
       </div>
 
       <div className="glass overflow-hidden rounded-3xl">
-        <div className="overflow-x-auto">
+        {/* Alta densidad: cabecera fija dentro de la tabla con scroll propio (monitores anchos) */}
+        <div className="max-h-[calc(100dvh-16rem)] overflow-auto">
           <table className="w-full min-w-[980px] text-sm">
-            <thead className="text-left text-xs uppercase tracking-wider text-muted">
+            <thead className="sticky top-0 z-10 bg-surface/95 text-left text-xs uppercase tracking-wider text-muted backdrop-blur">
               <tr>
                 <Th k="full_name" className="pl-5">Asistente</Th>
                 <Th>Teléfono</Th>

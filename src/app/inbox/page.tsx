@@ -2,18 +2,19 @@
 
 import * as C from "@/lib/store/commands";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Heart, MessageCircle, X, Zap } from "lucide-react";
 import type { Connection, Profile } from "@/lib/types";
 import { computeAffinity } from "@/lib/engine/affinity";
 import { respondConnection } from "@/lib/engine/actions";
-import { directMessages, getAttendee, getEvent, getProfile, inboxOf, matchesOf } from "@/lib/engine/selectors";
+import { getAttendee, getProfile, inboxOf } from "@/lib/engine/selectors";
 import { faceOf, verticalOf } from "@/lib/engine/verticals";
 import { useRouge } from "@/lib/store/RougeContext";
 import { useRequireProfile } from "@/lib/store/hooks";
 import { cn, timeAgo } from "@/lib/utils";
 import { useMatchCelebration } from "@/components/lobby/MatchCelebration";
+import { ConversationList, NoChatSelected, useConversations } from "@/components/chat/ConversationList";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { profileHref } from "@/lib/engine/privacy";
@@ -37,18 +38,7 @@ function Inbox() {
   const requests = inboxOf(state, meId, eventId);
   const [tab, setTab] = useState<"requests" | "matches">(requests.length ? "requests" : "matches");
 
-  // Matches de TODOS los eventos: sobreviven a la caducidad del lobby.
-  const matches = useMemo(
-    () =>
-      matchesOf(state, meId)
-        .map((m) => {
-          const msgs = directMessages(state, m.connection.id);
-          const last = msgs.at(-1);
-          return { ...m, last, sortKey: last?.created_at ?? m.connection.responded_at ?? m.connection.created_at };
-        })
-        .sort((a, b) => +new Date(b.sortKey) - +new Date(a.sortKey)),
-    [state, meId],
-  );
+  const matches = useConversations();
   const sent = state.connections.filter((c) => c.event_id === eventId && c.sender_id === meId && c.status === "pending");
 
   const respond = async (c: Connection, other: Profile, accept: boolean, thenChat = false) => {
@@ -63,8 +53,9 @@ function Inbox() {
   };
 
   return (
-    <main className="safe-top">
-      <header className="sticky top-0 z-30 bg-background/85 px-4 pb-2 pt-4 backdrop-blur-xl">
+    <div className="lg:grid lg:grid-cols-[minmax(320px,35%)_1fr] lg:gap-6">
+    <main className="safe-top lg:border-r lg:border-white/10">
+      <header className="sticky top-0 z-30 bg-background/85 px-4 pb-2 pt-4 backdrop-blur-xl md:pt-6">
         <div className="flex items-center justify-between gap-2">
           <h1 className="text-2xl">Bandeja</h1>
           <Link href="/meetings" className="glass-pill inline-flex min-h-[40px] items-center gap-1.5 px-3 text-xs">
@@ -175,30 +166,17 @@ function Inbox() {
 
         {tab === "matches" && (
           <>
-            {matches.length === 0 && <EmptyNote>Todavía no tenés {v.copy.matches.toLowerCase()}. Cuando alguien te conecte de vuelta, aparece acá para siempre.</EmptyNote>}
-            {matches.map(({ connection: c, profile: p, last }) => (
-              <Link key={c.id} href={`/chat/${c.id}`} className="glass flex min-h-[72px] items-center gap-3 rounded-2xl p-3 transition hover:bg-white/10">
-                <Avatar profile={p} size={52} ring="rouge" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <p className="truncate font-semibold">{p.full_name.split(" ")[0]}</p>
-                    <span className="shrink-0 text-[11px] text-muted">{timeAgo(last?.created_at ?? c.responded_at ?? c.created_at)}</span>
-                  </div>
-                  <p className={cn("truncate text-sm", last && last.sender_id !== meId ? "text-primary" : "text-muted")}>
-                    {last ? `${last.sender_id === meId ? "Vos: " : ""}${last.message_type === "image" ? "📷 Foto" : last.content}` : verticalOf(state, c.event_id).kind === "corporate" ? "¡Nuevo contacto! Escribile primero 👋" : "¡Es un Match! Escribile primero 👋"}
-                  </p>
-                  <p className="truncate text-[11px] text-muted/70">
-                    {verticalOf(state, c.event_id).kind === "corporate" ? "💼 " : ""}
-                    {getEvent(state, c.event_id)?.name}
-                  </p>
-                </div>
-              </Link>
-            ))}
+            <ConversationList />
           </>
         )}
       </div>
       {celebration.element}
     </main>
+      {/* PC: vista dividida — el chat se abre a la derecha (ver /chat/[id]) */}
+      <aside className="sticky top-0 hidden h-dvh py-6 lg:block">
+        <NoChatSelected />
+      </aside>
+    </div>
   );
 }
 

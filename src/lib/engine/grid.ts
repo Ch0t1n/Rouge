@@ -15,9 +15,14 @@ export interface GridFilters {
   moods: MoodTag[];
   /** "Coincidieron en tu misma zona del plano" (sectores visitados en común) */
   sameZone: boolean;
+  /** Búsqueda por nombre o @username (vista de escritorio). */
+  query?: string;
 }
 
-export const EMPTY_FILTERS: GridFilters = { genres: [], needs: [], moods: [], sameZone: false };
+export const EMPTY_FILTERS: GridFilters = { genres: [], moods: [], needs: [], sameZone: false, query: "" };
+
+/** Normaliza para buscar sin tildes ni mayúsculas ("Sofía" ⇔ "sofia"). */
+const fold = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 
 export interface GridCardData {
   profile: Face;
@@ -47,7 +52,11 @@ export function lobbyGrid(state: RougeState, eventId: UUID, viewerId: UUID, filt
     .filter((c) => !filters.needs.length || !!c.profile.persona?.offering.some((n) => filters.needs.includes(n)))
     .filter((c) => !filters.moods.length || (c.attendee.mood_tag !== null && filters.moods.includes(c.attendee.mood_tag)))
     .filter((c) => !filters.sameZone || c.sharedZones.length > 0)
+    .filter((c) => {
+      const q = fold(filters.query ?? "").replace(/^@/, "");
+      return !q || fold(c.profile.full_name).includes(q) || c.profile.username.includes(q);
+    })
     .sort((a, b) => b.affinity.rank - a.affinity.rank);
 }
 
-export const activeFilterCount = (f: GridFilters) => f.genres.length + f.needs.length + f.moods.length + (f.sameZone ? 1 : 0);
+export const activeFilterCount = (f: GridFilters) => f.genres.length + f.needs.length + f.moods.length + (f.sameZone ? 1 : 0) + (f.query?.trim() ? 1 : 0);

@@ -21,7 +21,7 @@ import {
   type LobbyPhase,
 } from "@/lib/engine/selectors";
 import { blastsFor } from "@/lib/engine/actions";
-import { useRequireProfile } from "@/lib/store/hooks";
+import { useEventFeatures, useRequireProfile } from "@/lib/store/hooks";
 import { buttonVariants } from "@/components/ui/button";
 import { useNow, useRouge } from "@/lib/store/RougeContext";
 import { LineupBanner } from "@/components/event/LineupBanner";
@@ -36,8 +36,10 @@ import { ROLE_META, roleHome } from "@/lib/engine/roles";
 import { eventTheme } from "@/lib/engine/branding";
 import { squadAccount } from "@/lib/engine/settle";
 import { BrandLogo } from "@/components/brand/BrandTheme";
-import { QrBlock } from "@/components/perks/QrCard";
+import { DynamicQr } from "@/components/perks/DynamicQr";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
+import { Wordmark } from "@/components/brand/Wordmark";
+import { APP_NAME } from "@/lib/brand";
 import { passValue } from "@/lib/engine/door";
 import { CorporatePassView } from "@/components/pro/CorporatePassView";
 import { verticalOf } from "@/lib/engine/verticals";
@@ -60,10 +62,12 @@ export default function HomePage() {
 }
 
 function Home() {
-  const { state, mode, notify, isStaff, role } = useRouge();
+  const { state, mode, demoVisible, notify, isStaff, role } = useRouge();
   const shareSheet = useShare();
   const router = useRouter();
   const now = useNow(15_000);
+  // Módulos del evento (v1.8): el inicio solo muestra lo que está prendido.
+  const f = useEventFeatures();
   const event = activeEvent(state)!;
   const me = currentUser(state)!;
   const attendee = getAttendee(state, event.id, me.id);
@@ -107,11 +111,11 @@ function Home() {
           {theme.logo_url ? (
             <BrandLogo theme={theme} className="h-9 max-w-[150px]" />
           ) : (
-            <span className="font-display text-[26px] font-bold leading-none tracking-tight text-rouge text-glow-rouge">ROUGE</span>
+            <span className="font-display text-[26px] font-bold leading-none tracking-tight text-rouge text-glow-rouge"><Wordmark /></span>
           )}
-          <Badge tone={mode === "demo" ? "vip" : "squad"}>{mode === "demo" ? "Modo Demo" : "Supabase"}</Badge>
+          {mode === "supabase" ? <Badge tone="squad">Supabase</Badge> : demoVisible && <Badge tone="vip">Modo Demo</Badge>}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 md:hidden">
           <Link href="/profile" aria-label="Mi perfil" className="glass grid size-11 place-items-center rounded-full">
             <UserRound className="size-5" />
           </Link>
@@ -119,11 +123,13 @@ function Home() {
         </div>
       </header>
 
-      <div className="space-y-4 px-4">
-        <LineupBanner event={event} />
+      <div className="space-y-4 px-4 lg:grid lg:grid-cols-2 lg:items-start lg:gap-5 lg:space-y-0">
+        <div className="lg:col-span-2">
+          <LineupBanner event={event} />
+        </div>
 
         {/* Hero del evento */}
-        <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-rouge/25 via-surface to-squad/10 p-5">
+        <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-rouge/25 via-surface to-squad/10 p-5 lg:col-span-2">
           <div aria-hidden className="absolute -right-10 -top-10 size-40 rounded-full bg-rouge/30 blur-3xl" />
           <div className="relative">
             <div className="flex items-center gap-2">
@@ -140,7 +146,7 @@ function Home() {
               </span>
               <button
                 type="button"
-                onClick={() => shareSheet.open({ url: `/join/${event.slug}`, title: `Invitá a ${event.name}`, text: pro ? `Sumate al networking de ${event.name} en ROUGE Pro 🤝` : `Entrá al lobby de ${event.name} en ROUGE 🔴`, fileName: `rouge-${event.slug}`, accent: "rouge" })}
+                onClick={() => shareSheet.open({ url: `/join/${event.slug}`, title: `Invitá a ${event.name}`, text: pro ? `Sumate al networking de ${event.name} en ${APP_NAME} Pro 🤝` : `Entrá al lobby de ${event.name} en ${APP_NAME} 🔴`, fileName: `rouge-pass-${event.slug}`, accent: "rouge" })}
                 className="glass-pill inline-flex min-h-[32px] items-center gap-1 hover:bg-white/10"
                 aria-label="QR para invitar al evento"
               >
@@ -169,7 +175,7 @@ function Home() {
         </section>
 
         {/* Mi entrada: pase para escanear en la puerta */}
-        {attendee && phase !== "expired" && (
+        {attendee && phase !== "expired" && f.enableTicketing && (
           <button type="button" onClick={() => setPass(true)} className="glass flex w-full items-center gap-3 rounded-2xl p-4 text-left transition hover:bg-white/10" data-testid="my-pass">
             <QrCode className="size-6 shrink-0 text-squad" />
             <span className="min-w-0 flex-1 text-sm">
@@ -180,14 +186,14 @@ function Home() {
           </button>
         )}
         {pro ? (
-          // ROUGE Pro: pase ejecutivo con categoría, QR de acceso ⇄ tarjeta vCard y "Guardar contacto (.vcf)".
+          // ROUGE Pro: pase ejecutivo con categoría, QR de acceso dinámico ⇄ tarjeta vCard y "Guardar contacto (.vcf)".
           <BottomSheet open={pass} onClose={() => setPass(false)} title="Mi pase" description="Acceso, categoría y tu tarjeta personal." className="border-pro-line bg-pro-navy">
             <CorporatePassView eventId={event.id} />
           </BottomSheet>
         ) : (
           <BottomSheet open={pass} onClose={() => setPass(false)} title="Mi entrada" description="Mostralo en la puerta: el personal ve tu foto y tu nombre.">
             <div className="space-y-3 text-center">
-              <QrBlock value={passValue(event.id, me.id)} label={`${me.full_name} · ${event.name}`} />
+              <DynamicQr eventId={event.id} kind="PASS" refId={me.id} label={`${me.full_name} · ${event.name}`} tone="squad" />
               <p className="text-xs text-muted">Si tenés la entrada de la ticketera, también sirve su QR.</p>
             </div>
           </BottomSheet>
@@ -213,11 +219,11 @@ function Home() {
         )}
 
         {/* Métricas personales */}
-        <section className="grid grid-cols-2 gap-3">
-          <StatTile href="/lobby" icon={<Users />} tone="rouge" value={data.grid.length} label="Asistentes visibles" hint="Ir a la grilla →" />
-          <StatTile href="/inbox" icon={<Heart />} tone="rouge" value={data.matches.length} label={v.copy.matches} hint={`${data.inbox.length} en tu bandeja`} />
-          <StatTile href="/perks" icon={<Gift />} tone="vip" value={data.perks.length} label="Perks & QRs" hint="listos para canjear" />
-          <StatTile href="/bar" icon={<Martini />} tone="vip" value={data.orders.length} label={v.copy.bar} hint="Pedí sin hacer fila →" />
+        <section className="grid grid-cols-2 gap-3 lg:col-span-2 lg:grid-cols-4">
+          {f.enableSocialLobby && <StatTile href="/lobby" icon={<Users />} tone="rouge" value={data.grid.length} label="Asistentes visibles" hint="Ir a la grilla →" />}
+          {f.enableDirectChat && <StatTile href="/inbox" icon={<Heart />} tone="rouge" value={data.matches.length} label={v.copy.matches} hint={`${data.inbox.length} en tu bandeja`} />}
+          {f.enablePerks && <StatTile href="/perks" icon={<Gift />} tone="vip" value={data.perks.length} label="Perks & QRs" hint="listos para canjear" />}
+          {f.enableSmartBar && <StatTile href="/bar" icon={<Martini />} tone="vip" value={data.orders.length} label={v.copy.bar} hint="Pedí sin hacer fila →" />}
         </section>
 
         {/* Reuniones / puntos de encuentro */}
@@ -235,6 +241,8 @@ function Home() {
           {meetingSummary.respond > 0 && <span className="grid min-w-[22px] place-items-center rounded-full bg-squad px-1.5 font-display text-xs font-bold text-background">{meetingSummary.respond}</span>}
         </Link>
 
+        {f.enableSquads && (
+          <>
         {/* Squad */}
         {data.squad ? (
           <Link href="/squad" className="glass block rounded-3xl p-4 transition hover:bg-white/10">
@@ -289,8 +297,12 @@ function Home() {
             </Link>
           )
         )}
+          </>
+        )}
 
-        {/* Plano */}
+        {f.enableVenueMap && (
+          <>
+{/* Plano */}
         <section>
           <div className="mb-2 flex items-end justify-between">
             <div>
@@ -321,6 +333,8 @@ function Home() {
             }
           />
         </section>
+          </>
+        )}
 
         <Link href="/settings/privacy" className="glass flex min-h-touch items-center gap-3 rounded-2xl p-4 transition hover:bg-white/5">
           <span className="grid size-10 place-items-center rounded-xl bg-squad/15 text-squad">
@@ -332,6 +346,20 @@ function Home() {
           </div>
           <ArrowRight className="size-5 text-muted" />
         </Link>
+
+        {f.enablePostPartyRecap && (
+          <>
+        {/* Rouge Wrapped: tu noche en una tarjeta para Stories */}
+        <Link href="/wrapped" className="glass flex min-h-touch items-center gap-3 rounded-2xl border-rouge/30 p-4 transition hover:bg-white/5">
+          <span className="grid size-10 place-items-center rounded-xl bg-rouge/15 text-xl">✨</span>
+          <div className="flex-1">
+            <p className="font-display font-semibold">Tu Rouge Wrapped</p>
+            <p className="text-xs text-muted">Tu noche en una tarjeta para Instagram Stories</p>
+          </div>
+          <ArrowRight className="size-5 text-muted" />
+        </Link>
+          </>
+        )}
 
         {isStaff && (
           <Link href={roleHome(role)} className="glass flex min-h-touch items-center gap-3 rounded-2xl p-4 transition hover:bg-white/5">

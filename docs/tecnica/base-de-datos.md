@@ -89,8 +89,25 @@ Toda operación sensible pasa por una función `security definer` que valida la 
 
 `new_access_code()` genera los códigos (10 caracteres, alfabeto de 32 sin 0/O/1/I).
 
-**Helpers de permisos:** `is_blocked`, `is_event_attendee`, `is_event_staff`, `has_staff_role`, `is_event_manager`,
-`can_operate_bar`, `is_squad_member`, `are_squadmates`, `is_match`, `can_see_pin`, `lobby_is_open`.
+**Helpers de permisos (schema `private`, fuera de la API):** `is_blocked`, `is_event_attendee`, `is_event_staff`,
+`has_staff_role`, `is_event_manager`, `can_operate_bar`, `is_squad_member`, `user_squad`, `are_squadmates`, `is_match`,
+`squad_event`, `can_see_pin`, `lobby_is_open`, más `request_key` y `too_many_code_failures` (anti fuerza bruta). Los usan
+las políticas y las RPCs; no se pueden llamar por `/rpc` (antes `is_blocked(a, b)` o `is_match` con ids ajenos revelaban
+bloqueos y matches). Referencialos siempre como `private.<helper>(…)`.
+
+**Escrituras directas permitidas** (todo lo demás va por RPC): perfil propio (sin `is_verified`), lista negra propia,
+ajustes de asistente (`mood_tag`, `ghost_mode`, `only_liked_can_icebreak`, `last_active_at` — recortado a "ahora"), aceptar o
+rechazar una solicitud recibida, nombre y Mesa VIP del Squad, salir de un Squad, borrar mi pin, mensajes de texto o foto
+(foto solo de `chat-media/<mi id>/`), marcar un blast como visto; staff: eventos (sin `created_by` ni código maestro),
+menú, reglas de perks, sorteos (sin ganador), códigos de 1 uso y equipo (solo dueño/a). Pines, pedidos de barra, QRs y el
+avance de comandas **no** aceptan insert/update directo.
+
+**Límites del servidor (anti abuso):** 20 códigos inválidos en 15 min por usuario o IP ⇒ `too_many_attempts`
+(`join_event` devuelve `null` ante un código inexistente para registrar el intento); 40 solicitudes de conexión cada 10 min
+⇒ `slow_down`; Text Blasts con título ≤ 80, mensaje ≤ 280, Flash Promo de 1 a 240 min y link interno o `https://`.
+
+**Tabla interna `access_code_failures`:** intentos fallidos de códigos (RLS sin políticas; se limpia sola a las 24 h). No
+forma parte del estado del cliente (`RougeState`).
 
 **Triggers:** Rompehielos aceptado → su texto es el primer mensaje del chat; integrante nuevo o regla nueva → QR Drops; pin → sector
 visitado; pedidos → `updated_at`; perfil → Instagram verificado (`profile_instagram`).
@@ -172,8 +189,10 @@ Los valores nuevos del enum `mood_tag_t` se agregan con `alter type … add valu
 | Bucket | Uso | Acceso |
 |---|---|---|
 | `profile-media` | Fotos y loops de perfil | Lectura pública; cada usuario escribe solo en su carpeta. |
-| `chat-media` | Fotos de chats | Cada usuario escribe en su carpeta; lectura para cualquier usuario autenticado que tenga la URL (rutas con UUID, no adivinables). |
+| `chat-media` | Fotos de chats (privado) | Cada usuario escribe en su carpeta; la lee quien la subió y quien puede ver un mensaje que la usa (participantes del 1:1 o del Squad). |
 | `venue-maps` | Planos subidos | Lectura pública; escribe Dueño/a o Producción del evento. |
+
+Ningún bucket acepta SVG (puede llevar scripts). Tipos y tamaños se re-aplican en cada corrida de `schema.sql`.
 
 ## Realtime
 

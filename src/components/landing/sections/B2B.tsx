@@ -227,7 +227,7 @@ export function B2B() {
 
       <div className="mt-14 grid gap-5 lg:grid-cols-2">
         <div className="rounded-[2rem] border border-white/10 bg-surface/70 p-7 backdrop-blur-xl">
-          <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted">Sin ROUGE</p>
+          <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted">Sin Rouge Pass</p>
           <ul className="mt-5 grid gap-3">
             {COMPARE.before.map((t) => (
               <li key={t} className="flex gap-3 text-muted">
@@ -237,7 +237,7 @@ export function B2B() {
           </ul>
         </div>
         <div className="rounded-[2rem] border border-vip/40 bg-vip/[0.07] p-7 shadow-[0_0_80px_rgba(255,184,0,0.12)] backdrop-blur-xl">
-          <p className="font-mono text-xs uppercase tracking-[0.2em] text-vip">Con ROUGE</p>
+          <p className="font-mono text-xs uppercase tracking-[0.2em] text-vip">Con Rouge Pass</p>
           <ul className="mt-5 grid gap-3">
             {COMPARE.after.map((t) => (
               <li key={t} className="flex gap-3">

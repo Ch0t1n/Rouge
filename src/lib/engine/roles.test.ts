@@ -19,9 +19,9 @@ describe("roles", () => {
   it("lleva a cada rol a su pantalla", () => {
     expect(roleHome("attendee")).toBe("/app");
     expect(roleHome("owner")).toBe("/admin");
-    expect(roleHome("bartender")).toBe("/admin/bar-pos");
-    expect(roleHome("waiter")).toBe("/admin/bar-pos");
-    expect(roleHome("security")).toBe("/admin");
+    expect(roleHome("bartender")).toBe("/ops/bar");
+    expect(roleHome("waiter")).toBe("/ops/bar");
+    expect(roleHome("security")).toBe("/ops/door");
   });
   it("cada ruta del admin exige su permiso", () => {
     expect(permissionForPath("/admin")).toBe("admin.overview");
@@ -35,11 +35,11 @@ describe("roles", () => {
 
 describe("destino después del login", () => {
   it("respeta el next si el rol lo permite; si no, va a su pantalla", () => {
-    expect(destinationFor(s, EV, DEMO_IDS.bartender, "/admin/crm")).toBe("/admin/bar-pos");
+    expect(destinationFor(s, EV, DEMO_IDS.bartender, "/admin/crm")).toBe("/ops/bar");
     expect(destinationFor(s, EV, DEMO_IDS.organizer, "/admin/crm")).toBe("/admin/crm");
     expect(destinationFor(s, EV, DEMO_IDS.me, "/join/BRESH26")).toBe("/join/BRESH26");
     expect(destinationFor(s, EV, DEMO_IDS.me, null)).toBe("/app");
-    expect(destinationFor(s, EV, DEMO_IDS.security, "/")).toBe("/admin");
+    expect(destinationFor(s, EV, DEMO_IDS.security, "/")).toBe("/ops/door");
     expect(destinationFor(s, EV, DEMO_IDS.me, "//evil.com")).toBe("/app");
   });
 });

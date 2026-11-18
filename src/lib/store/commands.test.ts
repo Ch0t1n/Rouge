@@ -12,6 +12,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSeedState, DEMO_IDS } from "@/lib/mock/seed";
 import type { RougeState } from "@/lib/types";
 import * as C from "./commands";
+import { credentialSecret, dynamicQrValue } from "@/lib/engine/qr";
+import * as E from "@/lib/engine/eventAdmin";
 import * as MT from "@/lib/engine/meetings";
 import type { Command } from "./commands";
 
@@ -124,7 +126,7 @@ describe("contrato comandos ↔ schema.sql", () => {
     expect(FUNCS.get("request_meeting")).toContain("p_location_kind");
     expect(TABLES.get("meetings")?.has("proposed_by")).toBe(true);
     expect(TABLES.get("b2b_leads")?.has("attendees")).toBe(true);
-    expect(FUNCS.get("zone_check_in")).toEqual(["p_event", "p_zone", "p_value"]);
+    expect(FUNCS.get("zone_check_in")).toEqual(["p_event", "p_zone", "p_value", "p_terminal"]);
     expect(FUNCS.get("generate_invite_codes")).toContain("p_tier");
     expect(TABLES.get("event_zones")?.has("allowed_tiers")).toBe(true);
     expect(TABLES.get("profile_personas")?.has("privacy_level")).toBe(true);
@@ -194,7 +196,7 @@ describe("contrato comandos ↔ schema.sql", () => {
     ["createRaffle", () => runRemote(C.createRaffle(EV, "Botella", "all"), st())],
     ["drawRaffle", () => runRemote(C.drawRaffle(s0().raffles[0].id, () => 0), st(), { draw_raffle: ME })],
     ["sendBlast", () => runRemote(C.sendBlast(EV, { title: "2x1", message: "Barra", segment: { kind: "squad_min_size", min: 4 }, flashMinutes: 20 }), st(), { send_blast: 4 })],
-    ["upsertEvent (nuevo)", () => runRemote(C.upsertEvent({ name: "Neon Sunday", starts_at: new Date(NOW + 72e5).toISOString(), ends_at: new Date(NOW + 9e6).toISOString() }), s0())],
+    ["upsertEvent (nuevo)", () => runRemote(C.upsertEvent({ name: "Neon Sunday", starts_at: new Date(NOW + 72e5).toISOString(), ends_at: new Date(NOW + 9e6).toISOString() }), { ...s0(), current_user_id: DEMO_IDS.platformAdmin })],
     ["upsertEvent (edición)", () => runRemote(C.upsertEvent({ ...s0().events[0], name: "Otro nombre" }), st())],
     ["generateInviteCodes", () => runRemote(C.generateInviteCodes(EV, 5), st(), { generate_invite_codes: [] })],
     ["setStaffRole", () => runRemote(C.setStaffRole(EV, "@" + s0().profiles.find((p) => p.id === ME)!.username, "bartender"), st(), { set_staff_role: ME })],
@@ -229,7 +231,7 @@ describe("contrato comandos ↔ schema.sql", () => {
     ["upsertPersona (edición)", () => runRemote(C.upsertPersona(ME, { id: DEMO_IDS.mePro, kind: "corporate", job_title: "Directora de diseño" }), s0())],
     ["upsertPersona (noche)", () => runRemote(C.upsertPersona(ME, { kind: "nightlife", label: "Techno", music_genres: ["Techno"] }), s0())],
     ["deletePersona", () => { const r = C.upsertPersona(ME, { kind: "nightlife", label: "Otro", music_genres: ["House"] }).local(s0()); const s = (r as { state: RougeState; data: { id: string } }); return runRemote(C.deletePersona(ME, s.data.id), s.state); }],
-    ["upsertEvent (corporativo nuevo)", () => runRemote(C.upsertEvent({ kind: "corporate", name: "Encuentro Exportadores", starts_at: new Date(NOW + 72e5).toISOString(), ends_at: new Date(NOW + 9e6).toISOString() }), s0())],
+    ["upsertEvent (corporativo nuevo)", () => runRemote(C.upsertEvent({ kind: "corporate", name: "Encuentro Exportadores", starts_at: new Date(NOW + 72e5).toISOString(), ends_at: new Date(NOW + 9e6).toISOString() }), { ...s0(), current_user_id: DEMO_IDS.platformAdmin })],
     // [v1.8] Privacidad, reuniones y salas
     ["updatePrivacySettings", () => runRemote(C.updatePrivacySettings(ME, { incognito_default: true, pro_details_after_meeting: true }), s0())],
     ["requestMeeting (sala)", () => { const s = s0(); const at = slotIn(s, DEMO_IDS.proEvent); return runRemote(C.requestMeeting(DEMO_IDS.proEvent, id(24), id(25), { topic: "Mentoría", startsAt: at, duration: 30, location: { kind: "spot", spotId: id(18001) } }), s, { request_meeting: { id: id(77) } }); }],
@@ -247,7 +249,7 @@ describe("contrato comandos ↔ schema.sql", () => {
     ["generateInviteCodes (con categoría)", () => runRemote(C.generateInviteCodes(DEMO_IDS.proEvent, 3, "vip"), st(), { generate_invite_codes: [] })],
     ["setAttendeeTier", () => runRemote(C.setAttendeeTier(DEMO_IDS.proEvent, ME, "speaker"), st(), { set_attendee_tier: {} })],
     ["zoneCheckIn (área)", () => runRemote(C.zoneCheckIn(DEMO_IDS.proEvent, id(20003), `ROUGE:PASS:${DEMO_IDS.proEvent}:${ME}`), { ...s0(), current_user_id: DEMO_IDS.security }, { zone_check_in: { status: "zone_denied" } })],
-    ["zoneCheckIn (puerta principal)", () => runRemote(C.zoneCheckIn(EV, null, s0().event_invite_codes[10].code), { ...s0(), current_user_id: DEMO_IDS.security }, { zone_check_in: { status: "ok" } })],
+    ["zoneCheckIn (puerta principal)", () => runRemote(C.zoneCheckIn(EV, null, s0().event_invite_codes[10].code, "Puerta 1"), { ...s0(), current_user_id: DEMO_IDS.security }, { zone_check_in: { status: "ok" } })],
     ["upsertZone (nueva)", () => runRemote(C.upsertZone(DEMO_IDS.proEvent, { name: "Backstage", kind: "area", allowed_tiers: ["speaker"] }), st())],
     ["upsertZone (edición)", () => runRemote(C.upsertZone(DEMO_IDS.proEvent, { id: id(20003), name: "Sala VIP", kind: "area", allowed_tiers: ["vip"], is_active: false }), st())],
     ["deleteZone", () => runRemote(C.deleteZone(DEMO_IDS.proEvent, id(20005)), st())],
@@ -265,6 +267,38 @@ describe("contrato comandos ↔ schema.sql", () => {
     ["closePoll", () => runRemote(C.closePoll(DEMO_IDS.proEvent, id(21201)), st(), { close_poll: {} })],
     ["votePoll", () => runRemote(C.votePoll(ME, id(21201), "o2"), s0(), { vote_poll: {} })],
     ["deleteEvent", () => { const r = C.duplicateEvent(EV, new Date(NOW + 7 * 86_400_000).toISOString()).local(st()); const s = (r as { state: RougeState; data: { event: { id: string } } }); return runRemote(C.deleteEvent(s.data.event.id), s.state); }],
+    // v1.7 · seguridad operativa
+    ["createStaffInvite", () => runRemote(C.createStaffInvite({ role: "bartender", scope: "specific_events", eventIds: [EV] }), st(), { create_staff_invite: { id: id(9), token: "tok_srv_ABCDEFGHIJKLMNOP" } })],
+    ["acceptStaffInviteRemoteOnly", () => runRemote(C.acceptStaffInviteRemoteOnly("tok_srv_ABCDEFGHIJKLMNOP"), s0(), { accept_staff_invite: { id: id(9) } })],
+    ["revokeStaffInvite", () => { const r = C.createStaffInvite({ role: "security", scope: "all_org_events" }).local(st()); const s = (r as { state: RougeState }).state; return runRemote(C.revokeStaffInvite(s.staff_invites[0].id), s); }],
+    ["revokeStaffAccess", () => runRemote(C.revokeStaffAccess(DEMO_IDS.doorScanner), st(), { revoke_staff_access: 1 })],
+    ["setTerminalPin", () => runRemote(C.setTerminalPin(DEMO_IDS.organizer, "4071"), { ...s0(), current_user_id: DEMO_IDS.bartender })],
+    ["kioskUnlock", () => runRemote(C.kioskUnlock(EV, "4826"), { ...s0(), current_user_id: DEMO_IDS.manager }, { kiosk_unlock: { operator_id: DEMO_IDS.bartender, role: "bartender" } })],
+    ["kioskAudit", () => runRemote(C.kioskAudit(EV, DEMO_IDS.bartender, "bar.delivered", "ABCD"), { ...s0(), current_user_id: DEMO_IDS.manager })],
+    ["reportUser", () => runRemote(C.reportUser(id(5), EV, "harassment", "insiste", true), s0(), { report_user: id(9) })],
+    ["reviewReport", () => runRemote(C.reviewReport(s0().user_reports[0].id), { ...s0(), current_user_id: DEMO_IDS.security })],
+    // v1.7 · QR dinámicos, listas free
+    ["doorCheckIn (terminal)", () => runRemote(C.doorCheckIn(EV, s0().event_invite_codes[10].code, "Puerta 1"), { ...s0(), current_user_id: DEMO_IDS.security }, { door_scan: { status: "ok" } })],
+    ["doorSettleLate", () => { const s = { ...s0(), current_user_id: DEMO_IDS.security }; const c = s.event_invite_codes.find((x) => x.list_id && s.ticket_lists.some((l) => l.id === x.list_id && +new Date(l.free_until!) < Date.now()))!; return runRemote(C.doorSettleLate(EV, c.id, "cash", "Puerta 1"), s, { door_settle_late: { status: "ok" } }); }],
+    ["redeemDynamicQr", () => { const s = st(); const p = s.user_perks_qrs.find((x) => x.status === "available" && x.event_id === EV)!; const v = dynamicQrValue(credentialSecret(s.events[0].qr_secret!, "PERK", p.id), "PERK", p.id, Date.now()); return runRemote(C.redeemDynamicQr(EV, v), s, { redeem_dynamic_qr: { kind: "PERK", id: p.id } }); }],
+    ["doorReconcile", () => runRemote(C.doorReconcile(EV, [{ kind: "code", ref: s0().event_invite_codes[11].code, at: new Date().toISOString(), terminal: "Puerta 1" }]), { ...s0(), current_user_id: DEMO_IDS.security }, { door_reconcile: { applied: 1, conflicts: [] } })],
+    ["upsertTicketList", () => runRemote(C.upsertTicketList(EV, { name: "Lista Free", free_until: s0().events[0].starts_at, late_price: 8000 }), st())],
+    ["assignCodesToList", () => runRemote(C.assignCodesToList(EV, [s0().event_invite_codes[20].id], s0().ticket_lists[0].id), st())],
+    ["setPromoterScheme", () => runRemote(C.setPromoterScheme(s0().promoter_links[0].id, { ticket_price: 10000, tiers: [{ from: 1, percent: 15 }, { from: 31, percent: 20 }], bar_percent: 5 }), st())],
+    ["createCampaign", () => runRemote(C.createCampaign(EV, { name: "Cumples", segment: "birthdays_week", template: "Hola {nombre}", benefit: "un trago" }), st())],
+    ["markContacted", () => { const r = C.createCampaign(EV, { name: "VIP", segment: "vip_spenders", template: "Hola {nombre}", benefit: "" }).local(st()); const s = (r as { state: RougeState; data: { id: string } }); return runRemote(C.markContacted(s.data.id, ME, true), s.state); }],
+    ["saCheckIn", () => runRemote(C.saCheckIn(EV, id(8)), { ...s0(), current_user_id: DEMO_IDS.platformAdmin })],
+    ["saHideFromLobby", () => runRemote(C.saHideFromLobby(EV, id(8)), { ...s0(), current_user_id: DEMO_IDS.platformAdmin })],
+    ["saRemoveAttendee", () => runRemote(C.saRemoveAttendee(EV, id(8), true), { ...s0(), current_user_id: DEMO_IDS.platformAdmin })],
+    ["saRevokeCode", () => runRemote(C.saRevokeCode(s0().event_invite_codes[11].id), { ...s0(), current_user_id: DEMO_IDS.platformAdmin })],
+    ["saRevokeStaff", () => runRemote(C.saRevokeStaff(DEMO_IDS.organizer, DEMO_IDS.doorScanner), { ...s0(), current_user_id: DEMO_IDS.platformAdmin }, { sa_revoke_staff: 1 })],
+    ["giftDrink", () => { const s = s0(); const c = s.connections.find((x) => x.status === "accepted" && (x.sender_id === ME || x.receiver_id === ME) && x.event_id === EV)!; return runRemote(C.giftDrink(c.id, "gin"), s, { gift_drink: { order_id: id(9) } }); }],
+    ["createVipReservation", () => runRemote(C.createVipReservation(DEMO_IDS.squadMain, s0().bar_menu.find((i) => i.category === "botella")!.id), s0(), { create_vip_reservation: id(9) })],
+    ["saveEventFromBuilder (nuevo)", () => runRemote(C.saveEventFromBuilder({ organization_id: DEMO_IDS.organizer, name: "Techno Bunker", starts_at: new Date(NOW + 864e5).toISOString(), ends_at: new Date(NOW + 864e5 + 6 * 36e5).toISOString(), lifecycle_status: "presale", max_capacity: 800, features: { enableSocialLobby: false }, lists: [{ name: "Free", free_until: new Date(NOW + 864e5 + 36e5).toISOString(), late_price: 8000 }] }), { ...s0(), current_user_id: DEMO_IDS.platformAdmin }, { builder_save_event: id(9) })],
+    ["saveEventFromBuilder (edición)", () => runRemote(C.saveEventFromBuilder({ ...E.builderInputOf(s0(), s0().events[0]), name: "Bresh XL" }), { ...s0(), current_user_id: DEMO_IDS.platformAdmin }, { builder_save_event: EV })],
+    ["setEventFeatures", () => runRemote(C.setEventFeatures(EV, { enableSmartBar: false }), { ...s0(), current_user_id: DEMO_IDS.platformAdmin })],
+    ["setOwnerSelfService", () => runRemote(C.setOwnerSelfService(DEMO_IDS.organizer, true), { ...s0(), current_user_id: DEMO_IDS.platformAdmin })],
+    ["deleteAccount", () => runRemote(C.deleteAccount("@" + s0().profiles.find((p) => p.id === ME)!.username), s0())],
   ];
 
   it.each(cases)("%s respeta el esquema", async (_name, fn) => {
@@ -279,6 +313,14 @@ describe("contrato comandos ↔ schema.sql", () => {
     expect((raffle.data as { raffle: { winner_user_id: string } }).raffle.winner_user_id).toBe(id(8));
     const blast = await runRemote(C.sendBlast(EV, { title: "x", message: "y", segment: { kind: "all" } }), st(), { send_blast: 99 });
     expect((blast.data as { reach: number }).reach).toBe(99);
+  });
+
+  it("seguridad operativa: el token de invitación y el operador del kiosco salen del servidor", async () => {
+    const inv = await runRemote(C.createStaffInvite({ role: "security", scope: "all_org_events" }), st(), { create_staff_invite: { id: id(77), token: "tok_srv_ABCDEFGHIJKLMNOP" } });
+    expect(inv.data).toMatchObject({ token: "tok_srv_ABCDEFGHIJKLMNOP", invite: { id: id(77) } });
+    expect(C.createStaffInvite({ role: "security", scope: "all_org_events" }).optimistic).toBe(false);
+    const k = await runRemote(C.kioskUnlock(EV, "4826"), { ...s0(), current_user_id: DEMO_IDS.manager }, { kiosk_unlock: { operator_id: id(5), role: "security" } });
+    expect(k.data).toEqual({ operatorId: id(5), role: "security" });
   });
 
   it("puerta: seguridad, dueño/a y producción escanean; barra y RRPP no", () => {
@@ -464,11 +506,14 @@ describe("permisos por rol (misma regla que has_staff_role en SQL)", () => {
     expect(C.setStaffRole(EV, "no.existe", "waiter").local(as(DEMO_IDS.organizer)).ok).toBe(false);
     expect(C.setStaffRole(EV, "no.existe", "waiter", { serverLookup: true }).local(as(DEMO_IDS.organizer)).ok).toBe(true);
   });
-  it("cualquiera crea un evento nuevo, pero solo el staff con permiso edita uno existente", () => {
+  it("crear eventos es de ROUGE HQ o de dueños/as con autogestión; editar exige el permiso del evento", () => {
     const s = as(ME);
     const start = new Date(Date.now() + 72e5).toISOString();
     const end = new Date(Date.now() + 9e6).toISOString();
-    expect(C.upsertEvent({ name: "Mi fiesta", starts_at: start, ends_at: end }).local(s).ok).toBe(true);
+    expect(C.upsertEvent({ name: "Mi fiesta", starts_at: start, ends_at: end }).local(s).ok).toBe(false);
+    expect(C.upsertEvent({ name: "Mi fiesta", starts_at: start, ends_at: end }).local(as(DEMO_IDS.platformAdmin)).ok).toBe(true);
+    const selfService = { ...as(ME), organization_settings: [{ organization_id: ME, allow_owner_self_service: true, updated_at: "" }] };
+    expect(C.upsertEvent({ name: "Mi fiesta", starts_at: start, ends_at: end }).local(selfService).ok).toBe(true);
     expect(C.upsertEvent({ ...s.events[0], name: "Hackeado" }).local(s).ok).toBe(false);
     expect(C.upsertEvent({ ...s.events[0], name: "Renombrado" }).local(as(DEMO_IDS.manager)).ok).toBe(true);
   });

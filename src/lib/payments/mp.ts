@@ -171,7 +171,7 @@ export function buildPreference(order: Pick<BarOrder, "id" | "items_json" | "tot
         .replace(/\s+/g, " ")
         .trim()
         .slice(0, 13)
-        .trim() || "ROUGE",
+        .trim() || "ROUGE PASS",
     marketplace_fee: marketplaceFee(order.total_amount, o.feePercent),
     notification_url: `${o.site}/api/mercadopago/webhook?brand=${encodeURIComponent(o.brandId)}`,
     back_urls: { success: back("ok"), pending: back("pendiente"), failure: back("error") },
@@ -190,9 +190,19 @@ export interface MpPayment {
   external_reference?: string | null;
   transaction_amount?: number;
   currency_id?: string;
+  /** Cuenta que cobró (el vendedor). Tiene que ser la cuenta conectada de la marca del evento. */
+  collector_id?: number | string | null;
 }
 
-/** El pago acredita ESTE pedido: aprobado, misma referencia, mismo monto y moneda. */
-export function paymentMatchesOrder(p: MpPayment, order: Pick<BarOrder, "id" | "total_amount">, currency: string): boolean {
+/**
+ * El pago acredita ESTE pedido: aprobado, misma referencia, mismo monto (el del servidor) y moneda, y cobrado por
+ * la cuenta de Mercado Pago del organizador (`collectorId` = provider_user_id de la marca). Si se pasa
+ * `collectorId`, un pago aprobado de OTRA cuenta (aunque traiga la misma referencia) no acredita nada.
+ */
+export function paymentMatchesOrder(p: MpPayment, order: Pick<BarOrder, "id" | "total_amount">, currency: string, collectorId?: string | null): boolean {
+  if (collectorId != null && String(p.collector_id ?? "") !== String(collectorId)) return false;
   return p.status === "approved" && p.external_reference === order.id && p.currency_id === currency && Math.abs(Number(p.transaction_amount) - order.total_amount) < 0.01;
 }
+
+/** Cifrado opcional en reposo para tokens de terceros (Instagram): "v1.…" si hay clave; texto plano heredado se lee igual. */
+export const isEncryptedToken = (box: string | null | undefined) => !!box && /^v1\.[\w-]+\.[\w-]+\.[\w-]+$/.test(box);

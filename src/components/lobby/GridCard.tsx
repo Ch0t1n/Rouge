@@ -13,7 +13,8 @@ import { MediaImage } from "@/components/media/MediaImage";
  * Tarjeta vertical 3:4 de la grilla: foto a sangre, % afinidad, mood y Conectar.
  * Muestra la CARA del evento: en la noche nombre, edad y géneros; en corporativo nombre, cargo, empresa y qué ofrece.
  */
-export function GridCard({ card, onConnect, priority }: { card: GridCardData; onConnect: () => void; priority?: boolean }) {
+/** `onOpen`: si lo devuelve true, se abre la vista previa (panel derecho en PC) en lugar de navegar al perfil. */
+export function GridCard({ card, onConnect, onOpen, priority }: { card: GridCardData; onConnect: () => void; onOpen?: () => boolean; priority?: boolean }) {
   const { profile, attendee, affinity, connection, sharedZones } = card;
   const mood = MOOD_TAGS.find((m) => m.id === attendee.mood_tag);
   const photo = profile.photos[0];
@@ -28,8 +29,15 @@ export function GridCard({ card, onConnect, priority }: { card: GridCardData; on
       : affinity.sharedGenres.slice(0, 2).join(" · ") || profile.music_genres.slice(0, 2).join(" · ");
 
   return (
-    <div className="relative aspect-card overflow-hidden rounded-3xl border border-white/10 bg-surface-raised">
-      <Link href={profileHref(profile, attendee.event_id)} className="absolute inset-0" aria-label={`Ver perfil de ${profile.full_name}`}>
+    <div className="group relative aspect-card overflow-hidden rounded-3xl border border-white/10 bg-surface-raised transition duration-200 md:hover:-translate-y-0.5 md:hover:border-white/25 md:hover:shadow-glow-rouge">
+      <Link
+        href={profileHref(profile, attendee.event_id)}
+        className="absolute inset-0"
+        aria-label={`Ver perfil de ${profile.full_name}`}
+        onClick={(e) => {
+          if (!e.metaKey && !e.ctrlKey && onOpen?.()) e.preventDefault();
+        }}
+      >
         {photo ? <MediaImage photo={photo} className="absolute inset-0" priority={priority} /> : <div className="grid size-full place-items-center font-display text-4xl text-muted/40">{profile.full_name[0]}</div>}
         <div className="card-fade absolute inset-x-0 bottom-0 h-3/5" />
       </Link>

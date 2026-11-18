@@ -373,7 +373,7 @@ export function VenueMap({
                   className="group relative flex flex-col items-center focus-visible:ring-0"
                   aria-label={`${vp.profile.full_name}${vp.pin.sector_name ? ` en ${vp.pin.sector_name}` : ""}, expira en ${vp.minutesLeft} minutos`}
                 >
-                  <span className={cn("absolute top-0 size-9 rounded-full animate-pin-pulse", color, tone === "rescue" && "size-12 -top-1.5")} aria-hidden />
+                  <span className={cn("absolute top-0 h-9 w-7 rounded-lg animate-pin-pulse", color, tone === "rescue" && "-top-1.5 h-12 w-9 rounded-xl")} aria-hidden />
                   <span className="relative">
                     <Avatar profile={vp.profile} size={tone === "rescue" ? 40 : 34} ring={ring} className={tone === "self" ? "ring-2 ring-white" : undefined} />
                     {tone === "rescue" && (

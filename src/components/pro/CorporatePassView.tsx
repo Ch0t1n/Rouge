@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { CheckCircle2, Contact, DoorOpen, Download, Lock, QrCode, Share2 } from "lucide-react";
+import { CheckCircle2, Contact, DoorOpen, Download, Lock, QrCode, Share2, WifiOff } from "lucide-react";
 import type { UUID } from "@/lib/types";
-import { passValue, zonesForTier, zonesOf } from "@/lib/engine/door";
+import { zonesForTier, zonesOf } from "@/lib/engine/door";
+import { dynamicQrValue, myCredentialSecret, qrSecondsLeft } from "@/lib/engine/qr";
 import { faceOf } from "@/lib/engine/verticals";
 import { getAttendee, getEvent } from "@/lib/engine/selectors";
 import { useRouge } from "@/lib/store/RougeContext";
@@ -27,6 +28,13 @@ export function CorporatePassView({ eventId }: { eventId: UUID }) {
   const [mode, setMode] = useState<Mode>("access");
   const [withEmail, setWithEmail] = useState(true);
   const [withPhone, setWithPhone] = useState(true);
+  // QR de acceso DINÁMICO (TOTP, rota cada 20 s): una captura deja de servir en la puerta y en cada zona.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (mode !== "access") return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [mode]);
   const me = state.profiles.find((p) => p.id === state.current_user_id);
   const event = getEvent(state, eventId);
   const att = me ? getAttendee(state, eventId, me.id) : undefined;
@@ -41,7 +49,9 @@ export function CorporatePassView({ eventId }: { eventId: UUID }) {
   if (!me || !event) return null;
   const myZones = zonesForTier(state, eventId, tier);
   const restricted = zonesOf(state, eventId).filter((z) => z.kind === "area" && !myZones.some((m) => m.id === z.id));
-  const qrValue = mode === "access" ? passValue(eventId, me.id) : vcard;
+  const secret = myCredentialSecret(state, eventId, "PASS", me.id);
+  const access = secret ? dynamicQrValue(secret, "PASS", me.id, now) : "";
+  const qrValue = mode === "access" ? access : vcard;
 
   return (
     <div className={cn(proFontVars, "space-y-4 font-pro text-white")} data-testid="corporate-pass">
@@ -84,9 +94,20 @@ export function CorporatePassView({ eventId }: { eventId: UUID }) {
         </div>
 
         <div className="flex flex-col items-center gap-3 px-5 pb-5 pt-5">
-          <div className="rounded-2xl bg-white p-4">
-            <QRCodeSVG value={qrValue || passValue(eventId, me.id)} size={216} level="M" bgColor="#FFFFFF" fgColor="#0B1120" aria-label={mode === "access" ? "QR de acceso" : "QR de tarjeta personal"} />
-          </div>
+          {qrValue ? (
+            <div className="rounded-2xl bg-white p-4" data-testid={mode === "access" ? "dynamic-qr" : "vcard-qr"} data-kind={mode === "access" ? "PASS" : undefined}>
+              <QRCodeSVG value={qrValue} size={216} level="M" bgColor="#FFFFFF" fgColor="#0B1120" aria-label={mode === "access" ? "QR de acceso en vivo" : "QR de tarjeta personal"} />
+            </div>
+          ) : (
+            <div className="flex h-[248px] w-[248px] flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-pro-line p-6 text-center text-sm text-pro-mist">
+              <WifiOff className="size-6" /> Conectate un momento para cargar tu QR en vivo.
+            </div>
+          )}
+          {mode === "access" && access && (
+            <p className="font-pro-mono text-[11px] uppercase tracking-[0.14em] text-pro-mist" role="timer" aria-live="off">
+              <span className="text-pro-emerald">●</span> En vivo · cambia en {qrSecondsLeft(now)} s
+            </p>
+          )}
           {mode === "access" ? (
             <p className="text-center text-xs text-pro-mist">
               {att?.checked_in_at ? (
@@ -94,7 +115,7 @@ export function CorporatePassView({ eventId }: { eventId: UUID }) {
                   <CheckCircle2 className="size-3.5" /> Acreditado/a a las {formatTime(att.checked_in_at)}
                 </span>
               ) : (
-                "Mostralo en la acreditación y en cada sala con control. Subí el brillo al máximo."
+                "Mostralo en la acreditación y en cada sala con control. Subí el brillo: las capturas no sirven."
               )}
             </p>
           ) : (

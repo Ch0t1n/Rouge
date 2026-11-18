@@ -140,7 +140,7 @@ function EditForm() {
         </section>
       </div>
 
-      <div className="fixed inset-x-0 bottom-0 z-30 mx-auto max-w-md border-t border-white/10 bg-background/90 px-5 pb-[max(1rem,var(--safe-bottom))] pt-3 backdrop-blur-xl">
+      <div className="fixed inset-x-0 bottom-0 z-30 mx-auto max-w-md md:fixed-app-x md:max-w-none md:[&>*]:mx-auto md:[&>*]:max-w-md border-t border-white/10 bg-background/90 px-5 pb-[max(1rem,var(--safe-bottom))] pt-3 backdrop-blur-xl">
         <Button block size="lg" onClick={save} disabled={!dirty || !valid}>
           <Save /> {dirty ? "Guardar cambios" : "Sin cambios"}
         </Button>

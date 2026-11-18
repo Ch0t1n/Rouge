@@ -1,7 +1,7 @@
 // Demo · ROUGE PRO Fase 2: agenda multi-track, Mi Agenda con choques de horario, "Ubicar sala" en el plano indoor,
 // Q&A con votos y moderación, y encuestas en vivo (asistente y organizadora en pestañas sincronizadas).
 const { chromium } = require("playwright");
-const { BASE: B, OUT: SP } = require("./env.cjs");
+const { BASE: B, OUT: SP, unlockDemo } = require("./env.cjs");
 const log = (...a) => console.log(...a);
 const assert = (c, m) => { if (!c) throw new Error("✘ " + m); log("✔ " + m); };
 const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -18,6 +18,7 @@ const sel = (t) => `[data-testid="${t}"]`;
     p.on("console", (m) => m.type() === "error" && !/spotify|net::|Failed to load resource/i.test(m.text()) && errors.push(`[${tag}] ${m.text()}`));
   };
   const ctx = await browser.newContext({ viewport: { width: 420, height: 900 } });
+  await unlockDemo(ctx);
 
   // ── Sofía entra al encuentro pyme y abre la agenda desde el inicio ──
   const ph = await ctx.newPage(); watch(ph, "sofi");

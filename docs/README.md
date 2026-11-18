@@ -1,4 +1,4 @@
-# Documentación de ROUGE v1.0
+# Documentación de Rouge Pass v1.0
 
 **La noche, conectada.** PWA social y operativa para eventos, fiestas y boliches (B2B2C).
 
@@ -10,6 +10,8 @@
 | [Guía para asistentes](producto/guia-asistentes.md) | Público / soporte: cómo se usa y preguntas frecuentes. |
 | [Guía para organizadores y equipo](producto/guia-equipo.md) | Dueños, producción, barra, mozos y seguridad: preparar y operar la noche. |
 | [Demo comercial y Modo Demo](producto/demo-comercial.md) | Ventas y redes: guion de 7 minutos, personas del demo, material. |
+| [Guía: demo gratuita para un cliente](producto/guia-demo-manana.md) | Checklist del día: publicar la demo, preparar equipos, guion, objeciones, oferta del piloto y seguimiento. |
+
 | [Estrategia corporativa (ROUGE Pro)](producto/estrategia-corporativa.md) | Una marca para noche y eventos corporativos: debate, decisiones, perfiles múltiples y plan de validación con pymes. |
 
 ## Técnica

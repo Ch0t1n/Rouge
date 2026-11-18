@@ -11,6 +11,7 @@ import { eventTheme } from "@/lib/engine/branding";
 import { getProfile } from "@/lib/engine/selectors";
 import { formatMoney } from "@/lib/utils";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { APP_NAME, APP_WORDMARK } from "@/lib/brand";
 import { faceOf } from "@/lib/engine/verticals";
 
 /** Número corto y legible del pedido para el ticket (los últimos 6 del id). */
@@ -69,7 +70,7 @@ export function PrintTicket() {
 
       <article className="mx-auto w-[80mm] max-w-full bg-white px-[5mm] py-[4mm] font-mono text-[12px] leading-snug text-black shadow-xl print:shadow-none" data-testid="ticket">
         <header className="text-center">
-          <p className="font-display text-base font-bold uppercase tracking-tight">{theme.brand_name ?? "ROUGE"}</p>
+          <p className="font-display text-base font-bold uppercase tracking-tight">{theme.brand_name ?? APP_WORDMARK}</p>
           <p className="text-[11px]">{event.name}</p>
           {event.venue_name && <p className="text-[11px]">{event.venue_name}</p>}
         </header>
@@ -112,7 +113,7 @@ export function PrintTicket() {
         )}
         {sep}
         <p className="text-center text-[10px]">{copy === "cliente" ? "¡Gracias! Mostrá el código en la ventanilla." : "Entregar contra código o QR."}</p>
-        <p className="text-center text-[10px]">Comprobante no válido como factura · ROUGE</p>
+        <p className="text-center text-[10px]">Comprobante no válido como factura · {APP_NAME}</p>
       </article>
     </main>
   );

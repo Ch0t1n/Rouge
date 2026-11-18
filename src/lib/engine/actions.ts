@@ -63,6 +63,11 @@ import {
 import { BIO_MAX, MAX_PHOTOS, NAME_MAX, checkBirthDate, checkGenres, checkUsername, parseInstagram, parseSpotify } from "./profile";
 import { checkEventBranding, normalizeHex } from "./branding";
 import { NOT_PAID, addSpend, initialPaymentStatus, isPayable, spendShares } from "./payments";
+import { FEATURE_DISABLED, featureOn, type FeatureKey } from "./features";
+import { isSafeCtaLink } from "@/lib/security/paths";
+
+/** Módulo apagado en el evento → la acción no se procesa (mismo criterio que event_feature en SQL). */
+const off = (state: RougeState, eventId: UUID, ...keys: FeatureKey[]) => (keys.every((k) => featureOn(state, eventId, k)) ? null : fail(FEATURE_DISABLED));
 import {
   COMPANY_MAX,
   DEFAULT_PERSONA_PRIVACY,
@@ -88,6 +93,8 @@ export type Result<T = undefined> = { ok: true; state: RougeState; data: T } | {
 const ok = <T>(state: RougeState, data: T): Result<T> => ({ ok: true, state, data });
 const fail = (error: string): { ok: false; error: string } => ({ ok: false, error });
 const iso = (now: number) => new Date(now).toISOString();
+/** Hora local HH:MM (para avisar a qué hora se consumió un QR en un doble escaneo). */
+const formatHM = (at: string) => new Date(at).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false });
 
 export const PIN_TTL_MS = minutes(15);
 export { MAX_PHOTOS };
@@ -513,6 +520,10 @@ export function joinEvent(
   if (personaErr) return fail(personaErr);
   // Expulsado por el organizador: mensaje genérico (mismo criterio que join_event → 'banned').
   if (state.event_bans.some((b) => b.event_id === event.id && b.user_id === userId)) return fail("No podés entrar a este evento.");
+  // Borrador: el evento existe pero todavía no está publicado (mismo criterio que join_event → 'event_draft').
+  if (event.lifecycle_status === "draft") return fail("Este evento todavía no está publicado.");
+  // Con la ticketera apagada no hay entradas de 1 uso: solo el link del evento (o de un Squad).
+  if (via === "single_use_code" && !featureOn(state, event.id, "enableTicketing")) return fail(FEATURE_DISABLED);
 
   const phase = lobbyPhase(event, now);
   if (phase === "upcoming") return fail("El lobby todavía no abrió. Volvé más cerca de la fiesta.");
@@ -622,6 +633,8 @@ export function sendConnection(
   receiverId: UUID,
   now = Date.now(),
 ): Result<{ connection: Connection; matched: boolean }> {
+  const disabled = off(state, eventId, "enableSocialLobby");
+  if (disabled) return disabled;
   const err = validatePair(state, eventId, senderId, receiverId, now);
   if (err) return err;
   const receiver = getAttendee(state, eventId, receiverId)!;
@@ -736,6 +749,8 @@ export function sendIcebreaker(
   input: IcebreakerInput,
   now = Date.now(),
 ): Result<Connection> {
+  const disabledIb = off(state, eventId, "enableSocialLobby", ...(input.giftDrinkItemId ? (["enableSmartBar"] as FeatureKey[]) : []));
+  if (disabledIb) return disabledIb;
   const blocked = icebreakerEligibility(state, eventId, senderId, receiverId, now);
   if (blocked) return fail(blocked);
   const sender = getAttendee(state, eventId, senderId)!;
@@ -788,6 +803,8 @@ export function sendIcebreaker(
 // ═════════════════════════════════════════════════════════════════════
 
 export function createSquad(state: RougeState, eventId: UUID, userId: UUID, name: string, now = Date.now()): Result<Squad> {
+  const disabled = off(state, eventId, "enableSquads");
+  if (disabled) return disabled;
   const gate = requireInteractive(state, eventId, now);
   if (gate) return gate;
   if (!getAttendee(state, eventId, userId)) return fail("No estás en este evento.");
@@ -1013,6 +1030,8 @@ export interface DropPinInput {
 }
 
 export function dropPin(state: RougeState, eventId: UUID, userId: UUID, input: DropPinInput, now = Date.now()): Result<MapPin> {
+  const disabled = off(state, eventId, "enableVenueMap");
+  if (disabled) return disabled;
   const gate = requireInteractive(state, eventId, now);
   if (gate) return gate;
   if (!getAttendee(state, eventId, userId)) return fail("No estás en este evento.");
@@ -1083,11 +1102,13 @@ export function sendMessage(
     if (c.sender_id !== senderId && c.receiver_id !== senderId) return fail("No sos parte de esta conversación.");
     if (isBlockedBetween(state, c.sender_id, c.receiver_id)) return fail(UNAVAILABLE);
     eventId = c.event_id;
+    if (!featureOn(state, eventId, "enableDirectChat")) return fail(FEATURE_DISABLED);
   } else {
     const sq = state.squads.find((s) => s.id === to.squadId);
     if (!sq) return fail("Squad inexistente.");
     if (!squadMembers(state, sq.id).some((m) => m.user_id === senderId)) return fail("No sos parte de este Squad.");
     eventId = sq.event_id;
+    if (!featureOn(state, eventId, "enableSquads")) return fail(FEATURE_DISABLED);
   }
 
   const msg: Message = {
@@ -1168,12 +1189,14 @@ export function grantPerk(
 export function redeemPerk(state: RougeState, qrOrId: string, now = Date.now()): Result<UserPerkQR> {
   const perk = state.user_perks_qrs.find((p) => p.id === qrOrId || p.qr_code_string === qrOrId);
   if (!perk) return fail("QR inválido.");
-  if (perk.status === "redeemed") return fail("Este QR ya fue canjeado.");
+  if (perk.status === "redeemed") return fail(`Este QR ya fue canjeado${perk.redeemed_at ? ` a las ${formatHM(perk.redeemed_at)}` : ""}.`);
   const updated: UserPerkQR = { ...perk, status: "redeemed", redeemed_at: iso(now) };
   return ok({ ...state, user_perks_qrs: state.user_perks_qrs.map((p) => (p.id === perk.id ? updated : p)) }, updated);
 }
 
 export function upsertPerkRule(state: RougeState, rule: Omit<PerkRule, "id" | "created_at"> & { id?: UUID }, now = Date.now()): Result<PerkRule> {
+  const disabled = off(state, rule.event_id, "enablePerks");
+  if (disabled) return disabled;
   if (rule.trigger.min_members < 2) return fail("El Squad mínimo es de 2 personas.");
   const full: PerkRule = { ...rule, id: rule.id ?? uid(), created_at: iso(now) };
   const exists = state.perk_rules.some((r) => r.id === full.id);
@@ -1199,6 +1222,8 @@ export function raffleEligible(state: RougeState, eventId: UUID, filter: RaffleF
 }
 
 export function createRaffle(state: RougeState, eventId: UUID, prizeTitle: string, filter: RaffleFilter, now = Date.now()): Result<Raffle> {
+  const disabled = off(state, eventId, "enablePerks");
+  if (disabled) return disabled;
   if (!prizeTitle.trim()) return fail("Definí el premio.");
   if (filter === "female" && !hasFeature(state, eventId, "genderRaffle")) return fail(NOT_IN_VERTICAL);
   const raffle: Raffle = {
@@ -1270,6 +1295,10 @@ export interface BlastInput {
 
 export function sendBlast(state: RougeState, eventId: UUID, input: BlastInput, now = Date.now()): Result<{ blast: EventBlast; reach: number }> {
   if (!input.title.trim() || !input.message.trim()) return fail("Completá título y mensaje.");
+  // Espejo de send_blast (schema.sql): textos acotados y link seguro (ruta de ROUGE o https).
+  if (input.title.trim().length > 80 || input.message.trim().length > 280 || (input.ctaLabel?.trim().length ?? 0) > 40) return fail("El título, el mensaje o el botón son demasiado largos.");
+  if (input.ctaLink?.trim() && !isSafeCtaLink(input.ctaLink.trim())) return fail("El link del botón tiene que ser una sección de ROUGE (por ejemplo /bar) o una dirección https://.");
+  if (input.flashMinutes !== undefined && (input.flashMinutes < 1 || input.flashMinutes > 240)) return fail("La Flash Promo dura entre 1 y 240 minutos.");
   const blast: EventBlast = {
     id: uid(),
     event_id: eventId,
@@ -1345,6 +1374,8 @@ export function createBarOrder(
   now = Date.now(),
   opts: { splitWith?: UUID[] } = {},
 ): Result<BarOrder> {
+  const disabled = off(state, eventId, "enableSmartBar");
+  if (disabled) return disabled;
   const gate = requireInteractive(state, eventId, now);
   if (gate) return gate;
   if (!getAttendee(state, eventId, userId)) return fail("No estás en este evento.");
@@ -1567,7 +1598,7 @@ export function redeemPickupCode(state: RougeState, eventId: UUID, rawCode: stri
   const code = rawCode.trim().toUpperCase().replace(/^ROUGE:ORDER:[^:]+:/, "");
   const order = state.bar_orders.find((o) => o.event_id === eventId && o.pickup_code?.toUpperCase() === code);
   if (!order) return fail("No existe un pedido con ese código.");
-  if (order.status === "completed") return fail("Ese pedido ya fue entregado.");
+  if (order.status === "completed") return fail(`Ese pedido ya fue entregado a las ${formatHM(order.updated_at)}.`);
   if (!isPayable(order)) return fail(NOT_PAID);
   if (order.status !== "ready_qr") return fail("El pedido todavía no está listo para retirar.");
   return setOrderStatus(state, order.id, "completed", now);

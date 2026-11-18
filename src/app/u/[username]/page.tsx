@@ -14,6 +14,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { ProfileView } from "@/components/profile/ProfileView";
 import { ConnectActions } from "@/components/lobby/ConnectActions";
 import { InviteToSquadButton } from "@/components/squad/InviteToSquadButton";
+import { ReportUserButton } from "@/components/profile/ReportUserButton";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
 import { profileAccess } from "@/lib/engine/privacy";
@@ -126,7 +127,10 @@ function UserProfile() {
         )}
       </div>
 
-      <BottomSheet open={menu} onClose={() => setMenu(false)} title={other.full_name}>
+      <BottomSheet open={menu} onClose={() => setMenu(false)} title={`@${other.username}`}>
+        <div className="mb-2">
+          <ReportUserButton target={other} variant="button" onDone={() => router.replace("/app")} />
+        </div>
         <Button
           variant="danger"
           block

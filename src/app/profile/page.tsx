@@ -15,6 +15,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ExecutiveProfileCard } from "@/components/pro/ExecutiveProfileCard";
 import { CorporateProfileSheet } from "@/components/pro/CorporateProfileSheet";
+import { APP_NAME } from "@/lib/brand";
 
 export default function MyProfilePage() {
   const { state, mode, signOut } = useRouge();
@@ -32,7 +33,7 @@ export default function MyProfilePage() {
   const myPro = corporate ? (face?.persona?.kind === "corporate" ? face.persona : (personasOf(state, me.id, "corporate")[0] ?? null)) : null;
   const eventName = state.events.find((e) => e.id === state.active_event_id)?.name;
 
-  const share = () => shareSheet.open({ url: `/u/${me.username}`, title: `@${me.username} en ROUGE`, text: `Encontrame en ROUGE: @${me.username} ✨`, fileName: `rouge-${me.username}`, accent: "rouge", caption: `@${me.username}` });
+  const share = () => shareSheet.open({ url: `/u/${me.username}`, title: `@${me.username} en ${APP_NAME}`, text: `Encontrame en ${APP_NAME}: @${me.username} ✨`, fileName: `rouge-pass-${me.username}`, accent: "rouge", caption: `@${me.username}` });
 
   return (
     <main className="pb-12">

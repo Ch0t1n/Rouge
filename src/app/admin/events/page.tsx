@@ -16,6 +16,12 @@ import { cn, formatDateTime, toCSV, uid } from "@/lib/utils";
 import { AdminHeader, downloadCSV, Panel } from "@/components/admin/AdminChrome";
 import { useShare } from "@/components/share/ShareSheet";
 import { TeamPanel } from "@/components/admin/TeamPanel";
+import { OrgStaffPanel, TerminalPinPanel } from "@/components/admin/OrgStaffPanel";
+import { AuditPanel } from "@/components/admin/AuditPanel";
+import { TicketListsPanel } from "@/components/admin/TicketListsPanel";
+import { EventBuilderWizard } from "@/components/admin/EventBuilderWizard";
+import { EventModulesPanel } from "@/components/admin/EventModulesPanel";
+import { canManageModules } from "@/lib/engine/eventAdmin";
 import { ApiKeysPanel } from "@/components/admin/ApiKeysPanel";
 import { EventLifecyclePanel } from "@/components/admin/EventLifecyclePanel";
 import { can } from "@/lib/engine/roles";
@@ -24,6 +30,7 @@ import { VENUE_LAYOUT } from "@/lib/mock/seed";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Segmented, TextAreaField, TextField } from "@/components/ui/field";
+import { APP_NAME } from "@/lib/brand";
 import { Switch } from "@/components/ui/switch";
 import { VenueSpotsPanel } from "@/components/admin/VenueSpotsPanel";
 
@@ -41,16 +48,21 @@ export default function AdminEventsPage() {
   const mine = state.events.filter((e) => can(state, e.id, state.current_user_id, "admin.events"));
   const [editing, setEditing] = useState<string | "new">(mine.some((e) => e.id === state.active_event_id) ? state.active_event_id : "new");
   const event = editing === "new" ? null : mine.find((e) => e.id === editing) ?? null;
+  // v1.8: crear eventos y configurar módulos es de ROUGE HQ; el dueño/a usa el MISMO creador si tiene autogestión.
+  const selfService = canManageModules(state, state.current_user_id, state.current_user_id);
+  const [builder, setBuilder] = useState(false);
 
   return (
-    <main className="mx-auto max-w-7xl space-y-6 px-5 py-6 lg:px-10 lg:py-10">
+    <main className="mx-auto max-w-7xl 2xl:max-w-[1600px] space-y-6 px-5 py-6 lg:px-10 lg:py-10">
       <AdminHeader
         title="Eventos y accesos"
         subtitle="Configurá la fiesta, el lobby, el plano y los links de ingreso."
         actions={
-          <Button variant="vip" onClick={() => setEditing("new")}>
-            <Plus /> Nuevo evento
-          </Button>
+          selfService ? (
+            <Button variant="vip" onClick={() => setBuilder(true)}>
+              <Plus /> Nuevo evento
+            </Button>
+          ) : undefined
         }
       />
       <div className="no-scrollbar flex gap-2 overflow-x-auto">
@@ -69,8 +81,35 @@ export default function AdminEventsPage() {
           </button>
         ))}
       </div>
-      <EventEditor key={editing} event={event} onSaved={(id) => { setEditing(id); setActiveEvent(id); }} />
+      {builder ? (
+        <Panel title="Nuevo evento">
+          <EventBuilderWizard
+            defaultOrgId={state.current_user_id}
+            onCancel={() => setBuilder(false)}
+            onDone={(id) => {
+              setBuilder(false);
+              setEditing(id);
+              setActiveEvent(id);
+            }}
+          />
+        </Panel>
+      ) : event ? (
+        <EventEditor key={editing} event={event} onSaved={(id) => { setEditing(id); setActiveEvent(id); }} />
+      ) : (
+        <Panel title="Nuevo evento">
+          <p className="text-sm text-muted">
+            {selfService ? "Creá tu evento con el creador: datos, fechas, listas, line-up, estética y módulos." : "La creación de eventos la gestiona ROUGE. Pedí que activen la autogestión de tu organización para crearlos vos."}
+          </p>
+          {selfService && (
+            <Button variant="vip" className="mt-4" onClick={() => setBuilder(true)}>
+              <Plus /> Abrir el creador
+            </Button>
+          )}
+        </Panel>
+      )}
+      {event && !builder && <EventModulesPanel event={event} editable={canManageModules(state, state.current_user_id, event.created_by)} />}
       {event && <AccessPanel event={event} />}
+      {event && can(state, event.id, state.current_user_id, "admin.events") && <TicketListsPanel event={event} />}
       {event && <VenueSpotsPanel event={event} />}
       {event && (
         <div className="grid gap-6 xl:grid-cols-3">
@@ -78,6 +117,14 @@ export default function AdminEventsPage() {
         </div>
       )}
       {event && can(state, event.id, state.current_user_id, "admin.team") && <TeamPanel event={event} />}
+      {/* Staff por organización: solo quien es dueño/a de SUS eventos (organización = su cuenta). */}
+      {event && event.created_by === state.current_user_id && (
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+          <OrgStaffPanel />
+          <TerminalPinPanel orgId={state.current_user_id} />
+        </div>
+      )}
+      {event && event.created_by && can(state, event.id, state.current_user_id, "admin.events") && <AuditPanel orgId={event.created_by} />}
       {event && (
         <EventLifecyclePanel
           key={`lifecycle-${event.id}`} // distinto del key del EventEditor (mismos hermanos)
@@ -316,7 +363,7 @@ function AccessPanel({ event }: { event: RougeEvent }) {
             size="icon"
             variant="glass"
             aria-label="Ver QR del link maestro"
-            onClick={() => share.open({ url: masterLink, title: `QR de ${event.name}`, text: `Entrá al lobby de ${event.name} en ROUGE 🔴`, fileName: `rouge-${event.slug}`, accent: "vip", caption: event.master_invite_code })}
+            onClick={() => share.open({ url: masterLink, title: `QR de ${event.name}`, text: `Entrá al lobby de ${event.name} en ${APP_NAME} 🔴`, fileName: `rouge-pass-${event.slug}`, accent: "vip", caption: event.master_invite_code })}
           >
             <QrCode />
           </Button>
@@ -415,7 +462,7 @@ function AccessPanel({ event }: { event: RougeEvent }) {
                         size="sm"
                         variant="ghost"
                         aria-label={`QR de ${c.code}`}
-                        onClick={() => share.open({ url: `${origin}/join/${c.code}`, title: `Entrada ${c.code}`, text: `Tu acceso a ${event.name} en ROUGE (1 uso, no lo compartas) 🎟️`, fileName: `rouge-${c.code}`, accent: "vip", caption: c.code })}
+                        onClick={() => share.open({ url: `${origin}/join/${c.code}`, title: `Entrada ${c.code}`, text: `Tu acceso a ${event.name} en ${APP_NAME} (1 uso, no lo compartas) 🎟️`, fileName: `rouge-${c.code}`, accent: "vip", caption: c.code })}
                       >
                         <QrCode />
                       </Button>

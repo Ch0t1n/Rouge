@@ -59,3 +59,15 @@ describe("API v1 · respuestas", () => {
     expect(spec.servers[0].url).toBe("https://app.rouge.ar/api/v1");
   });
 });
+
+describe("endurecimiento de la API v1", () => {
+  it("el cursor no admite texto que se cuele en el filtro de PostgREST", () => {
+    const id = "11111111-1111-1111-1111-111111111111";
+    const ok = encodeCursor({ created_at: "2026-11-15T04:00:00.123456+00:00", id });
+    expect(decodeCursor(ok)).toEqual({ created_at: "2026-11-15T04:00:00.123456+00:00", id });
+    const evil = Buffer.from(JSON.stringify(["2026-11-15,event_id.neq.x", id])).toString("base64url");
+    expect(() => decodeCursor(evil)).toThrow();
+    const evil2 = Buffer.from(JSON.stringify(["2026-11-15T04:00:00Z)", id])).toString("base64url");
+    expect(() => decodeCursor(evil2)).toThrow();
+  });
+});

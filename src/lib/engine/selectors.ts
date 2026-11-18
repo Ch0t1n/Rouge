@@ -123,6 +123,8 @@ export function visibleAttendees(s: RougeState, eventId: UUID, viewerId: UUID): 
   for (const a of s.event_attendees) {
     if (a.event_id !== eventId || a.user_id === viewerId || a.ghost_mode) continue;
     if (!canSeeAttendee(s, eventId, viewerId, a.user_id)) continue;
+    // Privacidad (v1.7): con require_checkin_for_lobby solo aparece quien ya ingresó por la puerta.
+    if (s.events.find((e) => e.id === eventId)?.require_checkin_for_lobby && !a.checked_in_at) continue;
     const profile = faceOf(s, a.user_id, eventId);
     if (profile) out.push({ attendee: a, profile });
   }
@@ -339,3 +341,7 @@ export function openVipSquads(s: RougeState, eventId: UUID, viewerId: UUID) {
     .filter((sq) => !squadMembers(s, sq.id).some((m) => isBlockedBetween(s, viewerId, m.user_id)))
     .map((sq) => ({ squad: sq, members: squadMembers(s, sq.id).map((m) => getProfile(s, m.user_id)!).filter(Boolean) }));
 }
+
+// ── Módulos del evento (v1.8) ────────────────────────────────────────
+// Flags efectivos (con dependencias resueltas). En React: useEventFeatures() de lib/store/hooks.
+export { eventFeatures, featureOn, isPathEnabled } from "./features";

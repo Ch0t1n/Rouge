@@ -9,6 +9,7 @@ import { localParts } from "@/lib/engine/schedule";
 import type {
   AttendeeTier,
   Brand,
+  TicketList,
   BrandPaymentAccount,
   EventZone,
   ZoneCheckIn,
@@ -53,8 +54,44 @@ import type {
   SessionQuestionVote,
   SessionSpeaker,
 } from "@/lib/types";
+import { DEMO_PHOTOS } from "@/lib/demo/photos";
+import { pinHash } from "@/lib/engine/security";
 
-export const STATE_VERSION = 12;
+export const STATE_VERSION = 15;
+
+/**
+ * Últimas 3 fechas de la organización (demo): curvas de 15' de ingresos en puerta y ventas de barra, alineadas al
+ * inicio de cada evento. Forma típica: pico de ingreso en la primera hora, pico de barra a la segunda.
+ */
+function pastCurves(now: number) {
+  const names = ["ROUGE Night × Bresh (sáb. pasado)", "ROUGE Night · Techno Club", "ROUGE Night · Aniversario"];
+  return names.map((name, i) => {
+    const scale = [1, 0.85, 1.2][i];
+    const points = [];
+    for (let m = -60; m <= 300; m += 15) {
+      const entryWave = Math.max(0, Math.exp(-(((m - 30) / 55) ** 2)) * 3 * scale + (m < 0 ? 0.5 : 0));
+      const barWave = Math.max(0, Math.exp(-(((m - 110) / 90) ** 2)) * 32_000 * scale);
+      points.push({ m, entries: Math.round(entryWave), sales: Math.round(barWave / 500) * 500 });
+    }
+    return { event_id: `00000000-0000-4000-8000-0000000210${i}0`, name, starts_at: new Date(now - (i + 1) * 7 * 86_400_000).toISOString(), points };
+  });
+}
+
+/** Titulares de entradas (búsqueda manual en la puerta por nombre, DNI o email). */
+const HOLDERS: [string, string, string][] = [
+  ["Agustina Molina", "38451220", "agus.molina@mail.com"],
+  ["Federico Sosa", "36120998", "fede.sosa@mail.com"],
+  ["Lucía Fernández", "40112334", "lu.fernandez@mail.com"],
+  ["Martín Acosta", "35887001", "martin.acosta@mail.com"],
+  ["Rocío Díaz", "41230777", "ro.diaz@mail.com"],
+  ["Santiago Gil", "37654212", "santi.gil@mail.com"],
+  ["Valentina Ruiz", "39001876", "vale.ruiz@mail.com"],
+  ["Ignacio Pérez", "34567123", "nacho.perez@mail.com"],
+  ["Carla Romero", "42198003", "carla.romero@mail.com"],
+  ["Diego Torres", "33450091", "diego.torres@mail.com"],
+  ["Paula Benítez", "40988120", "pau.benitez@mail.com"],
+  ["Julián Castro", "38776540", "juli.castro@mail.com"],
+];
 
 // IDs estables → los links de demo (/join/..., /u/...) no cambian entre re-siembras.
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -71,6 +108,10 @@ export const DEMO_IDS = {
   squadVip: id(2002),
   brand: id(3001),
   promoter: id(994),
+  /** Puerta por invitación de la organización (asignación con ventana horaria). */
+  doorScanner: id(995),
+  /** Administración global de ROUGE (/superadmin). */
+  platformAdmin: id(998),
   /** [v1.7] Evento corporativo del demo (ROUGE Pro): encuentro de pymes, en vivo al mismo tiempo que la fiesta. */
   proEvent: id(1100),
   proBrand: id(3002),
@@ -78,6 +119,9 @@ export const DEMO_IDS = {
   /** Perfil profesional de Sofi (la persona del demo). */
   mePro: id(1901),
 } as const;
+
+/** PINs de terminal del demo (Modo Kiosco). En producción cada integrante elige el suyo. */
+export const DEMO_PINS = { bartender: "4826", security: "7391", doorScanner: "5150" } as const;
 
 export const VENUE_LAYOUT: VenueLayout = {
   aspect: 3 / 4,
@@ -278,6 +322,26 @@ export function createSeedState(now = Date.now()): RougeState {
       is_verified: true,
       created_at: t(-60 * 24 * 30),
     },
+    ...[
+      { id: DEMO_IDS.doorScanner, username: "nico.puerta", full_name: "Nicolás Vera", phone: "+5491150000995", bio: "Puerta y control de listas." },
+      { id: DEMO_IDS.platformAdmin, username: "rouge.hq", full_name: "ROUGE HQ", phone: "+5491150000998", bio: "Soporte y operaciones de ROUGE." },
+    ].map<Profile>((m) => ({
+      id: m.id,
+      username: m.username,
+      full_name: m.full_name,
+      birth_date: birth(32, 0),
+      gender: "undisclosed",
+      phone_normalized: m.phone,
+      bio: m.bio,
+      photos: [],
+      loop_video_url: null,
+      music_genres: [],
+      spotify_embed_url: null,
+      instagram_username: null,
+      instagram_verified: false,
+      is_verified: true,
+      created_at: t(-60 * 24 * 20),
+    })),
     ...STAFF.map<Profile>((m) => ({
       id: m.id,
       username: m.username,
@@ -303,7 +367,9 @@ export function createSeedState(now = Date.now()): RougeState {
       gender: p.gender,
       phone_normalized: p.phone,
       bio: p.bio,
-      photos: [1, 2].map((k) => ({ url: `/demo/avatars/${p.username}-${k}.svg`, width: 600, height: 800, blur_color: "#121216" })),
+      photos: DEMO_PHOTOS[p.username]
+        ? DEMO_PHOTOS[p.username].map((ph) => ({ ...ph, width: 600, height: 800 }))
+        : [1, 2].map((k) => ({ url: `/demo/avatars/${p.username}-${k}.svg`, width: 600, height: 800, blur_color: "#121216" })),
       loop_video_url: null,
       music_genres: p.genres,
       spotify_embed_url: p.spotify ?? null,
@@ -325,6 +391,10 @@ export function createSeedState(now = Date.now()): RougeState {
   // ── Evento ───────────────────────────────────────────────────────
   const event: RougeEvent = {
     id: DEMO_IDS.event,
+    // Secreto de los QR dinámicos (demo). En Supabase vive solo en el servidor (y en los dispositivos de puerta/barra).
+    qr_secret: "demo-qr-secret-bresh-sabado-0000000000000000",
+    lifecycle_status: "live",
+    features: null,
     kind: "nightlife",
     networking_checkin_only: false,
     slug: "bresh-sabado",
@@ -383,13 +453,25 @@ export function createSeedState(now = Date.now()): RougeState {
       revoked_at: null,
       // Los primeros 5 ya se escanearon en la puerta.
       checked_in_at: i < 5 ? t(START - 20 + i * 6) : null,
+      checked_in_terminal: i < 5 ? (i % 2 ? "Puerta 2" : "Puerta 1") : null,
+      // 12–14: Lista Free de Vicky (ya pasó el horario free) · 15–17: Lista Cumple Meli (todavía free).
+      list_id: i >= 12 && i < 15 ? id(20001) : i >= 15 && i < 18 ? id(20002) : null,
+      late_paid_at: null,
+      late_payment_method: null,
+      holder_name: i >= 12 ? HOLDERS[i - 12][0] : null,
+      holder_dni: i >= 12 ? HOLDERS[i - 12][1] : null,
+      holder_email: i >= 12 ? HOLDERS[i - 12][2] : null,
       created_at: t(-60 * 24 * 3),
     };
   });
+  const ticket_lists: TicketList[] = [
+    { id: id(20001), event_id: event.id, name: "Lista Free · Vicky", free_until: t(-30), late_price: 8000, created_at: t(-60 * 24 * 4) },
+    { id: id(20002), event_id: event.id, name: "Lista Cumple Meli", free_until: t(90), late_price: 6000, created_at: t(-60 * 24 * 4) },
+  ];
 
   // ── RRPP: link propio de Vicky (entraron por él Mateo, Lucas, Bruno y Joaquín) ──
   const promoter_links: PromoterLink[] = [
-    { id: id(17001), event_id: event.id, user_id: DEMO_IDS.promoter, code: "RPVICKY7", commission_per_entry: 1500, created_at: t(-60 * 24 * 4) },
+    { id: id(17001), event_id: event.id, user_id: DEMO_IDS.promoter, code: "RPVICKY7", commission_per_entry: 1500, ticket_price: 12000, commission_tiers: [{ from: 1, percent: 15 }, { from: 3, percent: 20 }], bar_commission_percent: 5, created_at: t(-60 * 24 * 4) },
   ];
   const REFERRED = new Set([5, 6, 7, 8]);
 
@@ -674,6 +756,8 @@ export function createSeedState(now = Date.now()): RougeState {
   const PRO_END = PRO_START + 330;
   const proEvent: RougeEvent = {
     id: DEMO_IDS.proEvent,
+    // Secreto de los QR dinámicos del pase corporativo (demo). En Supabase vive solo en el servidor.
+    qr_secret: "demo-qr-secret-encuentro-pyme-00000000000000",
     kind: "corporate",
     networking_checkin_only: false,
     slug: "encuentro-pyme",
@@ -971,5 +1055,60 @@ export function createSeedState(now = Date.now()): RougeState {
     squad_expenses,
     squad_settlements: [],
     payout_aliases,
+    staff_assignments: [
+      { id: id(17501), organization_id: DEMO_IDS.organizer, user_id: DEMO_IDS.doorScanner, role: "security", scope: "all_org_events", event_ids: [], access_window: true, revoked_at: null, created_by: DEMO_IDS.organizer, created_at: t(-60 * 24 * 3) },
+    ],
+    staff_invites: [],
+    terminal_pins: (
+      [
+        [DEMO_IDS.bartender, DEMO_PINS.bartender],
+        [DEMO_IDS.security, DEMO_PINS.security],
+        [DEMO_IDS.doorScanner, DEMO_PINS.doorScanner],
+      ] as const
+    ).map(([u, pin]) => ({ organization_id: DEMO_IDS.organizer, user_id: u, pin_hash: pinHash(DEMO_IDS.organizer, u, pin), updated_at: t(-60 * 24 * 2) })),
+    audit_log: [
+      { id: id(18001), organization_id: DEMO_IDS.organizer, event_id: null, actor_id: DEMO_IDS.organizer, operator_id: null, action: "staff.invited", target: id(17501), details: { role: "security", scope: "all_org_events", events: 0 }, created_at: t(-60 * 24 * 3 - 20) },
+      { id: id(18002), organization_id: DEMO_IDS.organizer, event_id: null, actor_id: DEMO_IDS.doorScanner, operator_id: null, action: "staff.joined", target: DEMO_IDS.doorScanner, details: { role: "security", scope: "all_org_events" }, created_at: t(-60 * 24 * 3) },
+    ],
+    user_reports: [
+      { id: id(19001), event_id: event.id, reporter_id: id(4), reported_user_id: id(11), reason: "harassment", details: "Insiste por chat después de que le dije que no.", status: "open", reviewed_by: null, created_at: t(-12) },
+    ],
+    platform_admin_ids: [DEMO_IDS.platformAdmin],
+    ticket_lists,
+    event_curves_history: pastCurves(now),
+    // Base de clientes de la organización (las personas de esta fiesta + clientes de fechas anteriores).
+    org_contacts: [
+      ...PERSONAS.filter((p) => p.n !== 13).map((p) => ({
+        user_id: id(p.n),
+        full_name: p.full_name,
+        phone: p.phone,
+        birth_date: p.n === 4 ? `${new Date(now).getFullYear() - p.age}-${String(new Date(now + 2 * 86_400_000).getMonth() + 1).padStart(2, "0")}-${String(new Date(now + 2 * 86_400_000).getDate()).padStart(2, "0")}` : birth(p.age, p.n),
+        // Acumulado en todas las fechas (esta noche + históricas).
+        total_spent: p.spent * 4,
+        events_count: 4,
+        last_event_at: event.starts_at,
+        referred_by: attendees.find((a) => a.user_id === id(p.n))?.referred_by ?? null,
+      })),
+      ...[
+        ["Florencia Vidal", "+5491150002001", 62, 210_000, 3],
+        ["Ezequiel Romero", "+5491150002002", 45, 38_000, 1],
+        ["Micaela Suárez", "+5491150002003", 90, 95_000, 2],
+        ["Lautaro Méndez", "+5491150002004", 35, 12_000, 1],
+      ].map(([name, phone, daysAgo, spent, n], i) => ({
+        user_id: id(21_000 + i),
+        full_name: name as string,
+        phone: phone as string,
+        birth_date: `${new Date(now).getFullYear() - 28}-0${i + 3}-1${i}`,
+        total_spent: spent as number,
+        events_count: n as number,
+        last_event_at: t(-(daysAgo as number) * 24 * 60),
+        referred_by: i === 0 ? DEMO_IDS.promoter : null,
+      })),
+    ],
+    campaigns: [],
+    campaign_contacts: [],
+    vip_reservations: [],
+    // La creación de eventos y los módulos los gestiona ROUGE HQ (autogestión apagada por defecto).
+    organization_settings: [{ organization_id: DEMO_IDS.organizer, allow_owner_self_service: false, updated_at: t(-60 * 24 * 10) }],
   };
 }

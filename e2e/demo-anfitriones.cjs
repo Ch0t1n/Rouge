@@ -15,7 +15,7 @@ const assert = (c, m) => { if (!c) throw new Error("✘ " + m); log("✔ " + m);
 
   // Hub
   await p.goto(`${B}/demo`, { waitUntil: "networkidle" });
-  assert(await p.isVisible("text=Mostrá ROUGE en vivo"), "/demo: página para anfitriones");
+  assert(await p.isVisible("text=Mostrá Rouge Pass en vivo"), "/demo: página para anfitriones");
   assert((await p.locator("#guion ~ ol > li, ol > li").count()) >= 7, "guion de 7 pasos");
   const robots = await p.getAttribute('meta[name="robots"]', "content");
   assert(/noindex/.test(robots ?? ""), "/demo no se indexa en buscadores");

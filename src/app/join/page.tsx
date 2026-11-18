@@ -11,7 +11,7 @@ import { TextField } from "@/components/ui/field";
 
 /** Ingreso manual: el código impreso en la entrada o el que te pasó el organizador. */
 export default function JoinCodePage() {
-  const { state, mode } = useRouge();
+  const { state, mode, demoVisible } = useRouge();
   const router = useRouter();
   const [code, setCode] = useState("");
   const event = state.events.find((e) => e.id === state.active_event_id);
@@ -34,7 +34,7 @@ export default function JoinCodePage() {
         </Button>
       </form>
 
-      {mode === "demo" && event && (
+      {mode === "demo" && demoVisible && event && (
         <section className="mx-5 mt-8 space-y-2 rounded-3xl border border-vip/25 bg-vip/[0.05] p-4">
           <h2 className="flex items-center gap-2 text-sm text-vip">
             <Ticket className="size-4" /> Links de prueba (Modo Demo)

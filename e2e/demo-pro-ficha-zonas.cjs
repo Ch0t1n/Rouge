@@ -1,7 +1,7 @@
 // Demo · ROUGE PRO Fase 1: ficha ejecutiva, panel rápido al entrar, pase corporativo con vCard (.vcf) y escáner multi-zona.
 const fs = require("fs");
 const { chromium } = require("playwright");
-const { BASE: B, OUT: SP } = require("./env.cjs");
+const { BASE: B, OUT: SP, unlockDemo, livePass, DEMO_QR_SECRETS } = require("./env.cjs");
 const log = (...a) => console.log(...a);
 const assert = (c, m) => { if (!c) throw new Error("✘ " + m); log("✔ " + m); };
 const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -17,6 +17,7 @@ const read = async (dl) => fs.readFileSync(await dl.path(), "utf8");
     p.on("console", (m) => m.type() === "error" && !/spotify|net::|Failed to load resource/i.test(m.text()) && errors.push(`[${tag}] ${m.text()}`));
   };
   const ctx = await browser.newContext({ viewport: { width: 420, height: 900 }, acceptDownloads: true });
+  await unlockDemo(ctx);
 
   // ── Sofía en el encuentro pyme: ficha ejecutiva, sin rastro de la noche ──
   const ph = await ctx.newPage(); watch(ph, "sofi");
@@ -95,13 +96,13 @@ const read = async (dl) => fs.readFileSync(await dl.path(), "utf8");
   assert(await door.isVisible("text=Elegí en qué zona estás controlando"), "sin zona elegida no se puede escanear");
   assert(!(await door.isVisible('input[placeholder="Código de la entrada"]')), "el campo de código aparece recién con una zona");
   await door.click('[data-testid="zone-option"]:has-text("Sala VIP")');
-  await door.fill('input[placeholder="Código de la entrada"]', `ROUGE:PASS:${PRO}:${id(1)}`);
+  await door.fill('input[placeholder="Código de la entrada"]', livePass(DEMO_QR_SECRETS.pro, id(1)));
   await door.click("text=Validar");
   await door.waitForSelector('[data-testid="door-result"][data-status="zone_denied"]');
   const denied = await door.textContent('[data-testid="door-result"]');
   assert(denied.includes("Acceso denegado para esta zona") && denied.includes("Requiere VIP / SPEAKER / SPONSOR") && denied.includes("Sofía Benítez"), "rojo: denegado en Sala VIP, con el requisito y el nombre");
   await door.screenshot({ path: `${SP}/pro-zona-denegada.png` });
-  await door.fill('input[placeholder="Código de la entrada"]', `ROUGE:PASS:${PRO}:${id(10)}`);
+  await door.fill('input[placeholder="Código de la entrada"]', livePass(DEMO_QR_SECRETS.pro, id(10)));
   await door.click("text=Validar");
   await door.waitForSelector('[data-testid="door-result"][data-status="ok"]');
   const ok = await door.textContent('[data-testid="door-result"]');
@@ -119,7 +120,7 @@ const read = async (dl) => fs.readFileSync(await dl.path(), "utf8");
   await crm.selectOption('select[aria-label="Categoría de Sofía Benítez"]', "speaker");
   await crm.waitForSelector("text=ahora es SPEAKER");
   await door.reload({ waitUntil: "networkidle" });
-  await door.fill('input[placeholder="Código de la entrada"]', `ROUGE:PASS:${PRO}:${id(1)}`);
+  await door.fill('input[placeholder="Código de la entrada"]', livePass(DEMO_QR_SECRETS.pro, id(1)));
   await door.click("text=Validar");
   await door.waitForSelector('[data-testid="door-result"][data-status="ok"]');
   assert((await door.textContent('[data-testid="door-result"]')).includes("SPEAKER"), "con categoría SPEAKER, Sofía pasa a la Sala VIP");

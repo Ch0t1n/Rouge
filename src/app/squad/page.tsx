@@ -2,7 +2,7 @@
 
 import * as C from "@/lib/store/commands";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AtSign, Copy, Flag, Gift, House, LogOut, MapPin, MessageCircle, QrCode, ShieldAlert, Siren, UserPlus, UsersRound } from "lucide-react";
 import { useShare } from "@/components/share/ShareSheet";
@@ -42,6 +42,11 @@ import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
+import { SquadChatPanel } from "@/components/squad/SquadChatPanel";
+import { SquadMapPanel } from "@/components/squad/SquadMapPanel";
+import { SquadAccounts } from "@/components/squad/SquadAccounts";
+import { VipSplitPanel } from "@/components/monetization/VipSplitPanel";
+import { APP_NAME } from "@/lib/brand";
 import { faceOf, verticalOf } from "@/lib/engine/verticals";
 import { profileHref } from "@/lib/engine/privacy";
 
@@ -73,9 +78,17 @@ function Squad() {
   const alerts = rescueAlertsFor(state, event.id, meId, now);
   const open = isLobbyInteractive(event, now);
 
+  const desktopCols = !!mine && open;
   return (
+    <div className={cn(desktopCols && "lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.9fr)] lg:items-start lg:gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1fr)_minmax(0,0.95fr)]")}>
+    {/* PC ancho: plano a la izquierda · miembros y pines al centro · chat o cuentas a la derecha */}
+    {desktopCols && (
+      <aside className="sticky top-4 hidden pt-6 xl:block">
+        <SquadMapPanel />
+      </aside>
+    )}
     <main className="safe-top">
-      <header className="sticky top-0 z-30 bg-background/85 px-4 pb-3 pt-4 backdrop-blur-xl">
+      <header className="sticky top-0 z-30 bg-background/85 px-4 pb-3 pt-4 backdrop-blur-xl md:pt-6">
         <p className="text-[11px] font-semibold uppercase tracking-wider text-squad">{event.name}</p>
         <h1 className="text-2xl">{mine ? mine.squad.name : `Tu ${sq}`}</h1>
       </header>
@@ -107,6 +120,8 @@ function Squad() {
         {mine ? <MySquad /> : open ? <NoSquad /> : <p className="rounded-3xl border border-dashed border-white/10 p-8 text-center text-sm text-muted">El lobby cerró: los {sq === "Squad" ? "Squads de esta noche" : "equipos de este evento"} ya no están activos.</p>}
       </div>
     </main>
+    {desktopCols && <SquadSideColumn />}
+    </div>
   );
 
 }
@@ -233,7 +248,7 @@ const meId = state.current_user_id;
 
   const shareSheet = useShare();
   const share = () =>
-    shareSheet.open({ url: link, title: `Sumate a ${squad.name}`, text: `Sumate a mi ${sq} "${squad.name}" en ROUGE 👯 (entrás al evento y quedás en el grupo)`, fileName: `rouge-squad-${squad.invite_code}`, accent: "squad", caption: squad.invite_code });
+    shareSheet.open({ url: link, title: `Sumate a ${squad.name}`, text: `Sumate a mi ${sq} "${squad.name}" en ${APP_NAME} 👯 (entrás al evento y quedás en el grupo)`, fileName: `rouge-pass-squad-${squad.invite_code}`, accent: "squad", caption: squad.invite_code });
 
   return (
     <>
@@ -381,6 +396,8 @@ const meId = state.current_user_id;
       </Link>
 
       {/* Mesa VIP */}
+      <VipSplitPanel />
+
       <section className="glass rounded-3xl px-4 py-1">
         <Switch
           tone="vip"
@@ -513,5 +530,35 @@ function VipTables({ list }: { list: ReturnType<typeof openVipSquads> }) {
         ))}
       </ul>
     </section>
+  );
+}
+
+/** PC: columna derecha con el chat grupal o las cuentas de la mesa, sin salir de /squad. */
+function SquadSideColumn() {
+  const [tab, setTab] = useState<"chat" | "cuentas">("chat");
+  return (
+    <aside aria-label="Chat y cuentas del Squad" className="sticky top-4 hidden h-[calc(100dvh-2rem)] flex-col overflow-hidden rounded-3xl border border-white/10 bg-surface/70 backdrop-blur-xl lg:mt-6 lg:flex">
+      <div role="tablist" className="m-3 grid grid-cols-2 rounded-2xl bg-white/[0.05] p-1">
+        {(
+          [
+            ["chat", "💬 Chat"],
+            ["cuentas", "🧾 Cuentas"],
+          ] as const
+        ).map(([k, label]) => (
+          <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)} className={cn("min-h-[40px] rounded-xl font-display text-sm font-semibold transition", tab === k ? "bg-squad text-background shadow-glow-squad" : "text-muted hover:text-primary")}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className={cn("flex min-h-0 flex-1 flex-col overflow-y-auto", tab === "cuentas" && "px-3")}>
+        {tab === "chat" ? (
+          <SquadChatPanel />
+        ) : (
+          <Suspense>
+            <SquadAccounts embedded />
+          </Suspense>
+        )}
+      </div>
+    </aside>
   );
 }

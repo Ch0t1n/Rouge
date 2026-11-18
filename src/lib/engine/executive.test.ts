@@ -7,6 +7,7 @@ import { createSeedState, DEMO_IDS } from "@/lib/mock/seed";
 import type { RougeState } from "@/lib/types";
 import * as A from "./actions";
 import * as D from "./door";
+import { credentialSecret, dynamicQrValue } from "./qr";
 import { parseContactEmail, parseWebsite, personaContactVisible, sanitizePersonaFor } from "./verticals";
 import { buildVCard, escapeVCard, foldLine, personaVCard, vcardFileName } from "@/lib/vcard";
 
@@ -93,6 +94,9 @@ describe("categorías (tier)", () => {
   });
 });
 
+/** Pase EN VIVO (QR dinámico TOTP), como lo muestra la app: el pase fijo `ROUGE:PASS:` se rechaza como captura. */
+const live = (s: RougeState, eventId: string, userId: string) => dynamicQrValue(credentialSecret(s.events.find((e) => e.id === eventId)!.qr_secret!, "PASS", userId), "PASS", userId, NOW);
+
 describe("zonas de control (multi-zona)", () => {
   it("sin zonas: una sola opción, la Puerta principal (la noche no cambia); con puerta cargada no se duplica", () => {
     const s = seed();
@@ -104,14 +108,14 @@ describe("zonas de control (multi-zona)", () => {
 
   it("un área valida la categoría: rechaza a una asistente, deja pasar a VIP con nombre, empresa y categoría", () => {
     const s = asUser(seed(), DEMO_IDS.security);
-    const denied = D.zoneCheckIn(s, PRO, ZONE.vip, D.passValue(PRO, ME), NOW);
+    const denied = D.zoneCheckIn(s, PRO, ZONE.vip, live(s, PRO, ME), NOW);
     expect(denied.ok).toBe(true);
     if (!denied.ok) return;
     expect(denied.data).toMatchObject({ status: "zone_denied", tier: "attendee", zone_name: "Sala VIP", allowed_tiers: ["vip", "speaker", "sponsor"], name: "Sofía Benítez", company: "Estudio Benítez", age: null, username: null });
     expect(denied.state.zone_check_ins[0]).toMatchObject({ zone_id: ZONE.vip, user_id: ME, staff_id: DEMO_IDS.security, status: "denied", reason: "zone_denied" });
     expect(D.requiredTiersLabel(denied.data.allowed_tiers ?? [])).toBe("Requiere VIP / SPEAKER / SPONSOR");
 
-    const ok = D.zoneCheckIn(s, PRO, ZONE.vip, D.passValue(PRO, id(10)), NOW);
+    const ok = D.zoneCheckIn(s, PRO, ZONE.vip, live(s, PRO, id(10)), NOW);
     expect(ok.ok && ok.data).toMatchObject({ status: "ok", tier: "vip", company: "Aguirre Capital" });
     // Un área no toca la acreditación.
     const before = s.event_attendees.find((a) => a.event_id === PRO && a.user_id === id(10))!.checked_in_at;
@@ -121,10 +125,10 @@ describe("zonas de control (multi-zona)", () => {
   it("una puerta acredita; 'ya entró' en la segunda lectura; la vCard no es un pase; cada lectura queda registrada", () => {
     const base = asUser(seed(), DEMO_IDS.security);
     const s = { ...base, event_attendees: base.event_attendees.map((a) => (a.event_id === PRO && a.user_id === id(22) ? { ...a, checked_in_at: null } : a)) };
-    const first = D.zoneCheckIn(s, PRO, ZONE.entrance, D.passValue(PRO, id(22)), NOW);
+    const first = D.zoneCheckIn(s, PRO, ZONE.entrance, live(s, PRO, id(22)), NOW);
     expect(first.ok && first.data.status).toBe("ok");
     if (!first.ok) return;
-    const again = D.zoneCheckIn(first.state, PRO, ZONE.entrance, D.passValue(PRO, id(22)), NOW);
+    const again = D.zoneCheckIn(first.state, PRO, ZONE.entrance, live(s, PRO, id(22)), NOW);
     expect(again.ok && again.data.status).toBe("already");
     if (!again.ok) return;
     const card = D.zoneCheckIn(again.state, PRO, ZONE.auditorio, buildVCard({ fullName: "X" }), NOW);
@@ -138,9 +142,16 @@ describe("zonas de control (multi-zona)", () => {
 
   it("noche: la puerta principal sigue mostrando @ y edad para el control +18", () => {
     const s = asUser(seed(), DEMO_IDS.security);
-    const r = D.doorCheckIn(s, NIGHT, D.passValue(NIGHT, id(8)), NOW);
-    expect(r.data).toMatchObject({ status: "ok", zone_name: "Puerta principal", username: expect.any(String) });
-    expect(r.data.age).toBeGreaterThanOrEqual(18);
+    const r = D.zoneCheckIn(s, NIGHT, null, live(s, NIGHT, id(8)), NOW);
+    expect(r.ok && r.data).toMatchObject({ status: "ok", zone_name: "Puerta principal", username: expect.any(String) });
+    expect(r.ok && r.data.age).toBeGreaterThanOrEqual(18);
+  });
+
+  it("el pase fijo (captura) no sirve en ninguna zona y se registra como rechazado", () => {
+    const s = asUser(seed(), DEMO_IDS.security);
+    const r = D.zoneCheckIn(s, PRO, ZONE.vip, D.passValue(PRO, id(10)), NOW);
+    expect(r.ok && r.data).toMatchObject({ status: "static_qr", zone_name: "Sala VIP" });
+    expect(r.ok && r.state.zone_check_ins[0]).toMatchObject({ status: "denied", reason: "static_qr" });
   });
 
   it("alta, validación y baja de zonas", () => {

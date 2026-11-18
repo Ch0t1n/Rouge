@@ -1,13 +1,17 @@
-# ROUGE — Guía de arquitectura para Claude Code
+# Rouge Pass — Guía de arquitectura para Claude Code
 
-ROUGE es una **PWA social y operativa para eventos, fiestas y discotecas (B2B2C)**. Con **ROUGE Pro** (misma marca y
+> El producto se llama **Rouge Pass** (antes ROUGE). Lo interno conserva "rouge": el token de color `rouge`, los QR
+> `ROUGE:ORDER:` / `ROUGE:PASS:`, las claves `rouge:*` de localStorage, `RougeContext`/`useRouge` y el email interno de
+> Instagram. Los textos visibles usan `APP_NAME` (`src/lib/brand.ts`) y el wordmark `<Wordmark />` (`components/brand`).
+
+Rouge Pass es una **PWA social y operativa para eventos, fiestas y discotecas (B2B2C)**. Con **ROUGE Pro** (misma marca y
 mismo motor) también sirve para eventos corporativos, pymes y networking: cada evento es `nightlife` o `corporate`.
 Los asistentes entran a un lobby privado del evento (link maestro o código de 1 uso),
 conectan con gente afín, arman su **Squad** (seguridad grupal + perks), se ubican en el
 **plano** con pines de 15 min y piden en la **Barra Express**. El organizador paga
 (fee por evento / por asistente activo / comisión de barra-VIP) y opera todo desde `/admin`.
 
-> **Tesis:** ROUGE gana cuando la gente conecta rápido, no pierde a su grupo, consume sin
+> **Tesis:** Rouge Pass gana cuando la gente conecta rápido, no pierde a su grupo, consume sin
 > filas y vuelve a comprar entrada. Nunca diseñar features que retengan usuarios frustrados.
 
 ---
@@ -42,6 +46,7 @@ node scripts/generate-promo.cjs [app] [url demo] # piezas 1080×1350 para organi
 
 ```
 src/
+  proxy.ts                # CSP con nonce por request (Next 16: "proxy" = ex middleware)
   app/                    # Rutas (App Router)
     layout.tsx            # Fuentes, metadata PWA, RougeProvider, AppShell
     page.tsx              # Landing PÚBLICA 3D (asistentes): solo sus beneficios. SIN demo, CRM, ventas ni planes
@@ -51,6 +56,7 @@ src/
     login/                # Login por tipo de usuario: Asistente / Equipo. Supabase: magic link, Google, Instagram; demo: persona/rol
       instagram/          # Vuelta del login con Instagram: canjea #token_hash por la sesión (verifyOtp)
     api/instagram/        # OAuth de Instagram (SOLO servidor): start, callback, media (listar/importar), DELETE, data-deletion
+    api/csp-report/       # Reportes de violaciones de la CSP (solo log)
     api/v1/               # API para ticketeras (SOLO servidor): events, events/[eventId]/codes(/[code]), qr/[code], openapi.json
     onboarding/           # Alta del perfil persistente en 4 pasos (guarda progresivamente)
     profile/              # "Así te ven" + completitud · profile/edit (editor completo) · profile/personas (Mis perfiles + editor ?id=|?kind=&next=)
@@ -136,14 +142,22 @@ src/
       promoters.ts        # RRPP: link propio, comisión, promoterStats (⇔ ensure_promoter_link, promoter_stats)
       door.ts             # Puerta y zonas: parseDoorValue, zoneCheckIn (⇔ zone_check_in), doorCheckIn, scannerZones, upsertZone, pase ROUGE:PASS
       profile.ts          # Validaciones de perfil, parser de Spotify, máscara de teléfono, completitud
-      analytics.ts        # Métricas B2B, CRM, Smart Tags, liveWallData()
+      analytics.ts        # Métricas B2B, CRM, Smart Tags, liveWallData(), curvas de 15' (eventCurve/liveComparison)
+      security.ts         # Staff por organización, invitaciones, kill switch, kiosco PIN, auditoría, reportes, borrado
+      qr.ts · scan.ts     # QR dinámicos TOTP y canje dinámico en barra
+      doorOffline.ts      # Padrón de puerta sin conexión, búsqueda manual y reconciliación
+      campaigns.ts        # Campañas por WhatsApp (segmentos, plantillas, bandeja wa.me)
+      superadmin.ts       # Consola global (tablero, asistentes, staff)
+      monetization.ts     # Trago desde el chat, Mesa VIP dividida, cola virtual, Wrapped
       engine.test.ts      # Tests de invariantes de negocio
     demo/script.ts        # Guion de la demo (7 pasos), roles demo y openAs(rol, ruta)
+    security/             # headers.ts (CSP + headers), paths.ts (redirecciones/links seguros), rateLimit.ts, api.ts
     mock/seed.ts          # Motor de Mock Data (fechas relativas a "ahora")
     store/RougeContext.tsx# Estado global: Modo Demo (localStorage) o Supabase (sesión + carga + Realtime); exec()
     store/commands.ts     # Comandos: regla local del motor + contraparte remota (RPC/tabla) de CADA acción
     store/commands.test.ts# Contrato cliente ↔ schema.sql (RPCs, parámetros, tablas, columnas, cargador)
     store/supabase.integration.test.ts # Flujo completo con usuarios reales, RLS, Realtime y Storage (se saltea sin credenciales)
+    store/schema.security.test.ts      # schema.sql real en PGlite + ~50 ataques a RLS/RPCs (corre en npm test)
     store/hooks.ts        # useRequireProfile() → /login (Supabase sin sesión) o /onboarding (sin perfil)
     supabase/sync.ts      # fetchRemoteState() (RLS) + subscribeRealtime()
     supabase/errors.ts    # friendlyError(): excepciones de RPC/RLS → mensajes en español
@@ -161,6 +175,7 @@ src/
     media/upload.ts       # uploadMedia(): Supabase Storage si hay sesión, si no IndexedDB
     vcard.ts              # vCard 3.0 pura (buildVCard, personaVCard, escapes, plegado) + downloadVCard (descarga o compartir) — testeado
     leads.ts              # Leads B2B (validateLead ⇔ checks de b2b_leads), aviso comercial, planes y recomendación — testeado
+.claude/skills/           # Skills de Claude Code (auditorías, QA, diseño, seguridad); ver su README.md
 docs/                     # Documentación: producto, técnica, operaciones y api/ (guía para ticketeras)
 e2e/                      # E2E Playwright (demo, Supabase, Instagram con API imitada) + env.cjs + run.cjs
 CHANGELOG.md              # Historial de versiones (SemVer); pendientes conocidos
@@ -208,10 +223,17 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
    (simula Realtime). El `PersonaSwitcher` permite "actuar como" cualquier asistente.
    Si cambiás el formato del estado, subí `STATE_VERSION` en `seed.ts` (fuerza re-siembra).
 4. **Hidratación solo en cliente.** La semilla depende de `Date.now()`; el provider muestra
-   un BootScreen hasta montar. Las páginas de usuario son Client Components.
-5. **Una sola interfaz.** `AppShell` renderiza todo dentro de
-   `max-w-md mx-auto min-h-screen border-x border-white/10 shadow-2xl relative` salvo
-   `/admin/*` (vista expandida). Overlays (`BottomSheet`, `Toaster`) son `fixed` + `max-w-md mx-auto`.
+   un BootScreen hasta montar. Las páginas de usuario son Client Components. **Excepción: la landing** (`/`,
+   `/organizadores`) se renderiza en el servidor con un estado vacío (SEO). Textos SEO y FAQ en `landing/content.ts`
+   (módulo plano: lo usa también el JSON-LD de `app/page.tsx`); `robots.ts`, `sitemap.ts` y `opengraph-image.tsx` en
+   `src/app`; dominio e indexación en `SITE_URL` / `SITE_INDEXABLE` (`lib/brand.ts`).
+5. **Una sola interfaz, responsiva.** En móvil (< md) `AppShell` muestra el contenedor tipo teléfono
+   (`max-w-md`) con `BottomNav`. En tablet/PC (≥ md) usa `DesktopSidebar` (riel en md, expandible en lg; estado en
+   `localStorage`) y contenido fluido (`max-w-7xl` en rutas `WIDE`, `max-w-3xl` en lectura). El ancho del sidebar es
+   la variable CSS `--sidebar-w` (en `<html data-sidebar>`): todo elemento `fixed` de la app usa `md:fixed-app-x`.
+   `BottomSheet` pasa a diálogo centrado en md+; para paneles laterales sin navegar usar `Drawer`. Comportamiento
+   distinto por tamaño (no solo estilos) con `useIsDesktop()` (`lib/hooks/useMediaQuery`). `/admin/*`, `/ops/*` y
+   `/superadmin` van expandidos sin sidebar de la app.
 6. **Baja señal.** Comprimir toda imagen con `compressImage()` antes de subir; avatares con
    fallback de iniciales y color dominante (`blur_color`); Service Worker cache-first para estáticos;
    el iframe de Spotify NO se carga hasta que el usuario toca "Escuchar".
@@ -227,6 +249,9 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
     simula un teléfono distinto aunque compartan el estado. `window.name` = `rouge-persona:<id>` la fija por marco
     (lo usan los iframes de `/demo/presentador`). `saveDemoState` nunca pisa una fiesta con otro `seeded_at`
     (salvo `force` al reiniciar o re-sembrar). La landing no lleva atajos de demo: van en `/demo` (`lib/demo/script.ts`).
+    **Demo visible solo tras `/demo`:** personas/roles en el login, `PersonaSwitcher`, links de prueba, "Simular…" y badges
+    "Modo Demo" se muestran con `useRouge().demoVisible` (flag `rouge:demo-access` que fija pasar por `/demo/*`,
+    `lib/demo/access.ts`); sin él, el login es el normal. Los E2E demo llaman `unlockDemo(ctx)` (`e2e/env.cjs`).
 11. **Admin.** Las páginas `page.tsx` solo exportan el componente por defecto (Next lo exige): helpers
     a `components/admin` o `lib`. Los avisos en `/admin` van arriba a la derecha. La Pantalla LED se
     dimensiona con `min(vw, vh)` para entrar en cualquier proyector (probado 1920×1080, 1280×720, 1024×768).
@@ -247,6 +272,22 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
     `NoAccess` si el rol no tiene la sección (`ADMIN_ROUTE_PERMISSION`). Tras el login cada uno va a `destinationFor()`
     (barra/mozo → comandas, seguridad/dueño/producción → resumen, asistente → `/app`). El equipo lo arma solo el dueño/a
     (`setStaffRole` / RPC `set_staff_role`, por @username). Botones demo que actúan por el staff pasan `{ simulate: true }`.
+15b. **Plataformas y staff (v1.7).** `surfaceForPath` / `canAccessPath` (`roles.ts`) aíslan `client_app`, `staff_ops`
+    (`/ops`), `owner_admin` (`/admin`) y `super_admin` (`/superadmin`); Puerta/Barra en turno solo ven `/ops`. Staff por
+    organización (= cuenta del dueño/a): `staff_assignments` + `staff_invites` (token de 1 uso, 2 h, solo su SHA-256) con
+    `access_window`; `staffRoleOf(s, ev, user, now)` ⇔ `assigned_staff_role`/`has_staff_role` en SQL. Kill switch
+    `revoke_staff_access`; kiosco con `terminal_pins` (bcrypt) + `kiosk_unlock`/`kiosk_audit`; `audit_log` append-only
+    (trigger). Reglas puras en `engine/security.ts`; hash/HMAC sincrónicos en `lib/crypto/sha256.ts`. Rate limiting en
+    `src/proxy.ts` (Next 16, ex middleware) y cabeceras en `next.config.ts`.
+15c. **QR dinámicos (v1.7).** Pase/perk/voucher = `ROUGE:T1:…` (TOTP 20 s, `engine/qr.ts` ⇔ `verify_dynamic_qr`);
+    se dibujan con `DynamicQr` (nunca `QrBlock` para credenciales de la app). Secreto del evento en `event_secrets`
+    (sin RLS para clientes). Puerta: `door_scan` (terminal, listas free, atómico) y `door_reconcile` (offline,
+    `engine/doorOffline.ts` + `lib/offline/doorVault.ts`). Barra: `redeem_dynamic_qr`.
+15d. **Módulos por evento (v1.8).** `EventFeatureFlags` en `engine/features.ts` (presets, `resolveFeatures` con
+    dependencias, `ROUTE_FEATURES`). Toda pantalla/acción nueva de un módulo: agregar su ruta a `ROUTE_FEATURES`, el
+    guarda `featureOn(...)` en el motor y `event_feature(...)` en su RPC. Hook `useEventFeatures()` (`store/hooks`).
+    Crear eventos y tocar módulos: `canManageModules` ⇔ `can_manage_modules` (ROUGE HQ o autogestión);
+    `EventBuilderWizard` es el único creador (en `/superadmin` y, con autogestión, en `/admin/events`).
 16. **Todo link se comparte con QR.** Usar `useShare()` / `ShareButton` (`components/share`) para cualquier link
     nuevo (evento, códigos, Squad, perfil). Links relativos se completan con el dominio actual.
 17. **Login social.** Google = proveedor nativo de Supabase (`signInWithOAuth`, vuelve a `/login`). Instagram = OAuth
@@ -270,13 +311,20 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
    el ticker vuelve a su lagSmoothing): /app y /admin no cargan ni heredan nada de esto. Ojo con `cn()` (tailwind-merge)
    y clases `text-glow-*`: las confunde con colores de texto; en SplitReveal se concatenan sin `cn`.
 20. **Marca y tema.** `rouge` y `vip` son variables CSS (`rgb(var(--c-rouge) / <alpha>)`); el tema del evento
-   (`eventTheme`: evento → marca → ROUGE) lo aplica `AppShell` con `useBrandTheme` en la app del asistente y la LED
+   (`eventTheme`: evento → marca → Rouge Pass) lo aplica `AppShell` con `useBrandTheme` en la app del asistente y la LED
    (no en landing, demo, login ni panel); `/join` aplica el del link. **Rescate = token `sos` fijo**, Squad = cian: nunca
    usar `rouge` para seguridad. En SVG, los colores con variables van en `style`, no en atributos. Opacidades de Tailwind
    solo de su escala (5, 10, 15…): `/12` o `/8` no se generan.
 21. **Cobros.** Ningún cliente acredita pagos: `confirm_order_payment` es solo `service_role` y el servidor la llama tras
    verificar el pago con la API de Mercado Pago (token de ESA marca, external_reference, monto, moneda). Tokens siempre
    cifrados (`MP_TOKEN_KEY`). Un pedido `awaiting_payment` no avanza (`not_paid`) ni suma gasto. En demo: `payOrderDemo`.
+22. **Seguridad (no romper).** Helpers de permisos SQL en el schema `private` (no expuesto por la API): referenciarlos
+    como `private.<helper>(…)` y nunca crear helpers con ids arbitrarios en `public`. Cada tabla nueva: RLS + `revoke` +
+    `grant` solo de las columnas que el cliente escribe; lo sensible (estados, totales, dueños, pines) va por RPC. Toda
+    política o RPC nueva suma su ataque en `src/lib/store/schema.security.test.ts`. La CSP está en
+    `src/lib/security/headers.ts`: un origen externo nuevo se agrega ahí con su motivo (sin `*` ni CDNs). El root layout es
+    dinámico por el nonce. Redirecciones con `safeNext`/`safeInternalPath` (`src/lib/security/paths.ts`); links que vienen de
+    datos (blasts) con `isSafeCtaLink`. Rutas `/api/*` nuevas: `rateLimited()` + `readJsonBody()` (`src/lib/security/api.ts`).
 8. **Guardado sincrónico.** `run()` persiste en el acto (y hay flush en `pagehide`): una acción
    nunca se pierde por cerrar la PWA o navegar inmediatamente.
 
@@ -421,11 +469,47 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
 - **Tipografía:** `font-display` = Space Grotesk (títulos, badges, métricas, contadores; 600/700,
   tracking tight) · `font-sans` = Plus Jakarta Sans (cuerpo, bios, chat; 400/500/600).
 - **Plano:** Squad pulsa cian, Match pulsa rouge, Punto Base es bandera dorada.
-- **Tarjetas de grilla:** `aspect-card` (3:4), imagen a sangre, `.card-fade`, badge de % afinidad,
-  `.glass-pill` con el Mood.
+- **Tarjetas de grilla:** `aspect-card` (3:4), `.card-fade`, badge de % afinidad, `.glass-pill` con el Mood.
+- **Fotos de perfil: siempre verticales 3:4 y las encuadra la persona.** Al subir pasan por `PhotoCropper`
+  (`react-easy-crop`, `lib/media/crop.ts`): la app nunca recorta sola. Se muestran enteras (`object-contain`);
+  `MediaImage` rellena con la foto difuminada si queda alguna vieja con otra proporción. `Avatar` también es 3:4
+  (`size` = alto, ancho = 3/4) con esquinas suaves, nunca un círculo. El loop también va entero.
 - **Ergonomía:** botones ≥ 44px (`min-h-touch`), modales `BottomSheet`, una mano.
 - No inventar colores nuevos: si hace falta un estado, usar opacidades de los tokens.
 - Respetar `prefers-reduced-motion` (ya global en `globals.css`).
+
+## Skills y pulido seguro
+
+En `.claude/skills/` hay 14 skills importadas de `rampstackco/claude-skills` (MIT). La procedencia, la revisión de
+seguridad y la política para sumar más están en `.claude/skills/README.md`. Son guías genéricas: **este archivo
+manda**. Si una skill sugiere algo que contradice una regla de arriba (motor puro, RLS, privacidad, tokens de
+diseño), gana la regla de ROUGE.
+
+**Cuándo usar cada una en ROUGE**
+
+| Tarea | Skill | Lo que importa en ROUGE |
+|---|---|---|
+| Revisar un diff o PR, debuggear | `code-review-web` | Regla de negocio fuera de `engine/` o UI que llama al motor sin `exec(C.…)` = bloqueante. Comando sin contraparte en `schema.sql` ni en `commands.test.ts` = bloqueante. |
+| Seguridad / pre-lanzamiento | `security-baseline` | RLS en toda tabla, `security definer` con `search_path`, service role solo en `/api/*`, nada secreto con `NEXT_PUBLIC_`. CSP en `next.config.ts`: probarla en modo *Report-Only* antes (Spotify, Supabase, Meta y blobs de IndexedDB). |
+| Accesibilidad | `accessibility-audit`, `frontend-component-build` | `min-h-touch` (44px), foco y ESC en `BottomSheet`, `aria-live` en `Toaster`/`LiveNotifications`, `prefers-reduced-motion`. El rescate tiene que andar con una mano, con lector de pantalla y sin banners encima. |
+| Rendimiento | `performance-optimization`, `media-asset-management` | Pensar en baja señal: `compressImage()` antes de subir, `blur_color` como placeholder, Spotify lazy, SW cache-first. Nunca data URLs en el estado. |
+| UI nueva o pulido visual | `design-standards`, `design-system` | Solo tokens de "Velvet & Laser" (sin colores nuevos). Verificar contraste AA de `text-muted` sobre `surface`. Probar a 375px dentro del shell `max-w-md`, y `/admin` también en desktop. |
+| Formularios | `form-strategy`, `onboarding-wizard-design` | Validar en el motor (mismo mensaje en demo y Supabase) y en SQL; `type`/`autocomplete` correctos; input ≥16px (sin zoom en iOS). El onboarding guarda de a poco y nunca pierde lo cargado. |
+| Tests de una feature o bug | `test-case-authoring`, `qa-testing` | Nivel más bajo que alcance: invariantes en `engine.test.ts`, contrato en `commands.test.ts`, RLS en integración, flujo en `e2e/`. Evidencia = salida real del runner. |
+| Dependencias | `dependency-management` | Por defecto no agregar paquetes. Si hace falta, checklist de la skill + impacto en bundle + `npm audit`. |
+| Operación de la noche | `monitoring-and-alerting` | Rutas críticas: ingreso, rescate, pedidos de barra y Realtime. Ver `docs/operaciones/checklist-lanzamiento-v1.md`. |
+
+**Reglas para pulir sin romper**
+
+- Un cambio por vez y con alcance claro. Los refactors grandes van en su propio commit, nunca mezclados con fixes.
+- Antes de tocar algo, leer su test. Después: `npm run typecheck && npm test && npm run build`. Si tocaste
+  `schema.sql` o `commands.ts`, también `npm run test:integration` (o decir que no se pudo correr y por qué).
+- Nunca cambiar una aserción, un valor esperado o un fixture para que un test pase, salvo que el valor esperado
+  estuviera mal (y decirlo).
+- Las auditorías (a11y, rendimiento, seguridad) se entregan como hallazgos priorizados. Si falta una medición
+  (Lighthouse, lector de pantalla, dispositivo real), se dice que falta: no se inventan números.
+- Mejoras de UX no pueden quitar salvaguardas: bloqueos mutuos, mensaje genérico "no disponible", teléfono
+  privado, audiencia manual de pines, rescate en 1 toque.
 
 ## Roadmap
 
@@ -440,8 +524,11 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
 - [x] **Fase 9** — Marca (logo + colores) por evento, cobros con Mercado Pago por marca y cuentas de la mesa.
 - [x] **Fase 10** — Gestión completa del evento (menú, nueva edición, expulsar, eliminar) y ticket de comanda.
 - [x] **Fase 11** — RRPP con link y comisión, escáner de puerta y sitio público / organizadores separados.
-- [x] **Fase 12** — ROUGE Pro: eventos corporativos (`events.kind`) y perfiles múltiples por cuenta (`profile_personas`).
-- [x] **Fase 13** — Privacidad por contexto (tarjetas saneadas, columnas privadas, ajustes), reuniones con sala/pin y `/empresas`.
+- [x] **Fase 12** — Experiencia de escritorio, plataformas aisladas (/ops, /superadmin), staff por organización con kiosco
+  y auditoría, QR dinámicos TOTP, listas free, puerta offline, RRPP escalonado, tablero 15', campañas WhatsApp y
+  monetización (trago en chat, Mesa VIP dividida, cola virtual, Wrapped).
+- [x] **Fase 13** — ROUGE Pro: eventos corporativos (`events.kind`), perfiles múltiples (`profile_personas`), privacidad
+  por contexto (tarjetas saneadas, columnas privadas, ajustes), reuniones con sala/pin y `/empresas`.
 - [x] **Fase 14** — ROUGE PRO (`/pro`): identidad ejecutiva, organizadores y asistentes separados, simulador, demo con modal y switch de modo.
 - [x] **Fase 15** — ROUGE PRO Fase 1: ficha ejecutiva con contacto por nivel de privacidad, pase corporativo con vCard y control multi-zona por categoría.
 - [x] **Fase 16** — ROUGE PRO Fase 2: agenda multi-track, "Mi Agenda" con choques de horario, "Ubicar sala" en el plano y Q&A / encuestas en vivo con moderación.
