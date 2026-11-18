@@ -238,6 +238,9 @@ describe.skipIf(!URL || !ANON || !SERVICE)("Supabase real: flujo completo con RL
   });
 
   it("crear evento nuevo: quien lo crea queda como staff y con menú", async () => {
+    // [v1.8] Crear eventos exige autogestión habilitada por ROUGE HQ (can_manage_modules): la habilita el servidor.
+    const { error: selfService } = await admin.from("organization_settings").upsert([sofi, cami, mateo, staff].map((a) => ({ organization_id: a.id, allow_owner_self_service: true })));
+    expect(selfService).toBeNull();
     const start = new Date(Date.now() + 72 * 3_600_000).toISOString();
     const ev = await act(sofi, C.upsertEvent({ name: `Neon ${RUN}`, starts_at: start, ends_at: new Date(Date.now() + 78 * 3_600_000).toISOString() }));
     const remote = await fetchRemoteState(sofi.sb, sofi.id, ev.id);
