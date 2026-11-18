@@ -9,11 +9,6 @@ const MESSAGES: Record<string, string> = {
   not_authenticated: "Tu sesión expiró. Volvé a ingresar.",
   // [v1.11] Agenda, Mi Agenda, Q&A y encuestas (mismos textos que el motor)
   ...SCHEDULE_ERRORS,
-  // [v1.10] Ficha ejecutiva, categorías y zonas
-  zone_not_found: "Esa zona no existe o está desactivada.",
-  too_many_zones: "Hasta 20 zonas por evento.",
-  event_zones_name_uq: "Ya hay una zona con ese nombre.",
-  personas_bio_len_chk: "La bio profesional tiene un máximo de 240 caracteres.",
   // [v1.7] Seguridad operativa
   invalid_role: "Elegí un rol válido.",
   invalid_scope: "Elegí a qué eventos se suma.",
@@ -42,6 +37,14 @@ const MESSAGES: Record<string, string> = {
   qr_expired: "QR vencido o falso: es una captura. Pedile que abra el QR en vivo.",
   invalid_method: "Elegí cómo pagó.",
   no_late_fee: "Esta entrada no tiene diferencial para cobrar.",
+  // [v1.10] Ficha ejecutiva, categorías y zonas
+  zone_not_found: "Esa zona no existe o está desactivada.",
+  team_name_taken: "Ya hay un equipo con ese nombre.",
+  invalid_team_name: "Poné un nombre para el equipo (hasta 32 caracteres).",
+  squad_full: "El equipo está completo (máximo 12).",
+  too_many_zones: "Hasta 20 zonas por evento.",
+  event_zones_name_uq: "Ya hay una zona con ese nombre.",
+  personas_bio_len_chk: "La bio profesional tiene un máximo de 240 caracteres.",
   // [v1.8] Privacidad y reuniones
   checkin_required: "En este evento el networking es para quienes ya se acreditaron en la puerta.",
   pin_squad_only: "Elegiste compartir tu ubicación solo con tu Squad: sacá a los matches o cambialo en Privacidad.",

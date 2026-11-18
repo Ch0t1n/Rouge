@@ -186,17 +186,17 @@ function Home() {
           </button>
         )}
         {pro ? (
-          // ROUGE Pro: pase ejecutivo con categoría, QR de acceso dinámico ⇄ tarjeta vCard y "Guardar contacto (.vcf)".
+          // ROUGE Pro: pase ejecutivo con categoría, QR de acceso (dinámico) ⇄ tarjeta vCard y "Guardar contacto (.vcf)".
           <BottomSheet open={pass} onClose={() => setPass(false)} title="Mi pase" description="Acceso, categoría y tu tarjeta personal." className="border-pro-line bg-pro-navy">
             <CorporatePassView eventId={event.id} />
           </BottomSheet>
         ) : (
           <BottomSheet open={pass} onClose={() => setPass(false)} title="Mi entrada" description="Mostralo en la puerta: el personal ve tu foto y tu nombre.">
-            <div className="space-y-3 text-center">
-              <DynamicQr eventId={event.id} kind="PASS" refId={me.id} label={`${me.full_name} · ${event.name}`} tone="squad" />
-              <p className="text-xs text-muted">Si tenés la entrada de la ticketera, también sirve su QR.</p>
-            </div>
-          </BottomSheet>
+          <div className="space-y-3 text-center">
+            <DynamicQr eventId={event.id} kind="PASS" refId={me.id} label={`${me.full_name} · ${event.name}`} tone="squad" />
+            <p className="text-xs text-muted">Si tenés la entrada de la ticketera, también sirve su QR.</p>
+          </div>
+        </BottomSheet>
         )}
 
         {/* [v1.11] ROUGE Pro: agenda multi-track (en vivo ahora y mi próxima charla) */}

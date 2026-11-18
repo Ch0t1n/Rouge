@@ -57,7 +57,7 @@ import type {
 import { DEMO_PHOTOS } from "@/lib/demo/photos";
 import { pinHash } from "@/lib/engine/security";
 
-export const STATE_VERSION = 15;
+export const STATE_VERSION = 16;
 
 /**
  * Últimas 3 fechas de la organización (demo): curvas de 15' de ingresos en puerta y ventas de barra, alineadas al
@@ -756,8 +756,6 @@ export function createSeedState(now = Date.now()): RougeState {
   const PRO_END = PRO_START + 330;
   const proEvent: RougeEvent = {
     id: DEMO_IDS.proEvent,
-    // Secreto de los QR dinámicos del pase corporativo (demo). En Supabase vive solo en el servidor.
-    qr_secret: "demo-qr-secret-encuentro-pyme-00000000000000",
     kind: "corporate",
     networking_checkin_only: false,
     slug: "encuentro-pyme",
@@ -781,6 +779,8 @@ export function createSeedState(now = Date.now()): RougeState {
     lobby_expires_at: t(PRO_END + 7 * 24 * 60),
     max_capacity: 400,
     master_invite_code: "PYME26",
+    // QR en vivo (TOTP) del encuentro: sin este secreto el pase corporativo no se puede mostrar en el demo.
+    qr_secret: "demo-qr-secret-encuentro-pyme-00000000000000",
     created_by: DEMO_IDS.organizer,
     created_at: t(-60 * 24 * 14),
     brand_id: DEMO_IDS.proBrand,
@@ -894,20 +894,21 @@ export function createSeedState(now = Date.now()): RougeState {
     base_pin_x: 79,
     base_pin_y: 63,
     base_pin_label: "Sala 3 — Ronda de negocios",
-    created_by: id(21),
+    // Corporativo: los equipos los arma la organización.
+    created_by: DEMO_IDS.organizer,
     created_at: t(PRO_START + 60),
   };
   const proMembers: SquadMember[] = [
-    { ...member(101, DEMO_IDS.proTeam, 21, null, 80), squad_id: DEMO_IDS.proTeam },
-    { ...member(102, DEMO_IDS.proTeam, 1, 21, 75), squad_id: DEMO_IDS.proTeam },
-    { ...member(103, DEMO_IDS.proTeam, 22, 21, 70), squad_id: DEMO_IDS.proTeam },
+    { ...member(101, DEMO_IDS.proTeam, 21, 999, 80), squad_id: DEMO_IDS.proTeam },
+    { ...member(102, DEMO_IDS.proTeam, 1, 999, 75), squad_id: DEMO_IDS.proTeam },
+    { ...member(103, DEMO_IDS.proTeam, 22, 999, 70), squad_id: DEMO_IDS.proTeam },
   ];
   const PC = { connection: id(6101) };
   const proMessages: Message[] = [
     { ...msg(101, 21, 68, "Hola Sofía! Te vi en la charla. Necesitamos una tienda online para los uniformes, ¿hacés eso?", PC), event_id: proEvent.id },
     { ...msg(102, 1, 64, "¡Hola Carla! Sí, justo hago tiendas para fábricas. ¿Te paso casos?", PC), event_id: proEvent.id },
     { ...msg(103, 21, 60, "Dale. Me sumé a la Mesa 12 de la ronda, vení que está Ezequiel también.", PC), event_id: proEvent.id },
-    { ...msg(104, 21, 59, "👋 Sofía se sumó al equipo", { squad: DEMO_IDS.proTeam }, "system_alert"), event_id: proEvent.id },
+    { ...msg(104, 21, 59, "👋 La organización sumó a Sofía al equipo", { squad: DEMO_IDS.proTeam }, "system_alert"), event_id: proEvent.id },
   ];
   const proBlasts: EventBlast[] = [
     { id: id(13101), event_id: proEvent.id, title: "🤝 Ronda de negocios en las salas", message: "La ronda empieza ahora en las Salas de reunión. Mirá tus contactos recomendados en Networking.", target_segment: { kind: "all" }, cta_label: "Ver networking", cta_link: "/lobby", is_flash_promo: false, expires_at: null, created_at: t(PRO_START + 95) },

@@ -1,13 +1,20 @@
 // Demo · ROUGE PRO Fase 1: ficha ejecutiva, panel rápido al entrar, pase corporativo con vCard (.vcf) y escáner multi-zona.
 const fs = require("fs");
 const { chromium } = require("playwright");
-const { BASE: B, OUT: SP, unlockDemo, livePass, DEMO_QR_SECRETS } = require("./env.cjs");
+const { BASE: B, OUT: SP } = require("./env.cjs");
 const log = (...a) => console.log(...a);
 const assert = (c, m) => { if (!c) throw new Error("✘ " + m); log("✔ " + m); };
 const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const PRO = id(1100);
 const open = (role, path) => `${B}/demo/abrir?rol=${role}&a=${encodeURIComponent(path)}`;
 const read = async (dl) => fs.readFileSync(await dl.path(), "utf8");
+/** El QR de acceso rotativo vigente de una persona (lo que muestra su celular en "Mi pase"). */
+async function liveToken(page) {
+  await page.goto(`${B}/app`, { waitUntil: "networkidle" });
+  await page.click('[data-testid="my-pass"]');
+  await page.waitForSelector('[data-testid="pass-qr"][data-pass-value^="ROUGE:T1:PASS:"]');
+  return page.getAttribute('[data-testid="pass-qr"]', "data-pass-value");
+}
 
 (async () => {
   const browser = await chromium.launch();
@@ -17,7 +24,6 @@ const read = async (dl) => fs.readFileSync(await dl.path(), "utf8");
     p.on("console", (m) => m.type() === "error" && !/spotify|net::|Failed to load resource|_vercel\/insights/i.test(m.text()) && errors.push(`[${tag}] ${m.text()}`));
   };
   const ctx = await browser.newContext({ viewport: { width: 420, height: 900 }, acceptDownloads: true });
-  await unlockDemo(ctx);
 
   // ── Sofía en el encuentro pyme: ficha ejecutiva, sin rastro de la noche ──
   const ph = await ctx.newPage(); watch(ph, "sofi");
@@ -62,6 +68,7 @@ const read = async (dl) => fs.readFileSync(await dl.path(), "utf8");
   const pass = await ph.textContent('[data-testid="corporate-pass"]');
   assert(pass.includes("ASISTENTE") && pass.includes("QR de Acceso"), "pase con categoría (ASISTENTE) y QR de acceso");
   assert(pass.includes("Tus accesos") && pass.includes("Auditorio A"), "muestra a qué zonas puede pasar");
+  assert(/Cambia en \d+s · capturas no sirven/.test(pass), "el QR de acceso es en vivo (cambia cada 20 s)");
   await ph.click('[data-testid="pass-mode-vcard"]');
   await ph.waitForSelector("text=se guarda en sus contactos");
   await ph.screenshot({ path: `${SP}/pro-pase-vcard.png` });
@@ -89,25 +96,28 @@ const read = async (dl) => fs.readFileSync(await dl.path(), "utf8");
   // ── Seguridad: zona de control obligatoria y validación por categoría ──
   const door = await ctx.newPage(); watch(door, "seguridad");
   await door.setViewportSize({ width: 390, height: 844 });
-  // La dueña deja activo el evento corporativo (el demo comparte el estado) y Seguridad opera la puerta en /ops.
-  const pick = await ctx.newPage();
-  await pick.setViewportSize({ width: 1280, height: 900 });
-  await pick.goto(open("duena", "/admin/events"), { waitUntil: "networkidle" });
-  await pick.locator("select:visible").first().selectOption(PRO);
-  await pick.close();
+  // Seguridad escanea desde la plataforma operativa (/ops/door). El evento activo ya es el encuentro pyme.
   await door.goto(open("seguridad", "/ops/door"), { waitUntil: "networkidle" });
+  if (await door.locator("select:visible").count()) await door.locator("select:visible").first().selectOption(PRO);
   await door.waitForSelector('[data-testid="zone-option"]');
   assert((await door.locator('[data-testid="zone-option"]').count()) === 5, "selector de zona con las 5 zonas del evento");
   assert(await door.isVisible("text=Elegí en qué zona estás controlando"), "sin zona elegida no se puede escanear");
-  assert((await door.locator('[aria-disabled="true"] input[placeholder="Código de la entrada"]').count()) === 1, "el campo de código queda bloqueado hasta elegir una zona");
+  assert(!(await door.isVisible('input[placeholder="Código de la entrada"]')), "el campo de código aparece recién con una zona");
   await door.click('[data-testid="zone-option"]:has-text("Sala VIP")');
-  await door.fill('input[placeholder="Código de la entrada"]', livePass(DEMO_QR_SECRETS.pro, id(1)));
+  // Una captura del pase fijo no sirve: el evento usa QR rotativo.
+  await door.fill('input[placeholder="Código de la entrada"]', `ROUGE:PASS:${PRO}:${id(10)}`);
+  await door.click("text=Validar");
+  await door.waitForSelector('[data-testid="door-result"][data-status="static_qr"]');
+  assert((await door.textContent('[data-testid="door-result"]')).includes("QR estático"), "QR en vivo: el pase fijo (una captura) se rechaza en la zona");
+  await door.fill('input[placeholder="Código de la entrada"]', await liveToken(ph));
   await door.click("text=Validar");
   await door.waitForSelector('[data-testid="door-result"][data-status="zone_denied"]');
   const denied = await door.textContent('[data-testid="door-result"]');
   assert(denied.includes("Acceso denegado para esta zona") && denied.includes("Requiere VIP / SPEAKER / SPONSOR") && denied.includes("Sofía Benítez"), "rojo: denegado en Sala VIP, con el requisito y el nombre");
   await door.screenshot({ path: `${SP}/pro-zona-denegada.png` });
-  await door.fill('input[placeholder="Código de la entrada"]', livePass(DEMO_QR_SECRETS.pro, id(10)));
+  const tomas = await ctx.newPage(); watch(tomas, "tomas");
+  await tomas.addInitScript(() => { window.name = "rouge-persona:00000000-0000-4000-8000-000000000010"; });
+  await door.fill('input[placeholder="Código de la entrada"]', await liveToken(tomas));
   await door.click("text=Validar");
   await door.waitForSelector('[data-testid="door-result"][data-status="ok"]');
   const ok = await door.textContent('[data-testid="door-result"]');
@@ -125,10 +135,32 @@ const read = async (dl) => fs.readFileSync(await dl.path(), "utf8");
   await crm.selectOption('select[aria-label="Categoría de Sofía Benítez"]', "speaker");
   await crm.waitForSelector("text=ahora es SPEAKER");
   await door.reload({ waitUntil: "networkidle" });
-  await door.fill('input[placeholder="Código de la entrada"]', livePass(DEMO_QR_SECRETS.pro, id(1)));
+  await door.fill('input[placeholder="Código de la entrada"]', await liveToken(ph));
   await door.click("text=Validar");
   await door.waitForSelector('[data-testid="door-result"][data-status="ok"]');
   assert((await door.textContent('[data-testid="door-result"]')).includes("SPEAKER"), "con categoría SPEAKER, Sofía pasa a la Sala VIP");
+
+  // ── Corporativo: sin Rescate; los equipos los arma la organización ──
+  await ph.goto(`${B}/squad`, { waitUntil: "networkidle" });
+  const team = await ph.textContent("main");
+  assert(team.includes("Mesa 12") && !/Rescate|Llegué a casa|Invitar a mi/.test(team), "equipo sin Rescate, sin 'Llegué a casa' y sin invitar (lo arma la organización)");
+  await ph.goto(`${B}/map`, { waitUntil: "networkidle" });
+  assert(!(await ph.isVisible('button:has-text("Rescate")')), "el plano corporativo no tiene Botón de Rescate");
+  await crm.goto(open("duena", "/admin/events"), { waitUntil: "networkidle" });
+  await crm.locator("select:visible").first().selectOption(PRO);
+  await crm.waitForSelector('[data-testid="organizer-teams"]');
+  await crm.fill('input[placeholder="Mesa 3 · Ronda de negocios"]', "Mesa 3 · Logística");
+  await crm.click('[data-testid="create-team"]');
+  await crm.waitForSelector('[data-testid="organizer-teams"] >> text=Mesa 3 · Logística');
+  const add = crm.locator('[data-testid="organizer-teams"] li:has-text("Mesa 3 · Logística") select');
+  await add.selectOption({ label: "Héctor Giménez" });
+  await crm.waitForSelector("text=Héctor se sumó a Mesa 3 · Logística");
+  assert(true, "la organización crea un equipo y suma gente desde el panel");
+  await crm.screenshot({ path: `${SP}/pro-equipos-organizacion.png`, fullPage: true });
+  const hector = await ctx.newPage(); watch(hector, "hector");
+  await hector.addInitScript(() => { window.name = "rouge-persona:00000000-0000-4000-8000-000000000025"; });
+  await hector.goto(`${B}/squad`, { waitUntil: "networkidle" });
+  assert((await hector.textContent("main")).includes("Mesa 3 · Logística"), "la persona sumada ve su equipo en la app");
 
   await browser.close();
   assert(errors.length === 0, `sin errores de consola${errors.length ? ": " + errors.join(" | ") : ""}`);

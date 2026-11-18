@@ -7,7 +7,7 @@ import { createSeedState, DEMO_IDS } from "@/lib/mock/seed";
 import type { RougeState } from "@/lib/types";
 import * as A from "./actions";
 import * as D from "./door";
-import { credentialSecret, dynamicQrValue } from "./qr";
+import { credentialSecret, dynamicQrValue, eventQrSecret } from "./qr";
 import { parseContactEmail, parseWebsite, personaContactVisible, sanitizePersonaFor } from "./verticals";
 import { buildVCard, escapeVCard, foldLine, personaVCard, vcardFileName } from "@/lib/vcard";
 
@@ -19,6 +19,8 @@ const NIGHT = DEMO_IDS.event;
 const seed = () => createSeedState(NOW);
 const asUser = (s: RougeState, u: string) => ({ ...s, current_user_id: u });
 const persona = (s: RougeState, userN: number) => s.profile_personas.find((p) => p.user_id === id(userN) && p.kind === "corporate")!;
+/** QR EN VIVO del pase (TOTP de la plataforma, rota cada 20 s): lo que muestra el celular de esa persona. */
+const live = (s: RougeState, eventId: string, userId: string, now = NOW) => dynamicQrValue(credentialSecret(eventQrSecret(s, eventId)!, "PASS", userId), "PASS", userId, now);
 const ZONE = { entrance: id(20001), auditorio: id(20002), vip: id(20003) };
 
 describe("ficha ejecutiva", () => {
@@ -94,9 +96,6 @@ describe("categorías (tier)", () => {
   });
 });
 
-/** Pase EN VIVO (QR dinámico TOTP), como lo muestra la app: el pase fijo `ROUGE:PASS:` se rechaza como captura. */
-const live = (s: RougeState, eventId: string, userId: string) => dynamicQrValue(credentialSecret(s.events.find((e) => e.id === eventId)!.qr_secret!, "PASS", userId), "PASS", userId, NOW);
-
 describe("zonas de control (multi-zona)", () => {
   it("sin zonas: una sola opción, la Puerta principal (la noche no cambia); con puerta cargada no se duplica", () => {
     const s = seed();
@@ -140,18 +139,23 @@ describe("zonas de control (multi-zona)", () => {
     expect(D.zoneCheckIn(s, PRO, id(20999), "x", NOW)).toMatchObject({ ok: false });
   });
 
+  it("QR en vivo en cada zona: una captura vieja, una firma falsa o el pase fijo no pasan", () => {
+    const s = asUser(seed(), DEMO_IDS.security);
+    const token = live(s, PRO, id(10));
+    expect(D.zoneCheckIn(s, PRO, ZONE.vip, token, NOW + 10_000)).toMatchObject({ ok: true, data: { status: "ok" } });
+    expect(D.zoneCheckIn(s, PRO, ZONE.vip, token, NOW + 120_000)).toMatchObject({ ok: true, data: { status: "expired_qr", name: null } }); // captura vieja
+    const forged = token.replace(/:[0-9A-Fa-f]{10}$/, ":0000000000");
+    expect(D.zoneCheckIn(s, PRO, ZONE.vip, forged, NOW)).toMatchObject({ ok: true, data: { status: "expired_qr" } });
+    expect(D.zoneCheckIn(s, PRO, ZONE.vip, D.passValue(PRO, id(10)), NOW)).toMatchObject({ ok: true, data: { status: "static_qr" } }); // pase fijo
+    const logs = D.recentZoneCheckIns(s, PRO);
+    expect(logs.length).toBeGreaterThan(0);
+  });
+
   it("noche: la puerta principal sigue mostrando @ y edad para el control +18", () => {
     const s = asUser(seed(), DEMO_IDS.security);
     const r = D.zoneCheckIn(s, NIGHT, null, live(s, NIGHT, id(8)), NOW);
     expect(r.ok && r.data).toMatchObject({ status: "ok", zone_name: "Puerta principal", username: expect.any(String) });
     expect(r.ok && r.data.age).toBeGreaterThanOrEqual(18);
-  });
-
-  it("el pase fijo (captura) no sirve en ninguna zona y se registra como rechazado", () => {
-    const s = asUser(seed(), DEMO_IDS.security);
-    const r = D.zoneCheckIn(s, PRO, ZONE.vip, D.passValue(PRO, id(10)), NOW);
-    expect(r.ok && r.data).toMatchObject({ status: "static_qr", zone_name: "Sala VIP" });
-    expect(r.ok && r.state.zone_check_ins[0]).toMatchObject({ status: "denied", reason: "static_qr" });
   });
 
   it("alta, validación y baja de zonas", () => {
@@ -193,5 +197,45 @@ describe("vCard 3.0", () => {
     expect(forCarla).toContain("EMAIL;TYPE=INTERNET,WORK:sofia@estudiobenitez.com.ar");
     // La propia tarjeta: la persona elige qué incluir.
     expect(personaVCard(sofi, "X", { phone: false })).not.toContain("TEL");
+  });
+});
+
+describe("corporativo: sin Rescate y equipos armados por la organización", () => {
+  it("Rescate, 'Ya estoy bien' y 'Llegué a casa' no existen en corporativo; en la noche siguen igual", () => {
+    const s = seed();
+    expect(A.triggerRescue(s, PRO, ME)).toMatchObject({ ok: false });
+    expect(A.markHomeSafe(s, PRO, ME)).toMatchObject({ ok: false });
+    expect(A.resolveRescue(s, PRO, ME)).toMatchObject({ ok: false });
+    expect(A.triggerRescue(s, NIGHT, ME).ok).toBe(true);
+  });
+
+  it("los asistentes no crean equipos ni invitan; la organización crea, suma, mueve, quita y borra", () => {
+    const s = asUser(seed(), DEMO_IDS.organizer);
+    expect(A.createSquad(asUser(s, id(25)), PRO, id(25), "Mi equipo")).toMatchObject({ ok: false });
+    expect(A.inviteToSquad(s, DEMO_IDS.proTeam, ME, id(25))).toMatchObject({ ok: false });
+    expect(A.organizerCreateTeam(s, PRO, "Mesa 12 · Ronda de negocios")).toMatchObject({ ok: false }); // nombre repetido
+    const created = A.organizerCreateTeam(s, PRO, "  Logística  ");
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    const team = created.data;
+    expect(team).toMatchObject({ name: "Logística", created_by: DEMO_IDS.organizer });
+    // Héctor (sin equipo) se suma; Sofía se MUEVE desde la Mesa 12.
+    const add = A.organizerSetTeamMember(created.state, team.id, id(25), true);
+    expect(add.ok && add.data.moved).toBe(false);
+    if (!add.ok) return;
+    const move = A.organizerSetTeamMember(add.state, team.id, ME, true);
+    expect(move.ok && move.data.moved).toBe(true);
+    if (!move.ok) return;
+    const inTeam = (st: RougeState, sq: string) => st.squad_members.filter((m) => m.squad_id === sq && m.status === "joined").map((m) => m.user_id);
+    expect(inTeam(move.state, team.id).sort()).toEqual([ME, id(25)].sort());
+    expect(inTeam(move.state, DEMO_IDS.proTeam)).not.toContain(ME);
+    expect(A.organizerSetTeamMember(move.state, team.id, id(2), true)).toMatchObject({ ok: false }); // no está en el evento
+    const out = A.organizerSetTeamMember(move.state, team.id, id(25), false);
+    expect(out.ok && inTeam(out.state, team.id)).toEqual([ME]);
+    if (!out.ok) return;
+    const del = A.organizerDeleteTeam(out.state, team.id);
+    expect(del.ok && del.state.squads.some((x) => x.id === team.id)).toBe(false);
+    // Unirse con el link del equipo sigue funcionando para el asistente.
+    expect(A.joinSquad(asUser(s, id(25)), id(25), DEMO_IDS.proTeam).ok).toBe(true);
   });
 });

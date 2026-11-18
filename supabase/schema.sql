@@ -381,6 +381,7 @@ create table if not exists public.zone_check_ins (
 );
 create index if not exists idx_zone_checkins_event on public.zone_check_ins (event_id, created_at desc);
 
+
 -- [v1.8] Privacidad: los demás solo saben SI alguien está acreditado (no a qué hora entró).
 alter table public.event_attendees add column if not exists is_checked_in boolean generated always as (checked_in_at is not null) stored;
 -- [v1.8] El organizador puede limitar el networking a quienes ya pasaron por la puerta (acreditados).
@@ -1831,6 +1832,8 @@ create or replace function public.create_squad(p_event uuid, p_name text)
 returns public.squads language plpgsql security definer set search_path = public, extensions as $$
 declare v_row public.squads;
 begin
+  -- [v1.10] Corporativo: los equipos los arma la organización (create_team) (⇔ feature selfServeTeams).
+  if (select kind::text from public.events where id = p_event) = 'corporate' then raise exception 'not_in_vertical'; end if;
   if not private.lobby_is_open(p_event) or not private.is_event_attendee(p_event) then raise exception 'not_allowed'; end if;
   if not public.event_feature(p_event, 'enableSquads') then raise exception 'feature_disabled'; end if;
   if private.user_squad(p_event, auth.uid()) is not null then raise exception 'already_in_squad'; end if;
@@ -1844,6 +1847,7 @@ returns void language plpgsql security definer set search_path = public, extensi
 declare v_event uuid;
 begin
   select event_id into v_event from public.squads where id = p_squad;
+  if (select kind::text from public.events where id = v_event) = 'corporate' then raise exception 'not_in_vertical'; end if;
   if not private.is_squad_member(p_squad) then raise exception 'not_member'; end if;
   if not private.is_event_attendee(v_event, p_invitee) then raise exception 'not_attendee'; end if;
   if exists (select 1 from public.squad_members m where m.squad_id = p_squad and private.is_blocked(m.user_id, p_invitee)) then raise exception 'unavailable'; end if;
@@ -1865,6 +1869,51 @@ begin
   select split_part(full_name, ' ', 1) into v_name from public.profiles where id = auth.uid();
   insert into public.messages (event_id, conversation_type, squad_id, sender_id, message_type, content)
   values (v_event, 'squad', p_squad, auth.uid(), 'system_alert', '👋 ' || v_name || ' se sumó al Squad');
+end $$;
+
+-- [v1.10] Equipos que arma la organización (corporativo; ⇔ organizerCreateTeam / organizerSetTeamMember / organizerDeleteTeam).
+create or replace function public.create_team(p_event uuid, p_name text)
+returns public.squads language plpgsql security definer set search_path = public, extensions as $$
+declare v_row public.squads; v_name text := regexp_replace(trim(coalesce(p_name, '')), '\s+', ' ', 'g');
+begin
+  if not private.is_event_manager(p_event) then raise exception 'forbidden'; end if;
+  if v_name = '' or char_length(v_name) > 32 then raise exception 'invalid_team_name'; end if;
+  if exists (select 1 from public.squads where event_id = p_event and lower(name) = lower(v_name)) then raise exception 'team_name_taken'; end if;
+  insert into public.squads (event_id, name, invite_code, created_by)
+  values (p_event, v_name, 'EQ-' || upper(encode(gen_random_bytes(3), 'hex')), auth.uid()) returning * into v_row;
+  return v_row;
+end $$;
+
+create or replace function public.set_team_member(p_squad uuid, p_user uuid, p_add boolean default true)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+declare v_event uuid; v_name text;
+begin
+  select event_id into v_event from public.squads where id = p_squad;
+  if v_event is null or not private.is_event_manager(v_event) then raise exception 'forbidden'; end if;
+  if not p_add then
+    delete from public.squad_members where squad_id = p_squad and user_id = p_user;
+    return;
+  end if;
+  if not private.is_event_attendee(v_event, p_user) then raise exception 'not_attendee'; end if;
+  if exists (select 1 from public.squad_members where squad_id = p_squad and user_id = p_user and status = 'joined') then return; end if;
+  if exists (select 1 from public.squad_members m where m.squad_id = p_squad and m.status = 'joined' and private.is_blocked(m.user_id, p_user)) then raise exception 'unavailable'; end if;
+  if (select count(*) from public.squad_members where squad_id = p_squad and status = 'joined') >= 12 then raise exception 'squad_full'; end if;
+  -- Si estaba en otro equipo del evento, se mueve.
+  delete from public.squad_members where user_id = p_user and squad_id in (select id from public.squads where event_id = v_event);
+  insert into public.squad_members (squad_id, user_id, invited_by, status, joined_at) values (p_squad, p_user, auth.uid(), 'joined', now());
+  select split_part(full_name, ' ', 1) into v_name from public.profiles where id = p_user;
+  insert into public.messages (event_id, conversation_type, squad_id, sender_id, message_type, content)
+  values (v_event, 'squad', p_squad, p_user, 'system_alert', '👋 La organización sumó a ' || coalesce(v_name, 'alguien') || ' al equipo');
+end $$;
+
+create or replace function public.delete_team(p_squad uuid)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+declare v_event uuid;
+begin
+  select event_id into v_event from public.squads where id = p_squad;
+  if v_event is null or not private.is_event_manager(v_event) then raise exception 'forbidden'; end if;
+  delete from public.messages where squad_id = p_squad;
+  delete from public.squads where id = p_squad;
 end $$;
 
 -- QR Drops automáticos: "Squad de N miembros antes de HH:MM" → 1 QR por integrante (idempotente).
@@ -1920,6 +1969,8 @@ create or replace function public.trigger_rescue(p_event uuid, p_x double precis
 returns public.map_pins language plpgsql security definer set search_path = public, extensions as $$
 declare v_squad uuid; v_pin public.map_pins; v_name text;
 begin
+  -- [v1.10] Sin Botón de Rescate en eventos corporativos (⇔ feature rescue).
+  if (select kind::text from public.events where id = p_event) = 'corporate' then raise exception 'not_in_vertical'; end if;
   v_squad := private.user_squad(p_event, auth.uid());
   if v_squad is null then raise exception 'no_squad'; end if;
   p_sector := nullif(left(trim(p_sector), 40), '');
@@ -1986,6 +2037,7 @@ create or replace function public.set_safety_status(p_event uuid, p_status safet
 returns void language plpgsql security definer set search_path = public, extensions as $$
 declare v_squad uuid; v_name text;
 begin
+  if (select kind::text from public.events where id = p_event) = 'corporate' then raise exception 'not_in_vertical'; end if;
   v_squad := private.user_squad(p_event, auth.uid());
   if v_squad is null then raise exception 'no_squad'; end if;
   update public.squad_members set safety_status = p_status where squad_id = v_squad and user_id = auth.uid();
@@ -3236,6 +3288,133 @@ returns jsonb language sql security definer set search_path = public, extensions
 $$;
 
 -- ════════════════════════════════════════════════════════════════════════
+-- [v1.10] ZONAS DE CONTROL Y CATEGORÍAS (espejo: zoneCheckIn / setAttendeeTier en engine/door.ts y actions.ts)
+-- ════════════════════════════════════════════════════════════════════════
+
+-- Escáner por zona. p_zone null = puerta principal (sin zonas cargadas). Identifica el QR en vivo (TOTP) o la entrada
+-- sin efectos; si la categoría no está habilitada en la zona → 'zone_denied'. En una puerta (entrance) el ingreso lo
+-- hace door_scan (atómico, terminal, listas free); en un área solo se valida. En corporativo devuelve la cara
+-- profesional (nunca la de la noche ni la edad). Registra TODA lectura en zone_check_ins. Dueño/a, producción y seguridad.
+create or replace function public.zone_check_in(p_event uuid, p_zone uuid, p_value text, p_terminal text default null)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare
+  v_raw text := trim(coalesce(p_value, '')); v_code text; v_ev public.events; v_c public.event_invite_codes; v_chk record;
+  v_att public.event_attendees; v_user uuid; v_p public.profiles; v_pp public.profile_personas; v_res jsonb := '{}'::jsonb;
+  v_status text; v_kind text; v_zone public.event_zones; v_zkind text := 'entrance'; v_zname text := 'Puerta principal';
+  v_allowed attendee_tier_t[] := '{}'; v_tier attendee_tier_t; v_name text; v_photo text; v_age int; v_username text; v_label text;
+begin
+  if not private.has_staff_role(p_event, array['owner','manager','security']::staff_role_t[]) then raise exception 'forbidden'; end if;
+  if not public.event_feature(p_event, 'enableTicketing') then raise exception 'feature_disabled'; end if;
+  select * into v_ev from public.events where id = p_event;
+  if p_zone is not null then
+    select * into v_zone from public.event_zones where id = p_zone and event_id = p_event and is_active;
+    if v_zone.id is null then raise exception 'zone_not_found'; end if;
+    v_zkind := v_zone.kind; v_zname := v_zone.name; v_allowed := v_zone.allowed_tiers;
+  end if;
+
+  -- 1) Identificar, sin efectos.
+  if upper(v_raw) like 'ROUGE:T1:%' then
+    v_kind := 'pass';
+    select * into v_chk from public.verify_dynamic_qr(p_event, v_raw);
+    if v_chk.status <> 'ok' then v_status := case when v_chk.status = 'format' then 'invalid' else 'expired_qr' end;
+    elsif v_chk.kind <> 'PASS' then v_status := 'invalid';
+    else v_user := v_chk.ref::uuid;
+    end if;
+  elsif upper(v_raw) like 'ROUGE:PASS:%' then
+    v_kind := 'pass'; v_status := 'static_qr';
+  elsif upper(v_raw) like 'BEGIN:VCARD%' then
+    -- La tarjeta personal no es una entrada.
+    v_kind := 'vcard'; v_status := 'invalid'; v_label := 'Es una tarjeta personal (vCard), no un pase';
+  else
+    v_kind := 'code';
+    v_code := upper(coalesce(substring(v_raw from '/join/([^/?#[:space:]]+)'), v_raw));
+    if upper(v_ev.slug) = v_code or upper(v_ev.master_invite_code) = v_code or exists (select 1 from public.promoter_links where upper(code) = v_code) then
+      v_status := 'general_link';
+    else
+      select * into v_c from public.event_invite_codes where upper(code) = v_code;
+      if v_c.id is null then v_status := 'invalid';
+      elsif v_c.event_id <> p_event then v_status := 'other_event'; v_c := null;
+      else v_user := v_c.used_by_user_id; v_label := v_c.label;
+        if v_c.revoked_at is not null then v_status := 'revoked'; end if;
+      end if;
+    end if;
+  end if;
+  if v_user is not null then select * into v_att from public.event_attendees where event_id = p_event and user_id = v_user; end if;
+  if v_status is null and v_user is not null and exists (select 1 from public.event_bans where event_id = p_event and user_id = v_user) then v_status := 'banned'; end if;
+  if v_status is null and v_kind = 'pass' and v_att.id is null then v_status := 'not_attendee'; end if;
+  if v_user is not null or v_c.id is not null then v_tier := coalesce(v_att.tier, v_c.tier, 'attendee'); end if;
+
+  -- 2) Categoría habilitada en la zona.
+  if v_status is null and cardinality(v_allowed) > 0 and not (v_tier = any(v_allowed)) then v_status := 'zone_denied'; end if;
+
+  -- 3) Puerta: el ingreso lo hace door_scan. Área: solo valida.
+  if v_status is null then
+    if v_zkind = 'entrance' then
+      v_res := public.door_scan(p_event, p_value, p_terminal);
+      v_status := v_res->>'status';
+    else
+      v_status := 'ok';
+      v_res := jsonb_build_object('checked_in_at', coalesce(v_att.checked_in_at, v_c.checked_in_at));
+    end if;
+  end if;
+
+  if v_user is not null then
+    select * into v_p from public.profiles where id = v_user;
+    if v_ev.kind::text = 'corporate' then
+      select * into v_pp from public.profile_personas where id = v_att.persona_id;
+      v_name := coalesce(nullif(v_pp.display_name, ''), v_p.full_name); v_photo := v_pp.photos->0->>'url';
+    elsif v_p.id is not null then
+      v_name := v_p.full_name; v_photo := v_p.photos->0->>'url'; v_username := v_p.username;
+      v_age := date_part('year', age(v_p.birth_date))::int;
+    end if;
+  end if;
+
+  insert into public.zone_check_ins (event_id, zone_id, user_id, code_id, staff_id, status, reason, tier)
+  values (p_event, p_zone, v_p.id, v_c.id, auth.uid(), case when v_status = 'ok' then 'granted' else 'denied' end, v_status, v_tier);
+
+  return v_res || jsonb_build_object(
+    'status', v_status, 'kind', v_kind, 'user_id', v_p.id, 'name', coalesce(v_name, v_c.holder_name), 'username', v_username,
+    'photo', v_photo, 'age', v_age, 'label', v_label,
+    'zone_id', p_zone, 'zone_name', v_zname, 'zone_kind', v_zkind, 'allowed_tiers', to_jsonb(v_allowed),
+    'tier', v_tier, 'company', nullif(v_pp.company, ''), 'job_title', nullif(v_pp.job_title, ''));
+end $$;
+
+-- Categoría de un asistente (VIP, SPEAKER, PRENSA, SPONSOR). Dueño/a y producción (⇔ setAttendeeTier).
+create or replace function public.set_attendee_tier(p_event uuid, p_user uuid, p_tier attendee_tier_t)
+returns public.event_attendees language plpgsql security definer set search_path = public, extensions as $$
+declare v_att public.event_attendees;
+begin
+  if not private.is_event_manager(p_event) then raise exception 'forbidden'; end if;
+  update public.event_attendees set tier = p_tier where event_id = p_event and user_id = p_user returning * into v_att;
+  if v_att.id is null then raise exception 'not_attendee'; end if;
+  return v_att;
+end $$;
+
+-- ZONAS ── las ve quien está en el evento (el asistente ve a qué zonas puede pasar); las gestiona dueño/a o producción
+-- (hasta 20 por evento). El registro de lecturas solo lo ve el personal de puerta; se escribe por RPC.
+drop policy if exists zones_select on public.event_zones;
+create policy zones_select on public.event_zones for select to authenticated
+  using (private.is_event_attendee(event_id) or private.is_event_staff(event_id) or private.is_event_manager(event_id));
+drop policy if exists zones_manage on public.event_zones;
+create policy zones_manage on public.event_zones for all to authenticated
+  using (private.is_event_manager(event_id)) with check (private.is_event_manager(event_id));
+revoke all on public.event_zones from anon;
+create or replace function private.tg_zones_limit()
+returns trigger language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if (select count(*) from public.event_zones where event_id = new.event_id) >= 20 then raise exception 'too_many_zones'; end if;
+  return new;
+end $$;
+drop trigger if exists zones_limit on public.event_zones;
+create trigger zones_limit before insert on public.event_zones for each row execute function private.tg_zones_limit();
+
+drop policy if exists zone_checkins_select on public.zone_check_ins;
+create policy zone_checkins_select on public.zone_check_ins for select to authenticated
+  using (private.has_staff_role(event_id, array['owner','manager','security']::staff_role_t[]));
+revoke all on public.zone_check_ins from anon, authenticated;
+grant select on public.zone_check_ins to authenticated;
+
+-- ════════════════════════════════════════════════════════════════════════
 -- [v1.7] SEGURIDAD OPERATIVA — RLS y RPCs (espejo de src/lib/engine/security.ts)
 -- ════════════════════════════════════════════════════════════════════════
 alter table public.platform_admins     enable row level security;
@@ -3578,7 +3757,7 @@ $$;
 -- [v1.10] ¿`p_viewer` ve el email y el teléfono de contacto de este perfil profesional? (⇔ personaContactVisible)
 --   siempre tras una reunión o un contacto aceptado entre los dos; 'network' también quien asiste a un evento donde se usa;
 --   'public' también el equipo y la organización de esos eventos. Nunca con bloqueo.
-create or replace function private.persona_contact_visible(p_viewer uuid, p_persona uuid)
+create or replace function public.persona_contact_visible(p_viewer uuid, p_persona uuid)
 returns boolean language sql stable security definer set search_path = public, extensions as $$
   select coalesce((
     select case
@@ -3615,7 +3794,7 @@ returns setof public.profile_personas language sql stable security definer set s
          p.privacy_level
   from public.profile_personas p
   cross join lateral (select
-      private.persona_contact_visible(auth.uid(), p.id) as contact,
+      public.persona_contact_visible(auth.uid(), p.id) as contact,
       p.user_id = auth.uid() as own,
       exists (select 1 from public.event_attendees a where a.persona_id = p.id and private.is_event_manager(a.event_id, auth.uid())) as mgr,
       private.pro_unlocked(auth.uid(), p.user_id) as unlocked,
@@ -3835,142 +4014,6 @@ begin
   update public.meetings set status = 'cancelled', updated_at = now() where id = p_meeting returning * into v_m;
   return v_m;
 end $$;
-
--- ════════════════════════════════════════════════════════════════════════
--- [v1.10] ZONAS DE CONTROL Y CATEGORÍAS (espejo: engine/door.ts zoneCheckIn, upsertZone, setAttendeeTier)
--- ════════════════════════════════════════════════════════════════════════
--- Escáner por zona. p_zone null = puerta principal (sin zonas cargadas). Misma identidad que door_scan: pase dinámico
--- (TOTP), pase fijo viejo → 'static_qr', tarjeta vCard → no es una entrada, código de 1 uso o su URL.
---   entrance: valida la categoría y hace el ingreso completo de la puerta (door_scan: atómico, terminal, listas free).
---   area: valida que la categoría (tier) esté habilitada en la zona; no marca acreditación.
--- Devuelve la cara del evento: en la noche nombre, foto y edad (+18); en corporativo el perfil profesional (nunca la
--- cara de la noche), cargo, empresa y categoría. Registra TODA lectura en zone_check_ins. Dueño/a, producción y seguridad.
-drop function if exists public.zone_check_in(uuid, uuid, text);
-create or replace function public.zone_check_in(p_event uuid, p_zone uuid, p_value text, p_terminal text default null)
-returns jsonb language plpgsql security definer set search_path = public, extensions as $$
-declare
-  v_raw text := trim(coalesce(p_value, '')); v_code text; v_ev public.events; v_c public.event_invite_codes;
-  v_att public.event_attendees; v_user uuid; v_p public.profiles; v_pp public.profile_personas; v_chk record;
-  v_status text; v_kind text; v_at timestamptz; v_seen timestamptz; v_zone public.event_zones; v_zkind text := 'entrance';
-  v_zname text := 'Puerta principal'; v_allowed attendee_tier_t[] := '{}'; v_tier attendee_tier_t; v_label text;
-  v_name text; v_photo text; v_age int; v_username text; v_door jsonb; v_term text; v_late jsonb;
-begin
-  if not private.has_staff_role(p_event, array['owner','manager','security']::staff_role_t[]) then raise exception 'forbidden'; end if;
-  if not public.event_feature(p_event, 'enableTicketing') then raise exception 'feature_disabled'; end if;
-  select * into v_ev from public.events where id = p_event;
-  if p_zone is not null then
-    select * into v_zone from public.event_zones where id = p_zone and event_id = p_event and is_active;
-    if v_zone.id is null then raise exception 'zone_not_found'; end if;
-    v_zkind := v_zone.kind; v_zname := v_zone.name; v_allowed := v_zone.allowed_tiers;
-  end if;
-
-  -- Identidad (sin marcar nada todavía)
-  if upper(v_raw) like 'BEGIN:VCARD%' then
-    v_kind := 'vcard'; v_status := 'invalid'; v_label := 'Es una tarjeta personal (vCard), no un pase';
-  elsif upper(v_raw) like 'ROUGE:T1:%' then
-    v_kind := 'pass';
-    select * into v_chk from public.verify_dynamic_qr(p_event, v_raw);
-    if v_chk.status <> 'ok' then v_status := case when v_chk.status = 'format' then 'invalid' else 'expired_qr' end;
-    elsif v_chk.kind <> 'PASS' then v_status := 'invalid';
-    else
-      v_user := v_chk.ref::uuid;
-      select * into v_att from public.event_attendees where event_id = p_event and user_id = v_user;
-      if exists (select 1 from public.event_bans where event_id = p_event and user_id = v_user) then v_status := 'banned';
-      elsif v_att.id is null then v_status := 'not_attendee';
-      else v_tier := v_att.tier; v_seen := v_att.checked_in_at;
-      end if;
-    end if;
-  elsif upper(v_raw) like 'ROUGE:PASS:%' then
-    v_kind := 'pass'; v_status := 'static_qr';
-  else
-    v_kind := 'code';
-    v_code := upper(coalesce(substring(v_raw from '/join/([^/?#[:space:]]+)'), v_raw));
-    if upper(v_ev.slug) = v_code or upper(v_ev.master_invite_code) = v_code or exists (select 1 from public.promoter_links where upper(code) = v_code) then
-      v_status := 'general_link';
-    else
-      select * into v_c from public.event_invite_codes where upper(code) = v_code;
-      if v_c.id is null then v_status := 'invalid';
-      elsif v_c.event_id <> p_event then v_status := 'other_event'; v_c := null;
-      else
-        v_user := v_c.used_by_user_id; v_label := v_c.label;
-        if v_user is not null then select * into v_att from public.event_attendees where event_id = p_event and user_id = v_user; end if;
-        v_tier := coalesce(v_att.tier, v_c.tier, 'attendee'); v_seen := v_c.checked_in_at;
-        if v_c.revoked_at is not null then v_status := 'revoked';
-        elsif v_user is not null and exists (select 1 from public.event_bans where event_id = p_event and user_id = v_user) then v_status := 'banned';
-        end if;
-      end if;
-    end if;
-  end if;
-
-  -- Categoría y efecto de la zona
-  if v_status is null then
-    if cardinality(v_allowed) > 0 and not (coalesce(v_tier, 'attendee') = any(v_allowed)) then v_status := 'zone_denied'; v_at := v_seen;
-    elsif v_zkind = 'area' then v_status := 'ok'; v_at := v_seen;
-    else
-      -- Puerta: el ingreso completo (atómico, "Ya entró" con terminal, horario free).
-      v_door := public.door_scan(p_event, p_value, p_terminal);
-      v_status := v_door->>'status'; v_at := (v_door->>'checked_in_at')::timestamptz; v_term := v_door->>'terminal'; v_late := v_door->'late';
-    end if;
-  end if;
-
-  if v_user is not null then
-    select * into v_p from public.profiles where id = v_user;
-    if v_ev.kind::text = 'corporate' then
-      select * into v_pp from public.profile_personas where id = v_att.persona_id;
-      v_name := coalesce(nullif(v_pp.display_name, ''), v_p.full_name); v_photo := v_pp.photos->0->>'url';
-    elsif v_p.id is not null then
-      v_name := v_p.full_name; v_photo := v_p.photos->0->>'url'; v_username := v_p.username;
-      v_age := date_part('year', age(v_p.birth_date))::int;
-    end if;
-  end if;
-  if v_name is null and v_c.id is not null then v_name := v_c.holder_name; end if;
-
-  insert into public.zone_check_ins (event_id, zone_id, user_id, code_id, staff_id, status, reason, tier)
-  values (p_event, p_zone, v_p.id, v_c.id, auth.uid(), case when v_status = 'ok' then 'granted' else 'denied' end, v_status, v_tier);
-
-  return jsonb_build_object(
-    'status', v_status, 'kind', v_kind, 'user_id', v_p.id, 'name', v_name, 'username', v_username, 'photo', v_photo,
-    'age', v_age, 'label', v_label, 'checked_in_at', v_at, 'terminal', v_term, 'late', v_late,
-    'zone_id', p_zone, 'zone_name', v_zname, 'zone_kind', v_zkind, 'allowed_tiers', to_jsonb(v_allowed),
-    'tier', v_tier, 'company', nullif(v_pp.company, ''), 'job_title', nullif(v_pp.job_title, ''));
-end $$;
-
-
--- [v1.10] Categoría de un asistente (VIP, SPEAKER, PRENSA, SPONSOR). Dueño/a y producción (⇔ setAttendeeTier).
-create or replace function public.set_attendee_tier(p_event uuid, p_user uuid, p_tier attendee_tier_t)
-returns public.event_attendees language plpgsql security definer set search_path = public, extensions as $$
-declare v_att public.event_attendees;
-begin
-  if not private.is_event_manager(p_event) then raise exception 'forbidden'; end if;
-  update public.event_attendees set tier = p_tier where event_id = p_event and user_id = p_user returning * into v_att;
-  if v_att.id is null then raise exception 'not_attendee'; end if;
-  return v_att;
-end $$;
-
--- [v1.10] ZONAS ── las ve quien está en el evento (el asistente ve a qué zonas puede pasar); las gestiona dueño/a o
--- producción (hasta 20 por evento). El registro de lecturas solo lo ve el personal de puerta; se escribe por RPC.
-drop policy if exists zones_select on public.event_zones;
-create policy zones_select on public.event_zones for select to authenticated
-  using (private.is_event_attendee(event_id) or private.is_event_staff(event_id) or private.is_event_manager(event_id));
-drop policy if exists zones_manage on public.event_zones;
-create policy zones_manage on public.event_zones for all to authenticated
-  using (private.is_event_manager(event_id)) with check (private.is_event_manager(event_id));
-revoke all on public.event_zones from anon;
-create or replace function public.tg_zones_limit()
-returns trigger language plpgsql security definer set search_path = public, extensions as $$
-begin
-  if (select count(*) from public.event_zones where event_id = new.event_id) >= 20 then raise exception 'too_many_zones'; end if;
-  return new;
-end $$;
-drop trigger if exists zones_limit on public.event_zones;
-create trigger zones_limit before insert on public.event_zones for each row execute function public.tg_zones_limit();
-
-drop policy if exists zone_checkins_select on public.zone_check_ins;
-create policy zone_checkins_select on public.zone_check_ins for select to authenticated
-  using (private.has_staff_role(event_id, array['owner','manager','security']::staff_role_t[]));
-revoke all on public.zone_check_ins from anon, authenticated;
-grant select on public.zone_check_ins to authenticated;
-
 
 -- ════════════════════════════════════════════════════════════════════════
 -- [v1.11] ROUGE PRO · AGENDA MULTI-TRACK, "MI AGENDA" Y Q&A / ENCUESTAS EN VIVO (espejo: engine/schedule.ts)

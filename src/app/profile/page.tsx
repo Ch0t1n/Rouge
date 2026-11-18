@@ -13,9 +13,9 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { ProfileView } from "@/components/profile/ProfileView";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { APP_NAME } from "@/lib/brand";
 import { ExecutiveProfileCard } from "@/components/pro/ExecutiveProfileCard";
 import { CorporateProfileSheet } from "@/components/pro/CorporateProfileSheet";
-import { APP_NAME } from "@/lib/brand";
 
 export default function MyProfilePage() {
   const { state, mode, signOut } = useRouge();

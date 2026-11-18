@@ -77,6 +77,8 @@ Este documento resume qué se guarda, quién lo ve y cómo se protege.
   la noche ni la edad. La categoría la escribe solo la organización (`set_attendee_tier`) o el código de la entrada. La
   vCard se arma en el cliente con la ficha ya saneada por `persona_cards`: nunca incluye datos que quien la guarda no
   podía ver; en la propia, la persona elige si incluye email y teléfono.
+- **[v1.10] Zonas con QR en vivo:** `zone_check_in` valida el mismo QR dinámico (TOTP) que la puerta: en una sala o área
+  una captura o el pase fijo tampoco sirven.
 - **[v1.11] Agenda y Q&A:** la pregunta nunca guarda a su autor/a (`session_questions` no tiene esa columna, así que
   tampoco viaja por Realtime): la autoría vive en `session_question_authors`, legible solo por su autor/a. Una pregunta no
   anónima solo lleva la firma "Nombre · Empresa" de la cara profesional del evento, calculada en el servidor. Las

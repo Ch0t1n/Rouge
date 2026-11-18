@@ -14,23 +14,14 @@
  *   - Listas free con horario límite: pasado `free_until`, la entrada queda "Fuera de horario Free" hasta cobrar el
  *     diferencial (`doorSettleLate`).
  * Contraparte SQL: door_scan (dueño/a, producción y seguridad) y door_settle_late.
- *
- * Zonas (v1.10, tabla `event_zones`): el personal elige ANTES de escanear en qué zona controla.
- *   - `entrance` (Puerta principal, Puerta B…): valida la categoría y hace el ingreso completo de la puerta (doorCheckIn).
- *   - `area` (Sala VIP, Auditorio A, Almuerzo ejecutivo): valida que la categoría (`tier`) de la persona esté habilitada
- *     para esa zona. No marca acreditación. Mismas reglas de identidad: el pase tiene que ser el QR dinámico.
- *   Sin zonas cargadas hay una sola opción, la "Puerta principal" virtual (`zone_id` null): la noche no cambia.
- * Toda lectura por zona queda registrada en `zone_check_ins` (quién, dónde, cuándo, qué personal y si pasó).
- * La persona se muestra con la cara del evento (`personFor`): en corporativo nombre, cargo, empresa y categoría, nunca la
- * cara de la noche ni la edad. Contraparte SQL: zone_check_in.
  */
 import { ATTENDEE_TIERS } from "@/lib/types";
 import type { AttendeeTier, EventZone, LatePaymentMethod, RougeState, TicketList, UUID, ZoneCheckIn } from "@/lib/types";
 import { uid } from "@/lib/utils";
+import { tierLabel, vertical } from "./verticals";
 import { eventQrSecret, isDynamicQr, verifyDynamicQr } from "./qr";
 import { featureOn } from "./features";
 import { ageOf } from "./privacy";
-import { tierLabel, vertical } from "./verticals";
 
 export type DoorStatus = "ok" | "already" | "invalid" | "revoked" | "banned" | "other_event" | "not_attendee" | "general_link" | "static_qr" | "expired_qr" | "late_free" | "module_off" | "zone_denied";
 
@@ -48,7 +39,7 @@ export interface DoorResult {
   terminal?: string | null;
   /** Fuera de horario free: lista, precio del diferencial y código a cobrar. */
   late?: { code_id: UUID; list: string; price: number; free_until: string } | null;
-  /** [v1.10] Zona donde se escaneó (null = Puerta principal virtual). */
+  /** [v1.10] Zona donde se escaneó (null = Puerta principal virtual) y categoría de la persona. */
   zone_id?: UUID | null;
   zone_name?: string | null;
   zone_kind?: EventZone["kind"];
@@ -78,9 +69,6 @@ export const DOOR_MESSAGES: Record<DoorStatus, string> = {
   zone_denied: "Acceso denegado para esta zona",
 };
 
-/** Pasó (verde) o no (ámbar/rojo). "Ya entró" en una puerta cuenta como no: puede ser una entrada compartida. */
-export const isGranted = (s: DoorStatus) => s === "ok";
-
 /** Lista de un código y si ya pasó su horario free (sin diferencial cobrado). */
 export function lateFreeFor(state: RougeState, code: { list_id?: UUID | null; late_paid_at?: string | null }, now = Date.now()): TicketList | null {
   if (!code.list_id || code.late_paid_at) return null;
@@ -105,61 +93,29 @@ export function parseDoorValue(raw: string): { kind: "pass"; eventId: string; us
 
 const empty = (status: DoorStatus, kind: DoorResult["kind"] = null): DoorResult => ({ status, kind, user_id: null, name: null, username: null, photo: null, age: null, label: null, checked_in_at: null });
 
-type ScanTarget = NonNullable<ReturnType<typeof parseDoorValue>>;
-
-/**
- * Identidad de lo escaneado, igual en la puerta y en las zonas: pase dinámico (TOTP: firma y paso válidos), pase fijo
- * viejo (rechazado como captura), tarjeta vCard (no es un pase) o código de entrada.
- */
-function resolveScan(state: RougeState, eventId: UUID, raw: string, now: number): { target: ScanTarget } | { fail: DoorResult } {
-  if (/^BEGIN:VCARD/i.test(raw.trim())) return { fail: { ...empty("invalid", "vcard"), label: "Es una tarjeta personal (vCard), no un pase" } };
-  if (isDynamicQr(raw)) {
-    const secret = eventQrSecret(state, eventId);
-    const chk = secret ? verifyDynamicQr(raw, secret, now) : ({ ok: false, reason: "forged" } as const);
-    if (!chk.ok) return { fail: empty(chk.reason === "format" ? "invalid" : "expired_qr", "pass") };
-    if (chk.kind !== "PASS") return { fail: empty("invalid", "pass") };
-    return { target: { kind: "pass", eventId, userId: chk.ref } };
-  }
-  // El pase fijo ya no sirve: cualquiera podía reenviar la captura.
-  if (raw.trim().toUpperCase().startsWith(PASS_PREFIX)) return { fail: empty("static_qr", "pass") };
-  const target = parseDoorValue(raw);
-  return target ? { target } : { fail: empty("invalid") };
-}
-
-/** Quién es, con la cara del evento: en corporativo el perfil profesional (o neutra), nunca la de la noche. */
-function personFor(s: RougeState, eventId: UUID, userId: UUID | null) {
-  const p = userId ? s.profiles.find((x) => x.id === userId) : undefined;
-  if (!p) return { user_id: null, name: null, username: null, photo: null, age: null, company: null, job_title: null };
-  const kind = s.events.find((e) => e.id === eventId)?.kind ?? "nightlife";
-  if (kind === "corporate") {
-    const att = s.event_attendees.find((a) => a.event_id === eventId && a.user_id === p.id);
-    const persona = att?.persona_id ? s.profile_personas.find((x) => x.id === att.persona_id) : undefined;
-    return {
-      user_id: p.id,
-      name: persona?.display_name || p.full_name,
-      username: null,
-      photo: persona?.photos?.[0]?.url ?? null,
-      age: vertical(kind).features.showAge ? ageOf(p) : null,
-      company: persona?.company || null,
-      job_title: persona?.job_title || null,
-    };
-  }
-  // En la noche, igual que siempre: la cuenta (foto, @ y edad para el control +18).
-  return { user_id: p.id, name: p.full_name, username: p.username, photo: p.photos?.[0]?.url ?? null, age: ageOf(p), company: null, job_title: null };
-}
-
 /** Valida y registra un ingreso en la puerta. Espejo de la RPC door_scan (door_check_in la llama). */
 export function doorCheckIn(state: RougeState, eventId: UUID, raw: string, now = Date.now(), opts: { terminal?: string | null } = {}): { ok: true; state: RougeState; data: DoorResult } {
   const terminal = opts.terminal?.trim().slice(0, 40) || null;
   if (!featureOn(state, eventId, "enableTicketing")) return { ok: true, state, data: empty("module_off") };
   const done = (data: DoorResult, next = state) => ({ ok: true as const, state: next, data: { ...data, terminal: data.terminal ?? (data.status === "ok" ? terminal : null) } });
   // Pase dinámico (TOTP) → se valida la firma y el paso, y se sigue como un pase con su usuario.
-  const scan = resolveScan(state, eventId, raw, now);
-  if ("fail" in scan) return done(scan.fail);
-  const target = scan.target;
+  let target: ReturnType<typeof parseDoorValue>;
+  if (isDynamicQr(raw)) {
+    const secret = eventQrSecret(state, eventId);
+    const chk = secret ? verifyDynamicQr(raw, secret, now) : ({ ok: false, reason: "forged" } as const);
+    if (!chk.ok) return done(empty(chk.reason === "format" ? "invalid" : "expired_qr", "pass"));
+    if (chk.kind !== "PASS") return done(empty("invalid", "pass"));
+    target = { kind: "pass", eventId, userId: chk.ref };
+  } else if (raw.trim().toUpperCase().startsWith(PASS_PREFIX)) {
+    // El pase fijo ya no sirve: cualquiera podía reenviar la captura.
+    return done(empty("static_qr", "pass"));
+  } else target = parseDoorValue(raw);
+  if (!target) return done(empty("invalid"));
   const iso = new Date(now).toISOString();
-  // Cara del evento: en corporativo la profesional (sin edad ni la cara de la noche).
-  const person = (userId: UUID | null) => personFor(state, eventId, userId);
+  const person = (userId: UUID | null) => {
+    const p = userId ? state.profiles.find((x) => x.id === userId) : undefined;
+    return { user_id: p?.id ?? null, name: p?.full_name ?? null, username: p?.username ?? null, photo: p?.photos?.[0]?.url ?? null, age: p ? ageOf(p) : null };
+  };
   const banned = (userId: UUID | null) => !!userId && state.event_bans.some((b) => b.event_id === eventId && b.user_id === userId);
 
   if (target.kind === "pass") {
@@ -231,18 +187,34 @@ export function doorSettleLate(state: RougeState, eventId: UUID, codeId: UUID, m
   return { ok: true, state: next, data: { ...empty("ok", "code"), ...who, label: code.label, checked_in_at: iso, terminal } };
 }
 
-// ── Zonas (v1.10) ────────────────────────────────────────────────────
+/** Contadores de la puerta (para la pantalla del escáner). */
+export function doorCounts(state: RougeState, eventId: UUID) {
+  const attendees = state.event_attendees.filter((a) => a.event_id === eventId);
+  const codes = state.event_invite_codes.filter((c) => c.event_id === eventId);
+  const people = new Set<string>([...attendees.filter((a) => a.checked_in_at).map((a) => a.user_id), ...codes.filter((c) => c.checked_in_at).map((c) => c.used_by_user_id ?? `code:${c.id}`)]);
+  return { inside: people.size, capacity: state.events.find((e) => e.id === eventId)?.max_capacity ?? 0 };
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// [v1.10] ZONAS DE CONTROL (espejo de la RPC zone_check_in)
+// ═════════════════════════════════════════════════════════════════════
+//
+// El personal elige ANTES de escanear en qué zona controla:
+//   - `entrance` (Puerta principal, Puerta B…): valida la categoría y el ingreso lo hace doorCheckIn (atómico, QR en
+//     vivo, terminal, listas free), como siempre.
+//   - `area` (Sala VIP, Auditorio A, Almuerzo ejecutivo): valida que la categoría (`tier`) esté habilitada. No acredita.
+// Sin zonas cargadas hay una sola opción, la "Puerta principal" virtual (`zone_id` null): la noche no cambia.
+// Toda lectura queda en `zone_check_ins`. En corporativo se muestra la cara profesional (nunca la de la noche ni la edad).
 
 export const ZONE_NAME_MIN = 2;
 export const ZONE_NAME_MAX = 40;
 export const MAX_ZONES = 20;
 
-/** "Puerta principal" virtual: se ofrece cuando el evento no tiene ninguna puerta (`entrance`) cargada. */
 export type ScannerZone = Omit<EventZone, "id" | "event_id" | "created_at"> & { id: UUID | null };
 export const MAIN_DOOR: ScannerZone = { id: null, name: "Puerta principal", kind: "entrance", allowed_tiers: [], sort_order: -1, is_active: true };
 
 export const zonesOf = (s: RougeState, eventId: UUID, includeInactive = false) =>
-  s.event_zones.filter((z) => z.event_id === eventId && (includeInactive || z.is_active)).sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
+  (s.event_zones ?? []).filter((z) => z.event_id === eventId && (includeInactive || z.is_active)).sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
 
 /** Opciones del selector "Zona de control activa" del escáner. */
 export function scannerZones(s: RougeState, eventId: UUID): ScannerZone[] {
@@ -272,7 +244,8 @@ type ZoneResult<T> = { ok: true; state: RougeState; data: T } | { ok: false; err
 /** Alta o edición de una zona (⇔ checks de `event_zones` en SQL). Dueño/a y producción. */
 export function upsertZone(s: RougeState, eventId: UUID, input: ZoneInput, now = Date.now()): ZoneResult<EventZone> {
   if (!s.events.some((e) => e.id === eventId)) return { ok: false, error: "Evento inexistente." };
-  const existing = input.id ? s.event_zones.find((z) => z.id === input.id) : undefined;
+  const all = s.event_zones ?? [];
+  const existing = input.id ? all.find((z) => z.id === input.id) : undefined;
   if (input.id && existing && existing.event_id !== eventId) return { ok: false, error: "Esa zona no existe." };
   const name = input.name.trim().replace(/\s+/g, " ");
   if (name.length < ZONE_NAME_MIN || name.length > ZONE_NAME_MAX) return { ok: false, error: `El nombre de la zona va de ${ZONE_NAME_MIN} a ${ZONE_NAME_MAX} caracteres.` };
@@ -292,108 +265,116 @@ export function upsertZone(s: RougeState, eventId: UUID, input: ZoneInput, now =
     is_active: input.is_active ?? existing?.is_active ?? true,
     created_at: existing?.created_at ?? new Date(now).toISOString(),
   };
-  const list = existing ? s.event_zones.map((z) => (z.id === zone.id ? zone : z)) : [...s.event_zones, zone];
+  const list = existing ? all.map((z) => (z.id === zone.id ? zone : z)) : [...all, zone];
   return { ok: true, state: { ...s, event_zones: list }, data: zone };
 }
 
 /** Baja de una zona: sus lecturas quedan en el registro (sin zona). */
 export function deleteZone(s: RougeState, zoneId: UUID): ZoneResult<undefined> {
-  if (!s.event_zones.some((z) => z.id === zoneId)) return { ok: false, error: "Esa zona no existe." };
+  if (!(s.event_zones ?? []).some((z) => z.id === zoneId)) return { ok: false, error: "Esa zona no existe." };
   return {
     ok: true,
-    state: { ...s, event_zones: s.event_zones.filter((z) => z.id !== zoneId), zone_check_ins: s.zone_check_ins.map((c) => (c.zone_id === zoneId ? { ...c, zone_id: null } : c)) },
+    state: { ...s, event_zones: s.event_zones.filter((z) => z.id !== zoneId), zone_check_ins: (s.zone_check_ins ?? []).map((c) => (c.zone_id === zoneId ? { ...c, zone_id: null } : c)) },
     data: undefined,
   };
 }
 
-// ── Escaneo por zona ─────────────────────────────────────────────────
+/** Quién es, con la cara del evento: en corporativo el perfil profesional (o neutra), nunca la de la noche. */
+function zonePerson(s: RougeState, eventId: UUID, userId: UUID | null) {
+  const p = userId ? s.profiles.find((x) => x.id === userId) : undefined;
+  if (!p) return {};
+  const kind = s.events.find((e) => e.id === eventId)?.kind ?? "nightlife";
+  if (kind !== "corporate") return {};
+  const att = s.event_attendees.find((a) => a.event_id === eventId && a.user_id === p.id);
+  const persona = att?.persona_id ? s.profile_personas.find((x) => x.id === att.persona_id) : undefined;
+  return {
+    name: persona?.display_name || p.full_name,
+    username: null,
+    photo: persona?.photos?.[0]?.url ?? null,
+    age: vertical(kind).features.showAge ? ageOf(p) : null,
+    company: persona?.company || null,
+    job_title: persona?.job_title || null,
+  };
+}
+
+/** Identifica lo escaneado sin efectos: usuario, código y un rechazo previo (QR vencido, captura, anulado…). */
+function identify(state: RougeState, eventId: UUID, raw: string, now: number): { kind: DoorResult["kind"]; userId: UUID | null; codeId: UUID | null; status: DoorStatus | null; label?: string | null } {
+  const v = raw.trim();
+  if (/^BEGIN:VCARD/i.test(v)) return { kind: "vcard", userId: null, codeId: null, status: "invalid", label: "Es una tarjeta personal (vCard), no un pase" };
+  if (isDynamicQr(v)) {
+    const secret = eventQrSecret(state, eventId);
+    const chk = secret ? verifyDynamicQr(v, secret, now) : ({ ok: false, reason: "forged" } as const);
+    if (!chk.ok) return { kind: "pass", userId: null, codeId: null, status: chk.reason === "format" ? "invalid" : "expired_qr" };
+    if (chk.kind !== "PASS") return { kind: "pass", userId: null, codeId: null, status: "invalid" };
+    return { kind: "pass", userId: chk.ref, codeId: null, status: null };
+  }
+  if (v.toUpperCase().startsWith(PASS_PREFIX)) return { kind: "pass", userId: null, codeId: null, status: "static_qr" };
+  const parsed = parseDoorValue(v);
+  if (!parsed || parsed.kind !== "code") return { kind: null, userId: null, codeId: null, status: "invalid" };
+  const ev = state.events.find((e) => e.id === eventId);
+  if ((ev && (ev.slug.toUpperCase() === parsed.code || ev.master_invite_code.toUpperCase() === parsed.code)) || state.promoter_links.some((l) => l.code.toUpperCase() === parsed.code)) return { kind: "code", userId: null, codeId: null, status: "general_link" };
+  const code = state.event_invite_codes.find((c) => c.code.toUpperCase() === parsed.code);
+  if (!code) return { kind: "code", userId: null, codeId: null, status: "invalid" };
+  if (code.event_id !== eventId) return { kind: "code", userId: null, codeId: null, status: "other_event" };
+  return { kind: "code", userId: code.used_by_user_id, codeId: code.id, status: code.revoked_at ? "revoked" : null, label: code.label };
+}
 
 /**
  * Valida una lectura en una zona y la registra (⇔ RPC zone_check_in). `zoneId` null = Puerta principal virtual.
- * En una puerta (`entrance`) valida la categoría y hace el ingreso completo de la puerta (doorCheckIn: QR dinámico,
- * idempotencia con terminal, horario free); en un área solo valida identidad y categoría, sin marcar acreditación.
+ * En una puerta el ingreso lo hace doorCheckIn; en un área solo se valida la categoría.
  */
 export function zoneCheckIn(state: RougeState, eventId: UUID, zoneId: UUID | null, raw: string, now = Date.now(), opts: { terminal?: string | null } = {}): ZoneResult<DoorResult> {
   let zone: ScannerZone = MAIN_DOOR;
   if (zoneId) {
-    const z = state.event_zones.find((x) => x.id === zoneId && x.event_id === eventId && x.is_active);
+    const z = (state.event_zones ?? []).find((x) => x.id === zoneId && x.event_id === eventId && x.is_active);
     if (!z) return { ok: false, error: "Esa zona no existe o está desactivada." };
     zone = z;
   }
-  const iso = new Date(now).toISOString();
-  const zoneInfo = { zone_id: zone.id, zone_name: zone.name, zone_kind: zone.kind, allowed_tiers: zone.allowed_tiers };
+  if (!featureOn(state, eventId, "enableTicketing")) return { ok: true, state, data: { ...empty("module_off"), zone_id: zone.id, zone_name: zone.name, zone_kind: zone.kind } };
+  const id = identify(state, eventId, raw, now);
+  const att = id.userId ? state.event_attendees.find((a) => a.event_id === eventId && a.user_id === id.userId) : undefined;
+  const code = id.codeId ? state.event_invite_codes.find((c) => c.id === id.codeId) : undefined;
+  let status = id.status;
+  if (!status && id.userId && state.event_bans.some((b) => b.event_id === eventId && b.user_id === id.userId)) status = "banned";
+  if (!status && id.kind === "pass" && !att) status = "not_attendee";
+  const tier: AttendeeTier | null = id.userId || code ? (att?.tier ?? code?.tier ?? "attendee") : null;
+  if (!status && !tierAllowed(zone, tier)) status = "zone_denied";
+
   let next = state;
-  let codeId: UUID | null = null;
-
-  const result = ((): DoorResult => {
-    if (!featureOn(state, eventId, "enableTicketing")) return empty("module_off");
-    const scan = resolveScan(state, eventId, raw, now);
-    if ("fail" in scan) return scan.fail;
-    const t = scan.target;
-    const banned = (userId: UUID | null) => !!userId && state.event_bans.some((b) => b.event_id === eventId && b.user_id === userId);
-    let userId: UUID | null;
-    let tier: AttendeeTier;
-    let label: string | null = null;
-    let seenAt: string | null;
-    if (t.kind === "pass") {
-      if (t.eventId !== eventId) return empty("other_event", "pass");
-      userId = t.userId;
-      const who = personFor(state, eventId, userId);
-      if (banned(userId)) return { ...empty("banned", "pass"), ...who };
-      const att = state.event_attendees.find((a) => a.event_id === eventId && a.user_id === userId);
-      if (!att) return { ...empty("not_attendee", "pass"), ...who };
-      tier = att.tier ?? "attendee";
-      seenAt = att.checked_in_at;
-    } else {
-      const ev = state.events.find((e) => e.id === eventId);
-      if ((ev && (ev.slug.toUpperCase() === t.code || ev.master_invite_code.toUpperCase() === t.code)) || state.promoter_links.some((l) => l.code.toUpperCase() === t.code)) return empty("general_link", "code");
-      const code = state.event_invite_codes.find((c) => c.code.toUpperCase() === t.code);
-      if (!code) return empty("invalid", "code");
-      if (code.event_id !== eventId) return empty("other_event", "code");
-      codeId = code.id;
-      userId = code.used_by_user_id;
-      label = code.label;
-      const who = { ...personFor(state, eventId, userId), label };
-      if (code.revoked_at) return { ...empty("revoked", "code"), ...who };
-      if (banned(userId)) return { ...empty("banned", "code"), ...who };
-      const att = userId ? state.event_attendees.find((a) => a.event_id === eventId && a.user_id === userId) : undefined;
-      tier = att?.tier ?? code.tier ?? "attendee";
-      seenAt = code.checked_in_at;
-    }
-    const who = personFor(state, eventId, userId);
-    const base: DoorResult = { ...empty("ok", t.kind), ...who, label, tier };
-    if (!tierAllowed(zone, tier)) return { ...base, status: "zone_denied", checked_in_at: seenAt };
-    if (zone.kind === "area") return { ...base, checked_in_at: seenAt };
-    // Puerta: el ingreso completo (QR dinámico, "Ya entró" con terminal, horario free, acreditación).
-    const door = doorCheckIn(state, eventId, raw, now, opts);
-    next = door.state;
-    return { ...door.data, tier, company: who.company, job_title: who.job_title };
-  })();
-
-  const data: DoorResult = { ...result, ...zoneInfo };
+  let base: DoorResult;
+  if (!status && zone.kind === "entrance") {
+    const r = doorCheckIn(state, eventId, raw, now, opts);
+    next = r.state;
+    base = r.data;
+  } else {
+    const p = id.userId ? state.profiles.find((x) => x.id === id.userId) : undefined;
+    base = {
+      ...empty(status ?? "ok", id.kind),
+      user_id: p?.id ?? null,
+      name: p?.full_name ?? code?.holder_name ?? null,
+      username: p?.username ?? null,
+      photo: p?.photos?.[0]?.url ?? null,
+      age: p ? ageOf(p) : null,
+      label: id.label ?? null,
+      checked_in_at: att?.checked_in_at ?? code?.checked_in_at ?? null,
+    };
+  }
+  const data: DoorResult = { ...base, ...zonePerson(state, eventId, base.user_id), tier, zone_id: zone.id, zone_name: zone.name, zone_kind: zone.kind, allowed_tiers: zone.allowed_tiers };
   const log: ZoneCheckIn = {
     id: uid(),
     event_id: eventId,
     zone_id: zone.id,
     user_id: data.user_id,
-    code_id: codeId,
+    code_id: code?.id ?? null,
     staff_id: state.current_user_id || null,
-    status: isGranted(data.status) ? "granted" : "denied",
+    status: data.status === "ok" ? "granted" : "denied",
     reason: data.status,
-    tier: data.tier ?? null,
-    created_at: iso,
+    tier,
+    created_at: new Date(now).toISOString(),
   };
-  return { ok: true, state: { ...next, zone_check_ins: [log, ...next.zone_check_ins] }, data };
+  return { ok: true, state: { ...next, zone_check_ins: [log, ...(next.zone_check_ins ?? [])] }, data };
 }
 
 /** Últimas lecturas del evento (más nuevas primero). */
 export const recentZoneCheckIns = (s: RougeState, eventId: UUID, limit = 20) =>
-  s.zone_check_ins.filter((c) => c.event_id === eventId).sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, limit);
-
-/** Contadores de la puerta (para la pantalla del escáner). */
-export function doorCounts(state: RougeState, eventId: UUID) {
-  const attendees = state.event_attendees.filter((a) => a.event_id === eventId);
-  const codes = state.event_invite_codes.filter((c) => c.event_id === eventId);
-  const people = new Set<string>([...attendees.filter((a) => a.checked_in_at).map((a) => a.user_id), ...codes.filter((c) => c.checked_in_at).map((c) => c.used_by_user_id ?? `code:${c.id}`)]);
-  return { inside: people.size, capacity: state.events.find((e) => e.id === eventId)?.max_capacity ?? 0 };
-}
+  (s.zone_check_ins ?? []).filter((c) => c.event_id === eventId).sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, limit);

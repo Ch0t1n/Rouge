@@ -350,6 +350,33 @@ export const leaveSquad = (userId: UUID, squadId: UUID): Command<undefined> => (
   },
 });
 
+// Equipos que arma la organización (corporativo). Dueño/a y producción.
+
+/** Crea un equipo vacío; el código de invitación lo genera el servidor. */
+export const organizerCreateTeam = (eventId: UUID, name: string): Command<Squad> => ({
+  name: "organizerCreateTeam",
+  optimistic: false,
+  local: guarded("admin.events", () => eventId, (s) => A.organizerCreateTeam(s, eventId, name)),
+  remote: async (sb) => rpc<Squad>(sb, "create_team", { p_event: eventId, p_name: name.trim() }),
+});
+
+/** Suma (add) o quita a un asistente de un equipo; si estaba en otro equipo del evento, lo mueve. */
+export const organizerSetTeamMember = (eventId: UUID, squadId: UUID, userId: UUID, add: boolean): Command<{ moved: boolean; grantedPerks: RougeState["user_perks_qrs"] }> => ({
+  name: "organizerSetTeamMember",
+  local: guarded("admin.events", () => eventId, (s) => A.organizerSetTeamMember(s, squadId, userId, add)),
+  remote: async (sb) => {
+    await rpc(sb, "set_team_member", { p_squad: squadId, p_user: userId, p_add: add });
+  },
+});
+
+export const organizerDeleteTeam = (eventId: UUID, squadId: UUID): Command<undefined> => ({
+  name: "organizerDeleteTeam",
+  local: guarded("admin.events", () => eventId, (s) => A.organizerDeleteTeam(s, squadId)),
+  remote: async (sb) => {
+    await rpc(sb, "delete_team", { p_squad: squadId });
+  },
+});
+
 export const declineSquadInvite = (userId: UUID, memberId: UUID): Command<undefined> => ({
   name: "declineSquadInvite",
   local: (s) => A.declineSquadInvite(s, userId, memberId),

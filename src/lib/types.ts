@@ -456,8 +456,6 @@ export interface EventInviteCode {
   revoked_at: ISODate | null;
   /** Escaneado en la puerta (ingreso físico). Distinto de `is_used` (alguien lo usó para entrar a la app). */
   checked_in_at: ISODate | null;
-  /** Categoría de la entrada (v1.10). Al usarla, la asistencia toma esta categoría. null = asistente. */
-  tier: AttendeeTier | null;
   /** Terminal (dispositivo) que lo escaneó: si otra terminal lo intenta, ve cuál y a qué hora. */
   checked_in_terminal?: string | null;
   /** Lista / lote (Free con conversión tardía). */
@@ -469,6 +467,8 @@ export interface EventInviteCode {
   holder_name?: string | null;
   holder_dni?: string | null;
   holder_email?: string | null;
+  /** Categoría de la entrada (v1.10). Al usarla, la asistencia toma esta categoría. null = asistente. */
+  tier: AttendeeTier | null;
   created_at: ISODate;
 }
 

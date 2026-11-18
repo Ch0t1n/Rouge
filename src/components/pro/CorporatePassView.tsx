@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { CheckCircle2, Contact, DoorOpen, Download, Lock, QrCode, Share2, WifiOff } from "lucide-react";
+import { CheckCircle2, Contact, DoorOpen, Download, Loader2, Lock, QrCode, RefreshCw, Share2, WifiOff } from "lucide-react";
 import type { UUID } from "@/lib/types";
 import { zonesForTier, zonesOf } from "@/lib/engine/door";
-import { dynamicQrValue, myCredentialSecret, qrSecondsLeft } from "@/lib/engine/qr";
+import { QR_STEP_MS, dynamicQrValue, myCredentialSecret, qrSecondsLeft } from "@/lib/engine/qr";
 import { faceOf } from "@/lib/engine/verticals";
 import { getAttendee, getEvent } from "@/lib/engine/selectors";
 import { useRouge } from "@/lib/store/RougeContext";
@@ -28,13 +28,6 @@ export function CorporatePassView({ eventId }: { eventId: UUID }) {
   const [mode, setMode] = useState<Mode>("access");
   const [withEmail, setWithEmail] = useState(true);
   const [withPhone, setWithPhone] = useState(true);
-  // QR de acceso DINÁMICO (TOTP, rota cada 20 s): una captura deja de servir en la puerta y en cada zona.
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (mode !== "access") return;
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [mode]);
   const me = state.profiles.find((p) => p.id === state.current_user_id);
   const event = getEvent(state, eventId);
   const att = me ? getAttendee(state, eventId, me.id) : undefined;
@@ -46,12 +39,11 @@ export function CorporatePassView({ eventId }: { eventId: UUID }) {
     () => (persona ? personaVCard(persona, event?.name ?? null, { email: withEmail, phone: withPhone }) : ""),
     [persona, event?.name, withEmail, withPhone],
   );
+  const pass = useLivePass(eventId, me?.id);
   if (!me || !event) return null;
   const myZones = zonesForTier(state, eventId, tier);
   const restricted = zonesOf(state, eventId).filter((z) => z.kind === "area" && !myZones.some((m) => m.id === z.id));
-  const secret = myCredentialSecret(state, eventId, "PASS", me.id);
-  const access = secret ? dynamicQrValue(secret, "PASS", me.id, now) : "";
-  const qrValue = mode === "access" ? access : vcard;
+  const qrValue = mode === "access" ? pass?.value : vcard;
 
   return (
     <div className={cn(proFontVars, "space-y-4 font-pro text-white")} data-testid="corporate-pass">
@@ -94,19 +86,32 @@ export function CorporatePassView({ eventId }: { eventId: UUID }) {
         </div>
 
         <div className="flex flex-col items-center gap-3 px-5 pb-5 pt-5">
-          {qrValue ? (
-            <div className="rounded-2xl bg-white p-4" data-testid={mode === "access" ? "dynamic-qr" : "vcard-qr"} data-kind={mode === "access" ? "PASS" : undefined}>
-              <QRCodeSVG value={qrValue} size={216} level="M" bgColor="#FFFFFF" fgColor="#0B1120" aria-label={mode === "access" ? "QR de acceso en vivo" : "QR de tarjeta personal"} />
+          <div className="rounded-2xl bg-white p-4" data-testid="pass-qr" data-pass-value={mode === "access" ? (qrValue ?? "") : undefined}>
+            {qrValue ? (
+              <QRCodeSVG value={qrValue} size={216} level="M" bgColor="#FFFFFF" fgColor="#0B1120" aria-label={mode === "access" ? "QR de acceso" : "QR de tarjeta personal"} />
+            ) : (
+              <div className="grid size-[216px] place-items-center text-pro-ink-soft">
+                <Loader2 className="size-8 animate-spin" aria-label="Generando tu pase" />
+              </div>
+            )}
+          </div>
+          {mode === "access" && pass?.dynamic && (
+            <div className="w-full max-w-[248px]" aria-live="off">
+              <div className="h-1 overflow-hidden rounded-full bg-pro-line">
+                <div className="h-full rounded-full bg-pro-sapphire transition-[width] duration-1000 ease-linear" style={{ width: `${((pass.secondsLeft ?? 0) / (QR_STEP_MS / 1000)) * 100}%` }} />
+              </div>
+              <p className="mt-1.5 flex items-center justify-center gap-1.5 font-pro-mono text-[11px] text-pro-mist" data-testid="pass-rotating">
+                {pass.stale ? (
+                  <>
+                    <WifiOff className="size-3.5 text-pro-gold" /> Sin señal: el QR puede estar vencido
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="size-3.5" /> Cambia en {pass.secondsLeft}s · capturas no sirven
+                  </>
+                )}
+              </p>
             </div>
-          ) : (
-            <div className="flex h-[248px] w-[248px] flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-pro-line p-6 text-center text-sm text-pro-mist">
-              <WifiOff className="size-6" /> Conectate un momento para cargar tu QR en vivo.
-            </div>
-          )}
-          {mode === "access" && access && (
-            <p className="font-pro-mono text-[11px] uppercase tracking-[0.14em] text-pro-mist" role="timer" aria-live="off">
-              <span className="text-pro-emerald">●</span> En vivo · cambia en {qrSecondsLeft(now)} s
-            </p>
           )}
           {mode === "access" ? (
             <p className="text-center text-xs text-pro-mist">
@@ -115,7 +120,7 @@ export function CorporatePassView({ eventId }: { eventId: UUID }) {
                   <CheckCircle2 className="size-3.5" /> Acreditado/a a las {formatTime(att.checked_in_at)}
                 </span>
               ) : (
-                "Mostralo en la acreditación y en cada sala con control. Subí el brillo: las capturas no sirven."
+                "Mostralo en la acreditación y en cada sala con control. Subí el brillo al máximo."
               )}
             </p>
           ) : (
@@ -187,4 +192,20 @@ function Toggle({ label, on, onChange }: { label: string; on: boolean; onChange:
       </span>
     </button>
   );
+}
+
+/**
+ * QR de acceso EN VIVO (TOTP de la plataforma: `ROUGE:T1:PASS:…`, rota cada 20 s; ver engine/qr.ts). Sin el secreto
+ * de la credencial (sin conexión todavía) no hay QR: se avisa en lugar de mostrar uno que la puerta rechazaría.
+ */
+function useLivePass(eventId: UUID, userId: UUID | undefined) {
+  const { state } = useRouge();
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  if (!userId) return null;
+  const secret = myCredentialSecret(state, eventId, "PASS", userId);
+  return { value: secret ? dynamicQrValue(secret, "PASS", userId, now) : null, dynamic: true, secondsLeft: qrSecondsLeft(now), stale: !secret };
 }

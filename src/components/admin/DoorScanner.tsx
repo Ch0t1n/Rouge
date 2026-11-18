@@ -6,6 +6,7 @@ import { AlertTriangle, Camera, CameraOff, CheckCircle2, Clock, CloudOff, DoorOp
 import type { LatePaymentMethod, UUID } from "@/lib/types";
 import { DOOR_MESSAGES, doorCounts, LATE_METHODS, recentZoneCheckIns, requiredTiersLabel, scannerZones, type DoorResult, type ScannerZone } from "@/lib/engine/door";
 import { faceOf, tierLabel, verticalOf } from "@/lib/engine/verticals";
+import { ZonesPanel } from "./ZonesPanel";
 import { buildRoster, checkTarget, offlineDoorCheck, offlineSettleLate, queueItem, searchRoster, type DoorRoster, type DoorTarget, type OfflineCheckIn, type ReconcileResult } from "@/lib/engine/doorOffline";
 import { activeEvent } from "@/lib/engine/selectors";
 import { useRouge } from "@/lib/store/RougeContext";
@@ -17,21 +18,11 @@ import { QrScanner } from "@/components/scan/QrScanner";
 import { MediaImage } from "@/components/media/MediaImage";
 import { Button } from "@/components/ui/button";
 import { useKiosk } from "@/components/ops/Kiosk";
-import { ZonesPanel } from "./ZonesPanel";
 
-// [v1.10] Zona de control activa, recordada por dispositivo y evento (cada puerta suele quedar fija en un celular).
+const TERMINAL_KEY = "rouge:terminal";
 const MAIN = "main";
 const zoneKey = (z: Pick<ScannerZone, "id">) => z.id ?? MAIN;
 const zoneStorageKey = (eventId: UUID) => `rouge:door-zone:${eventId}`;
-const readZone = (eventId: UUID) => {
-  try {
-    return localStorage.getItem(zoneStorageKey(eventId));
-  } catch {
-    return null;
-  }
-};
-
-const TERMINAL_KEY = "rouge:terminal";
 
 /** Nombre de esta terminal (se ve en "Ya entró · Puerta 2"). Se guarda en el dispositivo. */
 function useTerminalName() {
@@ -77,10 +68,6 @@ function useOnline() {
  * DNI o email. Responde al instante con foto, nombre y edad. Atómico: si otra terminal ya lo hizo entrar, alerta roja
  * con la hora y la terminal. Listas free fuera de horario: muestra el diferencial y cobra en el acto. Sin conexión:
  * valida contra el padrón cifrado del dispositivo y reconcilia al volver la red.
- * Zonas (v1.10): con zonas cargadas, el personal elige primero la ZONA DE CONTROL ACTIVA (puerta, Sala VIP, Auditorio A)
- * y ve verde (con nombre, empresa y categoría) o rojo con el motivo ("Requiere VIP / SPEAKER"); cada lectura queda en el
- * registro (zone_check_ins). Sin zonas hay una sola opción —la puerta principal— y funciona como siempre. Las áreas
- * necesitan conexión (el padrón sin conexión es solo para la puerta).
  */
 export function DoorScanner({ variant = "admin" }: { variant?: "admin" | "ops" }) {
   const { state, exec, mode, demoVisible, notify, can } = useRouge();
@@ -101,16 +88,21 @@ export function DoorScanner({ variant = "admin" }: { variant?: "admin" | "ops" }
   const [query, setQuery] = useState("");
   const counts = doorCounts(state, event.id);
   const corporate = verticalOf(state, event.id).kind === "corporate";
+
+  // [v1.10] Zona de control activa (obligatoria): recordada por dispositivo. Con una sola opción (sin zonas) va sola.
   const zones = scannerZones(state, event.id);
-  const [chosen, setChosen] = useState<string | null>(null);
+  const [chosenZone, setChosenZone] = useState<string | null>(null);
   useEffect(() => {
-    setChosen(readZone(event.id));
+    try {
+      setChosenZone(localStorage.getItem(zoneStorageKey(event.id)));
+    } catch {
+      setChosenZone(null);
+    }
     setResult(null);
   }, [event.id]);
-  // Con una sola opción (sin zonas cargadas) queda elegida sola.
-  const zone = zones.length === 1 ? zones[0] : zones.find((z) => zoneKey(z) === chosen);
+  const zone = zones.length === 1 ? zones[0] : zones.find((z) => zoneKey(z) === chosenZone);
   const pickZone = (z: ScannerZone) => {
-    setChosen(zoneKey(z));
+    setChosenZone(zoneKey(z));
     setResult(null);
     try {
       localStorage.setItem(zoneStorageKey(event.id), zoneKey(z));
@@ -178,7 +170,8 @@ export function DoorScanner({ variant = "admin" }: { variant?: "admin" | "ops" }
     if (busy || !value.trim() || !zone) return;
     kiosk.touch();
     setRecon(null);
-    if (!online && zone.id) return notify({ tone: "rouge", title: "Sin conexión", description: "Las zonas de control necesitan conexión. La puerta principal sigue funcionando con el padrón." });
+    // Las áreas internas validan la categoría en el servidor: sin conexión solo funciona una puerta.
+    if (!online && zone.kind === "area") return notify({ tone: "rouge", title: "Las zonas internas necesitan conexión", description: "Sin red solo se puede controlar una puerta de ingreso." });
     if (!online) {
       if (!roster) return notify({ tone: "rouge", title: "Sin padrón en este dispositivo", description: "Conectate una vez para bajar el padrón cifrado." });
       const r = offlineDoorCheck(roster, value, Date.now(), terminal);
@@ -189,8 +182,7 @@ export function DoorScanner({ variant = "admin" }: { variant?: "admin" | "ops" }
       return feedback(r.result);
     }
     setBusy(true);
-    // Con zonas: zone_check_in (valida la categoría y registra la lectura); sin zonas, la puerta de siempre.
-    const r = await exec(zones.length > 1 || zone.id ? C.zoneCheckIn(event.id, zone.id, value, terminal) : C.doorCheckIn(event.id, value, terminal));
+    const r = await exec(C.zoneCheckIn(event.id, zone.id, value, terminal));
     setBusy(false);
     if (r.ok) {
       feedback(r.data);
@@ -268,39 +260,40 @@ export function DoorScanner({ variant = "admin" }: { variant?: "admin" | "ops" }
           }
         />
       )}
-      {/* Zona de control activa (obligatoria con zonas cargadas). */}
-      {zones.length > 1 && (
-        <section className={cn("space-y-2", ops && "lg:col-span-2")} aria-labelledby="zone-title">
-          <h2 id="zone-title" className={cn("flex items-center gap-2 font-display text-sm font-semibold", ops ? "text-white" : "text-primary")}>
-            <MapPinned className="size-4 text-vip" /> Zona de control activa
-          </h2>
-          <div className="grid grid-cols-2 gap-2 lg:grid-cols-3" role="radiogroup" aria-label="Zona de control activa">
-            {zones.map((z) => {
-              const on = zone ? zoneKey(zone) === zoneKey(z) : false;
-              return (
-                <button
-                  key={zoneKey(z)}
-                  type="button"
-                  role="radio"
-                  aria-checked={on}
-                  onClick={() => pickZone(z)}
-                  className={cn("min-h-touch rounded-2xl border px-3 py-2 text-left transition", on ? "border-vip bg-vip/15 shadow-glow-vip" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]")}
-                  data-testid="zone-option"
-                >
-                  <span className="flex items-center gap-1.5 text-sm font-semibold">
-                    {z.kind === "entrance" ? <DoorOpen className="size-4 shrink-0 text-muted" /> : null}
-                    <span className="truncate">{z.name}</span>
-                  </span>
-                  <span className="block text-[11px] leading-snug text-muted">{z.kind === "entrance" ? "Acredita el ingreso" : requiredTiersLabel(z.allowed_tiers)}</span>
-                </button>
-              );
-            })}
-          </div>
-          {!zone && <p className="rounded-2xl border border-vip/40 bg-vip/10 px-4 py-3 text-sm">Elegí en qué zona estás controlando para empezar a escanear.</p>}
-        </section>
-      )}
-      <div className={cn("space-y-5", !zone && "pointer-events-none opacity-40")} aria-disabled={!zone}>
-        {camera && zone && <QrScanner onResult={check} />}
+      <div className="space-y-5">
+        {/* [v1.10] Zona de control activa (obligatoria si el evento tiene zonas). */}
+        {zones.length > 1 && (
+          <section className="space-y-2" aria-labelledby="zone-title">
+            <h2 id="zone-title" className={cn("flex items-center gap-2 font-display text-sm font-semibold", ops ? "text-white" : "text-primary")}>
+              <MapPinned className="size-4 text-vip" /> Zona de control activa
+            </h2>
+            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Zona de control activa">
+              {zones.map((z) => {
+                const on = zone ? zoneKey(zone) === zoneKey(z) : false;
+                return (
+                  <button
+                    key={zoneKey(z)}
+                    type="button"
+                    role="radio"
+                    aria-checked={on}
+                    onClick={() => pickZone(z)}
+                    className={cn("min-h-touch rounded-2xl border px-3 py-2 text-left transition", on ? "border-vip bg-vip/15 shadow-glow-vip" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]")}
+                    data-testid="zone-option"
+                  >
+                    <span className="flex items-center gap-1.5 text-sm font-semibold">
+                      {z.kind === "entrance" ? <DoorOpen className="size-4 shrink-0 text-muted" /> : null}
+                      <span className="truncate">{z.name}</span>
+                    </span>
+                    <span className="block text-[11px] leading-snug text-muted">{z.kind === "entrance" ? "Acredita el ingreso" : requiredTiersLabel(z.allowed_tiers)}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {!zone && <p className="rounded-2xl border border-vip/40 bg-vip/10 px-4 py-3 text-sm">Elegí en qué zona estás controlando para empezar a escanear.</p>}
+          </section>
+        )}
+        {zone && <>
+        {camera && <QrScanner onResult={check} />}
 
         <form
           className="flex gap-2"
@@ -343,6 +336,7 @@ export function DoorScanner({ variant = "admin" }: { variant?: "admin" | "ops" }
           )}
           {!roster && <p className="mt-2 text-xs text-muted">Bajando el padrón cifrado…</p>}
         </section>
+        </>}
 
         <div className={cn("flex flex-wrap items-center gap-3 text-xs", ops ? "text-white/60" : "text-muted")}>
           <label className="flex items-center gap-2">
@@ -363,7 +357,7 @@ export function DoorScanner({ variant = "admin" }: { variant?: "admin" | "ops" }
       </div>
 
       <div className="space-y-4">
-        {result ? <DoorCard result={result} big={ops} corporate={corporate} onSettle={settleLate} /> : ops ? <p className="hidden rounded-3xl border-2 border-dashed border-white/25 p-10 text-center font-display text-2xl text-white/60 lg:block">Esperando escaneo…</p> : null}
+        {result ? <DoorCard result={result} big={ops} onSettle={settleLate} corporate={corporate} /> : ops ? <p className="hidden rounded-3xl border-2 border-dashed border-white/25 p-10 text-center font-display text-2xl text-white/60 lg:block">Esperando escaneo…</p> : null}
         {recon && recon.conflicts.length > 0 && (
           <section role="alert" className="rounded-3xl border-2 border-sos bg-sos/10 p-4">
             <p className="flex items-center gap-2 font-display text-lg font-bold text-sos"><AlertTriangle className="size-5" /> Doble uso detectado al sincronizar</p>
@@ -381,8 +375,7 @@ export function DoorScanner({ variant = "admin" }: { variant?: "admin" | "ops" }
       <p className={cn("text-xs text-muted", ops && "text-sm text-white/60 lg:col-span-2")}>
         Sirve el QR de la entrada (código de 1 uso, el del mail o el impreso) y el pase EN VIVO de la app (cambia cada 20 s: una captura no sirve). El link general del evento y la tarjeta personal (vCard) no son entradas.
       </p>
-
-      {zones.length > 1 && <ZoneLog eventId={event.id} className={cn(ops && "lg:col-span-2")} />}
+      <ZoneLog eventId={event.id} />
       {!ops && can("admin.events") && <ZonesPanel eventId={event.id} />}
     </main>
   );
@@ -398,37 +391,7 @@ function NetBadge({ online, queued, rosterAt }: { online: boolean; queued: numbe
   );
 }
 
-/** Últimas lecturas por zona (registro zone_check_ins). */
-function ZoneLog({ eventId, className }: { eventId: UUID; className?: string }) {
-  const { state } = useRouge();
-  const log = recentZoneCheckIns(state, eventId, 12);
-  if (!log.length) return null;
-  const zoneName = (id: UUID | null) => (id ? (state.event_zones.find((z) => z.id === id)?.name ?? "Zona eliminada") : "Puerta principal");
-  return (
-    <section className={cn("glass rounded-3xl p-4", className)} aria-label="Últimas lecturas">
-      <h2 className="mb-2 text-base">Últimas lecturas</h2>
-      <ul className="divide-y divide-white/5 text-sm" data-testid="zone-log">
-        {log.map((c) => (
-          <li key={c.id} className="flex items-center gap-3 py-2">
-            <span className="w-12 shrink-0 font-display text-xs tabular-nums text-muted">{formatTime(c.created_at)}</span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate font-semibold">{c.user_id ? (faceOf(state, c.user_id, eventId)?.full_name ?? "—") : "Entrada sin app"}</span>
-              <span className="block truncate text-[11px] text-muted">
-                {zoneName(c.zone_id)}
-                {c.tier ? ` · ${tierLabel(c.tier)}` : ""}
-              </span>
-            </span>
-            <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold", c.status === "granted" ? "bg-squad/15 text-squad" : "bg-sos/15 text-sos")}>
-              {c.status === "granted" ? "Pasó" : (DOOR_MESSAGES[c.reason as DoorResult["status"]] ?? "Rechazado")}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-function DoorCard({ result: r, big = false, corporate = false, onSettle }: { result: DoorResult; big?: boolean; corporate?: boolean; onSettle: (m: LatePaymentMethod) => void }) {
+function DoorCard({ result: r, big = false, onSettle, corporate = false }: { result: DoorResult; big?: boolean; onSettle: (m: LatePaymentMethod) => void; corporate?: boolean }) {
   // Rojo: rechazos y doble uso ("Ya entró"). Dorado: hay que cobrar. Cian (corporativo: esmeralda): adelante.
   const tone = r.status === "ok" ? "squad" : r.status === "late_free" ? "vip" : "sos";
   const Icon = r.status === "ok" ? CheckCircle2 : r.status === "already" ? Clock : r.status === "late_free" ? Wallet : r.status === "banned" ? ShieldAlert : XCircle;
@@ -456,9 +419,7 @@ function DoorCard({ result: r, big = false, corporate = false, onSettle }: { res
               ? `${r.zone_name ?? "Esta zona"} · ${requiredTiersLabel(r.allowed_tiers ?? [])}`
               : r.kind === "vcard"
                 ? (r.label ?? "")
-                : r.zone_kind === "area" && r.zone_name
-                  ? `${r.zone_name}${r.kind === "pass" ? " · Pase de la app" : ""}`
-                  : r.status === "already" && r.checked_in_at
+                : r.status === "already" && r.checked_in_at
               ? `Entró a las ${formatTime(r.checked_in_at)}${r.terminal ? ` · ${r.terminal}` : ""}`
               : r.status === "ok" && r.terminal
                 ? `Registrado en ${r.terminal}`
@@ -467,6 +428,7 @@ function DoorCard({ result: r, big = false, corporate = false, onSettle }: { res
                   : r.kind === "code"
                     ? `Entrada${r.label ? ` ${r.label}` : ""}`
                     : ""}
+            {r.zone_id && r.status !== "zone_denied" ? ` · ${r.zone_name}` : ""}
           </p>
         </div>
       </div>
@@ -488,12 +450,8 @@ function DoorCard({ result: r, big = false, corporate = false, onSettle }: { res
           <div className="size-24 shrink-0 overflow-hidden rounded-2xl bg-surface-raised">{r.photo ? <MediaImage photo={{ url: r.photo }} alt={r.name} className="size-full" /> : null}</div>
           <div className="min-w-0">
             <p className="truncate font-display text-xl font-bold">{r.name}</p>
-            {r.company || r.job_title ? (
-              <p className="truncate text-sm text-primary/85">{[r.job_title, r.company].filter(Boolean).join(" · ")}</p>
-            ) : r.username ? (
-              <p className="text-sm text-muted">@{r.username}</p>
-            ) : null}
-            {r.tier && (corporate || r.tier !== "attendee") && (
+            {r.company || r.job_title ? <p className="truncate text-sm text-primary/85">{[r.job_title, r.company].filter(Boolean).join(" · ")}</p> : r.username ? <p className="text-sm text-muted">@{r.username}</p> : null}
+            {r.tier && (r.tier !== "attendee" || corporate) && (
               <span className={cn("mt-1.5 inline-block rounded-full border px-2.5 py-0.5 font-display text-xs font-bold tracking-wider", r.tier === "attendee" ? "border-white/20 text-muted" : "border-vip/60 bg-vip/15 text-vip")} data-testid="door-tier">
                 {tierLabel(r.tier)}
               </span>
@@ -503,6 +461,36 @@ function DoorCard({ result: r, big = false, corporate = false, onSettle }: { res
           </div>
         </div>
       )}
+    </section>
+  );
+}
+
+/** [v1.10] Últimas lecturas por zona (quién, dónde, categoría y si pasó). */
+function ZoneLog({ eventId }: { eventId: UUID }) {
+  const { state } = useRouge();
+  const log = recentZoneCheckIns(state, eventId, 12);
+  if (!log.length) return null;
+  const zoneName = (id: UUID | null) => (id ? (state.event_zones.find((z) => z.id === id)?.name ?? "Zona eliminada") : "Puerta principal");
+  return (
+    <section className="glass rounded-3xl p-4" aria-label="Últimas lecturas">
+      <h2 className="mb-2 text-base">Últimas lecturas</h2>
+      <ul className="divide-y divide-white/5 text-sm" data-testid="zone-log">
+        {log.map((c) => (
+          <li key={c.id} className="flex items-center gap-3 py-2">
+            <span className="w-12 shrink-0 font-display text-xs tabular-nums text-muted">{formatTime(c.created_at)}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-semibold">{c.user_id ? (faceOf(state, c.user_id, eventId)?.full_name ?? "—") : "Entrada sin app"}</span>
+              <span className="block truncate text-[11px] text-muted">
+                {zoneName(c.zone_id)}
+                {c.tier ? ` · ${tierLabel(c.tier)}` : ""}
+              </span>
+            </span>
+            <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold", c.status === "granted" ? "bg-squad/15 text-squad" : "bg-sos/15 text-sos")}>
+              {c.status === "granted" ? "Pasó" : (DOOR_MESSAGES[c.reason as DoorResult["status"]] ?? "Rechazado")}
+            </span>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

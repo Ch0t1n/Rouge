@@ -32,61 +32,17 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
   y E2E `demo-pro-agenda.cjs`.
 
 ### Cambiado (v1.11)
-- Modo Demo: versión 15 del estado (6 charlas en 3 tracks y 3 salas con pin, una en vivo con preguntas y encuesta).
-- Integración con `main` (v1.7/v1.8: QR dinámicos, plataformas, módulos por evento): el pase corporativo usa el QR
-  dinámico TOTP; el escáner por zona (`zone_check_in` ⇔ `zoneCheckIn`) usa la misma identidad que `door_scan` (el pase
-  fijo se rechaza como captura) y en las puertas delega en `door_scan` (terminal, "Ya entró", listas free). El escáner
-  conserva el modo sin conexión para la puerta principal; las áreas necesitan conexión. Helpers SQL de v1.10/v1.11 en `private`.
+- Modo Demo: versión 16 del estado (6 charlas en 3 tracks y 3 salas con pin, una en vivo con preguntas y encuesta).
 - `/pro`: "Preguntas al orador" deja de figurar como "Próximamente"; la tarjeta de agenda para asistentes describe
   Mi Agenda, Q&A y encuestas.
 
-### Agregado (v1.10 · ROUGE PRO Fase 1: ficha ejecutiva, vCard y multi-zona)
-- **Ficha ejecutiva** en eventos corporativos (`ExecutiveProfileCard`): avatar profesional único, nombre, cargo,
-  empresa, rubro, bio profesional (hasta 240), "Qué busco / Qué ofrezco" (opciones + detalle libre), LinkedIn y sitio
-  web, con la paleta ejecutiva de ROUGE PRO. En un evento corporativo, "Así te ven" y el perfil de otra persona usan la
-  ficha: sin fotos de fiesta, loop, música, edad, Instagram, Squad ni Rescate. La noche no cambia.
-- **Contacto con privacidad por nivel** (`profile_personas.contact_email`, `contact_phone`, `privacy_level`):
-  `strict` (por defecto: solo tras una reunión o un contacto aceptado), `network` (además, quienes asisten a los eventos
-  donde se usa el perfil) y `public` (además, la organización: CRM y exportación). Es un contacto aparte: el teléfono de
-  la cuenta sigue sin mostrarse nunca. Espejo: `personaContactVisible` ⇔ `persona_contact_visible`.
-- **Panel rápido de la ficha** (`CorporateProfileSheet`): se abre solo la primera vez que alguien entra a un evento
-  corporativo sin perfil profesional y permite crearla sin salir del ingreso. "Revisar mi ficha" desde el ingreso y
-  "Editar ficha" desde el perfil. El editor completo (`/profile/personas/edit`) usa los mismos campos.
-- **Pase corporativo** (`CorporatePassView`): QR de acceso con la **categoría** (ASISTENTE, SPEAKER, VIP, PRENSA, SPONSOR),
-  "Tus accesos" por zona, switch **QR de Acceso ⇄ QR Tarjeta personal (vCard)** y **Guardar contacto (.vcf)** (descarga o
-  hoja de compartir del celular) con email y teléfono opcionales y la nota "NETWORKING: Conocido en <evento>".
-  Desde la ficha de otra persona también se guarda su contacto, solo con los datos que se pueden ver.
-- **Categorías** (`event_attendees.tier`, `event_invite_codes.tier`): el código de 1 uso da su categoría al entrar; la
-  organización la cambia desde el CRM (`set_attendee_tier`) y genera lotes de códigos por categoría.
-- **Control de acceso multi-zona**: zonas por evento (`event_zones`: puertas que acreditan y áreas con categorías
-  habilitadas), selector **obligatorio** de "Zona de control activa" en el escáner, verde con nombre, empresa y categoría
-  o rojo con el motivo ("Requiere VIP / SPEAKER"), y registro de cada lectura (`zone_check_ins`: persona, zona, hora,
-  personal y resultado) con "Últimas lecturas". RPC `zone_check_in`; `door_check_in` es la puerta principal. Panel de
-  zonas para dueño/a y producción. Sin zonas cargadas, la puerta funciona como siempre.
-- `src/lib/vcard.ts`: vCard 3.0 pura (escapes, plegado a 75 octetos, CRLF).
-- Tests: `executive.test.ts` (ficha, privacidad del contacto, categorías, zonas y vCard), contrato de los comandos nuevos,
-  escenario SQL en Postgres 16 y E2E `demo-pro-ficha-zonas.cjs`.
 
-### Cambiado (v1.10)
-- En corporativo, la puerta muestra la cara profesional (nombre, cargo, empresa y categoría, sin edad ni la cara de la
-  noche). Una vCard escaneada en la puerta avisa que no es un pase.
-- Las fuentes de ROUGE PRO (Inter + JetBrains Mono) se comparten desde `components/pro/fonts.ts`.
-- Modo Demo: versión 11 del estado (zonas, categorías, fichas con contacto y lecturas sembradas).
+### Corregido (v1.11)
+- **Editar un evento en Supabase fallaba** ("permission denied for table events"): `upsertEvent` mandaba `id` en el
+  UPDATE, columna sin privilegio de update. Test de contrato que valida las columnas contra el `grant update` de events.
+- Integración real: usuarios de prueba con autogestión (regla v1.8 para crear eventos), asistencia acotada al evento y
+  pase en vivo (TOTP) en la puerta.
 
-### Agregado (v1.9 · ROUGE PRO)
-- **`/pro`: landing corporativa de ROUGE PRO** con identidad ejecutiva propia (paleta navy/slate/alabaster, cobalto y
-  dorado; Inter + JetBrains Mono solo en esa ruta) y metadata propia ("ROUGE PRO | Plataforma Integral para Eventos
-  Corporativos y Networking"). Secciones: navbar ejecutivo, hero con maqueta 3D en capas animada con GSAP (pase con QR,
-  reunión confirmada, check-in en vivo), **ventajas separadas para quien organiza y para quien asiste**, control de
-  acceso con escáner simulado, tablero de salas sin doble reserva, privacidad (qué ve otro asistente / permisos por
-  rol), casos de uso en pestañas accesibles, **simulador del centro de comando** (embudo de acreditación, reuniones y
-  ocupación de salas, export CSV) y pedido de **demo ejecutiva** en línea o en modal. Lo que todavía no existe se marca
-  "Próximamente".
-- **Switch Nightlife ⇄ PRO** en el header de la landing principal y en el de `/pro`.
-- Leads: campo **Cargo** (`b2b_leads.job_title`) y tipo de evento **Feria o exposición** (`expo`).
-
-### Cambiado (v1.9)
-- `/empresas` redirige (308) a `/pro`; se quitó la página anterior. El footer de `/organizadores` enlaza a `/pro`.
 ### Cambiado
 - **SEO / Google:** la landing (`/`) se renderiza en el servidor (antes Google recibía solo la pantalla "Cargando").
   Nuevos `robots.txt`, `sitemap.xml`, URL canónica `https://www.rougepass.com` (`SITE_URL`, pisable con
@@ -238,6 +194,64 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
   gigante queda igual, ahora con voseo: "Dominá la noche"), títulos y bajadas con las palabras clave, estados del
   pedido en castellano en vez de identificadores técnicos, menú con anclas reales y respuestas de las preguntas
   frecuentes siempre en el HTML.
+### Agregado (v1.10 · ROUGE PRO Fase 1: ficha ejecutiva, vCard y multi-zona)
+- **Ficha ejecutiva** en eventos corporativos (`ExecutiveProfileCard`): avatar profesional único, nombre, cargo,
+  empresa, rubro, bio profesional (hasta 240), "Qué busco / Qué ofrezco" (opciones + detalle libre), LinkedIn y sitio
+  web, con la paleta ejecutiva de ROUGE PRO. En un evento corporativo, "Así te ven" y el perfil de otra persona usan la
+  ficha: sin fotos de fiesta, loop, música, edad, Instagram, Squad ni Rescate. La noche no cambia.
+- **Contacto con privacidad por nivel** (`profile_personas.contact_email`, `contact_phone`, `privacy_level`):
+  `strict` (por defecto: solo tras una reunión o un contacto aceptado), `network` (además, quienes asisten a los eventos
+  donde se usa el perfil) y `public` (además, la organización: CRM y exportación). Es un contacto aparte: el teléfono de
+  la cuenta sigue sin mostrarse nunca. Espejo: `personaContactVisible` ⇔ `persona_contact_visible`.
+- **Panel rápido de la ficha** (`CorporateProfileSheet`): se abre solo la primera vez que alguien entra a un evento
+  corporativo sin perfil profesional y permite crearla sin salir del ingreso. "Revisar mi ficha" desde el ingreso y
+  "Editar ficha" desde el perfil. El editor completo (`/profile/personas/edit`) usa los mismos campos.
+- **Pase corporativo** (`CorporatePassView`): QR de acceso con la **categoría** (ASISTENTE, SPEAKER, VIP, PRENSA, SPONSOR),
+  "Tus accesos" por zona, switch **QR de Acceso ⇄ QR Tarjeta personal (vCard)** y **Guardar contacto (.vcf)** (descarga o
+  hoja de compartir del celular) con email y teléfono opcionales y la nota "NETWORKING: Conocido en <evento>".
+  Desde la ficha de otra persona también se guarda su contacto, solo con los datos que se pueden ver.
+- **Categorías** (`event_attendees.tier`, `event_invite_codes.tier`): el código de 1 uso da su categoría al entrar; la
+  organización la cambia desde el CRM (`set_attendee_tier`) y genera lotes de códigos por categoría.
+- **Control de acceso multi-zona**: zonas por evento (`event_zones`: puertas que acreditan y áreas con categorías
+  habilitadas), selector **obligatorio** de "Zona de control activa" en el escáner, verde con nombre, empresa y categoría
+  o rojo con el motivo ("Requiere VIP / SPEAKER"), y registro de cada lectura (`zone_check_ins`: persona, zona, hora,
+  personal y resultado) con "Últimas lecturas". RPC `zone_check_in`; `door_check_in` es la puerta principal. Panel de
+  zonas para dueño/a y producción. Sin zonas cargadas, la puerta funciona como siempre.
+- **QR en vivo en cada zona:** el pase corporativo y el escáner por zona usan el QR dinámico de la plataforma (TOTP,
+  `ROUGE:T1:PASS:…`, cambia cada 20 s): en cualquier zona una captura vieja, una firma falsa o el pase fijo no pasan.
+- **Corporativo sin Rescate:** nuevas funciones de la vertical `rescue` y `selfServeTeams`. En corporativo el Botón de
+  Rescate, "Ya estoy bien" y "Llegué a casa" se ocultan y el servidor los rechaza (`trigger_rescue`, `set_safety_status`
+  → `not_in_vertical`); sin panel de alertas de rescate.
+- **Equipos que arma la organización** (corporativo): los asistentes no crean equipos ni invitan (`create_squad`,
+  `invite_to_squad` → `not_in_vertical`); dueño/a y producción los arman en *Equipos del evento* (`create_team`,
+  `set_team_member` con movimiento entre equipos, `delete_team`) y comparten el link de cada uno.
+- `src/lib/vcard.ts`: vCard 3.0 pura (escapes, plegado a 75 octetos, CRLF).
+- Tests: `executive.test.ts` (ficha, privacidad del contacto, categorías, zonas y vCard), contrato de los comandos nuevos,
+  escenario SQL en Postgres 16 y E2E `demo-pro-ficha-zonas.cjs`.
+
+### Cambiado (v1.10)
+- En corporativo, la puerta muestra la cara profesional (nombre, cargo, empresa y categoría, sin edad ni la cara de la
+  noche). Una vCard escaneada en la puerta avisa que no es un pase.
+- Las fuentes de ROUGE PRO (Inter + JetBrains Mono) se comparten desde `components/pro/fonts.ts`.
+- `/pro`: el caso de uso de eventos internos ya no promete Rescate (ahora: equipos armados por la organización y zonas).
+- Modo Demo: versión 13 del estado (zonas, categorías, fichas con contacto, lecturas sembradas, secreto del QR en vivo del encuentro y el equipo
+  del encuentro pyme creado por la organización).
+- El pase tipeado en la puerta se acepta en mayúsculas (ids y firma se normalizan).
+
+### Agregado (v1.9 · ROUGE PRO)
+- **`/pro`: landing corporativa de ROUGE PRO** con identidad ejecutiva propia (paleta navy/slate/alabaster, cobalto y
+  dorado; Inter + JetBrains Mono solo en esa ruta) y metadata propia ("ROUGE PRO | Plataforma Integral para Eventos
+  Corporativos y Networking"). Secciones: navbar ejecutivo, hero con maqueta 3D en capas animada con GSAP (pase con QR,
+  reunión confirmada, check-in en vivo), **ventajas separadas para quien organiza y para quien asiste**, control de
+  acceso con escáner simulado, tablero de salas sin doble reserva, privacidad (qué ve otro asistente / permisos por
+  rol), casos de uso en pestañas accesibles, **simulador del centro de comando** (embudo de acreditación, reuniones y
+  ocupación de salas, export CSV) y pedido de **demo ejecutiva** en línea o en modal. Lo que todavía no existe se marca
+  "Próximamente".
+- **Switch Nightlife ⇄ PRO** en el header de la landing principal y en el de `/pro`.
+- Leads: campo **Cargo** (`b2b_leads.job_title`) y tipo de evento **Feria o exposición** (`expo`).
+
+### Cambiado (v1.9)
+- `/empresas` redirige (308) a `/pro`; se quitó la página anterior. El footer de `/organizadores` enlaza a `/pro`.
 
 ### Agregado (v1.8 · privacidad, reuniones y /empresas)
 - **Privacidad por contexto del Perfil principal:** `profiles` solo es legible por su dueño/a; los demás perfiles se

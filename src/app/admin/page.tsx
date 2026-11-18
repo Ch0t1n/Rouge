@@ -11,6 +11,7 @@ import { AdminHeader, Panel } from "@/components/admin/AdminChrome";
 import { SecurityPanel } from "@/components/admin/SecurityPanel";
 import { ReportsPanel } from "@/components/admin/ReportsPanel";
 import { LiveCurvesPanel } from "@/components/admin/LiveCurvesPanel";
+import { hasFeature } from "@/lib/engine/verticals";
 import { permissionForPath } from "@/lib/engine/roles";
 import { Badge, LiveDot } from "@/components/ui/badge";
 
@@ -77,7 +78,8 @@ export default function AdminOverviewPage() {
         }
       />
 
-      {(security || m.rescueAlerts > 0) && <SecurityPanel event={event} />}
+      {/* Corporativo: sin Botón de Rescate, no hay panel de alertas. */}
+      {(security || m.rescueAlerts > 0) && hasFeature(state, event.id, "rescue") && <SecurityPanel event={event} />}
       <ReportsPanel event={event} />
 
       {security ? (

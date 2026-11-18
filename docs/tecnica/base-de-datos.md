@@ -165,7 +165,8 @@ visitado; pedidos → `updated_at`; perfil → Instagram verificado (`profile_in
 | `generate_invite_codes(event, count, tier)` | organización | Lote de códigos con categoría. |
 | `event_zones` | lectura: quien está en el evento · gestión: dueño/a y producción | Puertas (`entrance`) y áreas (`area`) con `allowed_tiers` (vacío = todas). Hasta 20 por evento (`zones_limit`), nombre único. |
 | `zone_check_ins` | lectura: dueño/a, producción y seguridad · escritura: solo RPC | Registro de lecturas: zona, persona, código, personal, `granted`/`denied`, motivo y categoría. |
-| `zone_check_in(event, zone, value)` | dueño/a, producción, seguridad | Escáner por zona (⇔ `zoneCheckIn`): valida la categoría; en puertas acredita. `door_check_in` = puerta principal. En corporativo devuelve la cara profesional (sin edad). |
+| `create_team` · `set_team_member` · `delete_team` | dueño/a y producción | Equipos de la organización (corporativo): nombre único por evento, código `EQ-` del servidor, sumar/mover/quitar (máx. 12). En corporativo `create_squad`, `invite_to_squad`, `trigger_rescue` y `set_safety_status` responden `not_in_vertical`. |
+| `zone_check_in(event, zone, value)` | dueño/a, producción, seguridad | Escáner por zona (⇔ `zoneCheckIn`): identifica el QR en vivo (TOTP) o la entrada, valida la categoría y en puertas delega el ingreso en `door_scan`. En corporativo devuelve la cara profesional (sin edad). |
 
 ### Agenda multi-track, Mi Agenda y Q&A / encuestas en vivo (v1.11)
 

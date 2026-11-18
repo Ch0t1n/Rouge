@@ -249,10 +249,15 @@ describe("contrato comandos ↔ schema.sql", () => {
     ["generateInviteCodes (con categoría)", () => runRemote(C.generateInviteCodes(DEMO_IDS.proEvent, 3, "vip"), st(), { generate_invite_codes: [] })],
     ["setAttendeeTier", () => runRemote(C.setAttendeeTier(DEMO_IDS.proEvent, ME, "speaker"), st(), { set_attendee_tier: {} })],
     ["zoneCheckIn (área)", () => runRemote(C.zoneCheckIn(DEMO_IDS.proEvent, id(20003), `ROUGE:PASS:${DEMO_IDS.proEvent}:${ME}`), { ...s0(), current_user_id: DEMO_IDS.security }, { zone_check_in: { status: "zone_denied" } })],
-    ["zoneCheckIn (puerta principal)", () => runRemote(C.zoneCheckIn(EV, null, s0().event_invite_codes[10].code, "Puerta 1"), { ...s0(), current_user_id: DEMO_IDS.security }, { zone_check_in: { status: "ok" } })],
+    ["zoneCheckIn (puerta principal)", () => runRemote(C.zoneCheckIn(EV, null, s0().event_invite_codes[10].code), { ...s0(), current_user_id: DEMO_IDS.security }, { zone_check_in: { status: "ok" } })],
     ["upsertZone (nueva)", () => runRemote(C.upsertZone(DEMO_IDS.proEvent, { name: "Backstage", kind: "area", allowed_tiers: ["speaker"] }), st())],
     ["upsertZone (edición)", () => runRemote(C.upsertZone(DEMO_IDS.proEvent, { id: id(20003), name: "Sala VIP", kind: "area", allowed_tiers: ["vip"], is_active: false }), st())],
     ["deleteZone", () => runRemote(C.deleteZone(DEMO_IDS.proEvent, id(20005)), st())],
+    // [v1.10] Equipos que arma la organización (corporativo)
+    ["organizerCreateTeam", () => runRemote(C.organizerCreateTeam(DEMO_IDS.proEvent, "Logística"), st(), { create_team: { id: id(9), invite_code: "EQ-ABC123" } })],
+    ["organizerSetTeamMember (sumar)", () => runRemote(C.organizerSetTeamMember(DEMO_IDS.proEvent, DEMO_IDS.proTeam, id(25), true), st())],
+    ["organizerSetTeamMember (quitar)", () => runRemote(C.organizerSetTeamMember(DEMO_IDS.proEvent, DEMO_IDS.proTeam, ME, false), st())],
+    ["organizerDeleteTeam", () => runRemote(C.organizerDeleteTeam(DEMO_IDS.proEvent, DEMO_IDS.proTeam), st())],
     // [v1.11] Agenda multi-track, Mi Agenda, Q&A y encuestas
     ["upsertSession (nueva)", () => { const s = st(); const day = s.event_sessions[1].day; return runRemote(C.upsertSession(DEMO_IDS.proEvent, { title: "Ciberseguridad", track: "Tecnología & IA", room_name: "Sala 1", spot_id: id(18001), day, start_time: "00:00", end_time: "00:30", speakers: [{ name: "Ana Paz", role: "CEO", company: "Nube" }], capacity: 40 }), s); }],
     ["upsertSession (edición)", () => runRemote(C.upsertSession(DEMO_IDS.proEvent, { ...s0().event_sessions[2], title: "Liderar equipos que crecen" }), st())],
@@ -339,6 +344,8 @@ describe("contrato comandos ↔ schema.sql", () => {
     expect(C.upsertZone(DEMO_IDS.proEvent, { name: "Backstage", kind: "area", allowed_tiers: [] }).local(as(DEMO_IDS.security)).ok).toBe(false);
     expect(C.setAttendeeTier(DEMO_IDS.proEvent, ME, "vip").local(as(ME)).ok).toBe(false);
     expect(C.setAttendeeTier(DEMO_IDS.proEvent, ME, "vip").local(as(DEMO_IDS.manager)).ok).toBe(true);
+    expect(C.organizerCreateTeam(DEMO_IDS.proEvent, "Logística").local(as(ME)).ok).toBe(false);
+    expect(C.organizerCreateTeam(DEMO_IDS.proEvent, "Logística").local(as(DEMO_IDS.manager)).ok).toBe(true);
   });
 
   it("agenda: la carga y la moderación son de la organización; el contador y el en vivo nunca van por tabla", async () => {
