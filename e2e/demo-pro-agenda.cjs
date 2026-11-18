@@ -15,7 +15,7 @@ const sel = (t) => `[data-testid="${t}"]`;
   const errors = [];
   const watch = (p, tag) => {
     p.on("pageerror", (e) => errors.push(`[${tag}] ${e.message}`));
-    p.on("console", (m) => m.type() === "error" && !/spotify|net::|Failed to load resource/i.test(m.text()) && errors.push(`[${tag}] ${m.text()}`));
+    p.on("console", (m) => m.type() === "error" && !/spotify|net::|Failed to load resource|_vercel\/insights/i.test(m.text()) && errors.push(`[${tag}] ${m.text()}`));
   };
   const ctx = await browser.newContext({ viewport: { width: 420, height: 900 } });
   await unlockDemo(ctx);

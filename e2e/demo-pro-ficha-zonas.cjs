@@ -14,7 +14,7 @@ const read = async (dl) => fs.readFileSync(await dl.path(), "utf8");
   const errors = [];
   const watch = (p, tag) => {
     p.on("pageerror", (e) => errors.push(`[${tag}] ${e.message}`));
-    p.on("console", (m) => m.type() === "error" && !/spotify|net::|Failed to load resource/i.test(m.text()) && errors.push(`[${tag}] ${m.text()}`));
+    p.on("console", (m) => m.type() === "error" && !/spotify|net::|Failed to load resource|_vercel\/insights/i.test(m.text()) && errors.push(`[${tag}] ${m.text()}`));
   };
   const ctx = await browser.newContext({ viewport: { width: 420, height: 900 }, acceptDownloads: true });
   await unlockDemo(ctx);
@@ -89,12 +89,17 @@ const read = async (dl) => fs.readFileSync(await dl.path(), "utf8");
   // ── Seguridad: zona de control obligatoria y validación por categoría ──
   const door = await ctx.newPage(); watch(door, "seguridad");
   await door.setViewportSize({ width: 390, height: 844 });
-  await door.goto(open("seguridad", "/admin/door"), { waitUntil: "networkidle" });
-  await door.locator("select:visible").first().selectOption(PRO);
-  await door.waitForSelector('h1:has-text("Puerta y zonas")');
+  // La dueña deja activo el evento corporativo (el demo comparte el estado) y Seguridad opera la puerta en /ops.
+  const pick = await ctx.newPage();
+  await pick.setViewportSize({ width: 1280, height: 900 });
+  await pick.goto(open("duena", "/admin/events"), { waitUntil: "networkidle" });
+  await pick.locator("select:visible").first().selectOption(PRO);
+  await pick.close();
+  await door.goto(open("seguridad", "/ops/door"), { waitUntil: "networkidle" });
+  await door.waitForSelector('[data-testid="zone-option"]');
   assert((await door.locator('[data-testid="zone-option"]').count()) === 5, "selector de zona con las 5 zonas del evento");
   assert(await door.isVisible("text=Elegí en qué zona estás controlando"), "sin zona elegida no se puede escanear");
-  assert(!(await door.isVisible('input[placeholder="Código de la entrada"]')), "el campo de código aparece recién con una zona");
+  assert((await door.locator('[aria-disabled="true"] input[placeholder="Código de la entrada"]').count()) === 1, "el campo de código queda bloqueado hasta elegir una zona");
   await door.click('[data-testid="zone-option"]:has-text("Sala VIP")');
   await door.fill('input[placeholder="Código de la entrada"]', livePass(DEMO_QR_SECRETS.pro, id(1)));
   await door.click("text=Validar");
