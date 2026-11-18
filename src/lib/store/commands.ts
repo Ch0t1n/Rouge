@@ -9,7 +9,7 @@
  * En Modo Demo solo corre `local`. Las pantallas siempre llaman `exec(C.algo(...))`.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { ApiKey, BarOrder, Connection, EventAttendee, EventInviteCode, MoodTag, PerkRule, Raffle, RaffleFilter, RougeEvent, RougeState, SongRequest, Squad, StaffRole, UUID } from "@/lib/types";
+import type { ApiKey, AttendeeTier, BarOrder, Connection, EventAttendee, EventInviteCode, MoodTag, PerkRule, Raffle, RaffleFilter, RougeEvent, RougeState, SongRequest, Squad, StaffRole, UUID } from "@/lib/types";
 import * as A from "@/lib/engine/actions";
 import type { Result } from "@/lib/engine/actions";
 import { can, NO_PERMISSION, type Permission } from "@/lib/engine/roles";
@@ -162,6 +162,12 @@ export const upsertPersona = (userId: UUID, input: A.PersonaInput): Command<Roug
       looking_for: p.looking_for,
       offering: p.offering,
       linkedin_url: p.linkedin_url,
+      website_url: p.website_url,
+      looking_for_note: p.looking_for_note,
+      offering_note: p.offering_note,
+      contact_email: p.contact_email,
+      contact_phone: p.contact_phone,
+      privacy_level: p.privacy_level,
     };
     const existed = before.profile_personas.some((x) => x.id === p.id);
     if (existed) must(await sb.from("profile_personas").update(fields).eq("id", p.id).eq("user_id", userId));
@@ -609,11 +615,19 @@ export const upsertEvent = (input: Parameters<typeof A.upsertEvent>[1]): Command
   },
 });
 
-export const generateInviteCodes = (eventId: UUID, count: number): Command<EventInviteCode[]> => ({
+/** Lote de códigos de 1 uso. `tier`: categoría de esas entradas (VIP, SPEAKER…), que pasa a quien la use. */
+export const generateInviteCodes = (eventId: UUID, count: number, tier: AttendeeTier | null = null): Command<EventInviteCode[]> => ({
   name: "generateInviteCodes",
   optimistic: false,
-  local: guarded("admin.events", () => eventId, (s) => A.generateInviteCodes(s, eventId, count)),
-  remote: async (sb) => rpc<EventInviteCode[]>(sb, "generate_invite_codes", { p_event: eventId, p_count: count }),
+  local: guarded("admin.events", () => eventId, (s) => A.generateInviteCodes(s, eventId, count, Date.now(), tier)),
+  remote: async (sb) => rpc<EventInviteCode[]>(sb, "generate_invite_codes", { p_event: eventId, p_count: count, p_tier: tier }),
+});
+
+/** Categoría de un asistente (dueño/a y producción). */
+export const setAttendeeTier = (eventId: UUID, userId: UUID, tier: AttendeeTier): Command<EventAttendee> => ({
+  name: "setAttendeeTier",
+  local: guarded("admin.events", () => eventId, (s) => A.setAttendeeTier(s, eventId, userId, tier)),
+  remote: async (sb) => rpc<EventAttendee>(sb, "set_attendee_tier", { p_event: eventId, p_user: userId, p_tier: tier }),
 });
 
 // ── Equipo del evento (solo dueño/a) ─────────────────────────────────
@@ -831,4 +845,34 @@ export const doorCheckIn = (eventId: UUID, value: string): Command<D.DoorResult>
   optimistic: false,
   local: guarded("door.scan", () => eventId, (s) => D.doorCheckIn(s, eventId, value)),
   remote: async (sb) => rpc<D.DoorResult>(sb, "door_check_in", { p_event: eventId, p_value: value }),
+});
+
+/**
+ * Escaneo en una zona de control (v1.10). `zoneId` null = puerta principal. El servidor valida la categoría para la
+ * zona, acredita si es una puerta y registra la lectura (zone_check_ins).
+ */
+export const zoneCheckIn = (eventId: UUID, zoneId: UUID | null, value: string): Command<D.DoorResult> => ({
+  name: "zoneCheckIn",
+  optimistic: false,
+  local: guarded("door.scan", () => eventId, (s) => D.zoneCheckIn(s, eventId, zoneId, value)),
+  remote: async (sb) => rpc<D.DoorResult>(sb, "zone_check_in", { p_event: eventId, p_zone: zoneId, p_value: value }),
+});
+
+/** Alta o edición de una zona de control (dueño/a y producción). Mismo id que el optimista. */
+export const upsertZone = (eventId: UUID, input: D.ZoneInput): Command<RougeState["event_zones"][number]> => ({
+  name: "upsertZone",
+  local: guarded("admin.events", () => eventId, (s) => D.upsertZone(s, eventId, input)),
+  remote: async (sb, z, before) => {
+    const fields = { name: z.name, kind: z.kind, allowed_tiers: z.allowed_tiers, sort_order: z.sort_order, is_active: z.is_active };
+    if (before.event_zones.some((x) => x.id === z.id)) must(await sb.from("event_zones").update(fields).eq("id", z.id).eq("event_id", eventId));
+    else must(await sb.from("event_zones").insert({ id: z.id, event_id: eventId, ...fields }));
+  },
+});
+
+export const deleteZone = (eventId: UUID, zoneId: UUID): Command<undefined> => ({
+  name: "deleteZone",
+  local: guarded("admin.events", () => eventId, (s) => D.deleteZone(s, zoneId)),
+  remote: async (sb) => {
+    must(await sb.from("event_zones").delete().eq("id", zoneId).eq("event_id", eventId));
+  },
 });

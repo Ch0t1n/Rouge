@@ -168,7 +168,7 @@ describe("networking por afinidad de negocio", () => {
   });
 
   it("\"clientes\" se cruza con quien busca lo que ofrecés y \"socios\" con quien también busca socios", () => {
-    const base = { id: "x", user_id: "u", kind: "corporate" as const, label: "", display_name: "", bio: "", photos: [], music_genres: [], spotify_embed_url: null, job_title: "", company: "c", industry: null, linkedin_url: null, created_at: "" };
+    const base = { id: "x", user_id: "u", kind: "corporate" as const, label: "", display_name: "", bio: "", photos: [], music_genres: [], spotify_embed_url: null, job_title: "", company: "c", industry: null, linkedin_url: null, created_at: "", website_url: null, looking_for_note: "", offering_note: "", contact_email: null, contact_phone: null, privacy_level: "strict" as const };
     const vende = { ...base, looking_for: ["clients" as const], offering: ["software" as const] };
     const compra = { ...base, looking_for: ["software" as const], offering: ["suppliers" as const] };
     expect(businessAffinity(vende, compra)).toMatchObject({ score: 0.75 * 0.7, matched: expect.arrayContaining(["clients", "software"]) });

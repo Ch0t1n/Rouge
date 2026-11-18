@@ -397,6 +397,29 @@ Un mismo ROUGE para fiestas y boliches y para eventos de empresas, pymes y netwo
   agenda de nadie. Un lugar con reuniones se desactiva en vez de borrarse.
 - Avisos en vivo: pedido nuevo, propuesta de cambio, confirmación, rechazo y cancelación. Máx. 10 pedidos sin respuesta.
 
+## 31. Ficha ejecutiva, pase con vCard y control multi-zona (ROUGE Pro)
+
+- **Ficha ejecutiva:** en un evento corporativo, tu perfil y el de los demás se ven como una ficha formal: foto
+  profesional, nombre, cargo, empresa, rubro, bio profesional (240 caracteres), **Qué busco / Qué ofrezco** (opciones y
+  un detalle en tus palabras), LinkedIn y sitio web. Nada de fotos de fiesta, loop, música, edad, Instagram, Squad ni
+  Rescate. Desde la ficha de otra persona: conectar, pedir reunión y **Guardar contacto (.vcf)**.
+- **Primera vez en un evento corporativo:** si no tenés perfil profesional, al entrar se abre un panel rápido para
+  crearlo ahí mismo. Después lo editás desde *Mi perfil → Editar ficha* o *Revisar mi ficha* al entrar.
+- **Email y teléfono de contacto (opcionales)** con tres niveles: **Estricto** (por defecto: solo después de aceptar
+  una reunión o un contacto), **Networking** (también quienes asisten al evento) y **Público** (también la organización,
+  en el CRM). No es el teléfono de tu cuenta, que nunca se muestra.
+- **Mi pase:** QR de acceso con tu **categoría** (ASISTENTE, SPEAKER, VIP, PRENSA, SPONSOR) y las zonas a las que podés
+  pasar. Con el switch **QR Tarjeta personal (vCard)**, otra persona te escanea con la cámara y te guarda en sus
+  contactos; **Guardar contacto (.vcf)** descarga o comparte tu tarjeta. Elegís si incluye email y teléfono; la nota
+  dice "NETWORKING: Conocido en <evento>".
+- **Categorías:** vienen con el código de la entrada (lotes por categoría en *Eventos y accesos*) y la organización las
+  cambia desde el CRM.
+- **Zonas de control:** la organización carga puertas (acreditan el ingreso) y áreas (Sala VIP, Auditorio A,
+  Almuerzo ejecutivo) con sus categorías habilitadas, en *Puerta → Zonas de control*. Quien controla elige primero la
+  **Zona de control activa**; al escanear ve **verde** (permitido, con nombre, empresa y categoría) o **rojo** (motivo,
+  p. ej. "Requiere VIP / SPEAKER"). Cada lectura queda registrada con zona, hora, personal y resultado. Sin zonas, la
+  puerta funciona como siempre.
+
 ## 30. ROUGE PRO (/pro)
 
 - **`/pro`** es la página de la vertical corporativa (congresos, ferias, eventos internos, coworks), con identidad

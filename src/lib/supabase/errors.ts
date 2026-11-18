@@ -5,6 +5,11 @@
  */
 const MESSAGES: Record<string, string> = {
   not_authenticated: "Tu sesión expiró. Volvé a ingresar.",
+  // [v1.10] Ficha ejecutiva, categorías y zonas
+  zone_not_found: "Esa zona no existe o está desactivada.",
+  too_many_zones: "Hasta 20 zonas por evento.",
+  event_zones_name_uq: "Ya hay una zona con ese nombre.",
+  personas_bio_len_chk: "La bio profesional tiene un máximo de 240 caracteres.",
   // [v1.8] Privacidad y reuniones
   checkin_required: "En este evento el networking es para quienes ya se acreditaron en la puerta.",
   pin_squad_only: "Elegiste compartir tu ubicación solo con tu Squad: sacá a los matches o cambialo en Privacidad.",

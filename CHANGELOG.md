@@ -4,6 +4,39 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Sin publicar]
 
+### Agregado (v1.10 · ROUGE PRO Fase 1: ficha ejecutiva, vCard y multi-zona)
+- **Ficha ejecutiva** en eventos corporativos (`ExecutiveProfileCard`): avatar profesional único, nombre, cargo,
+  empresa, rubro, bio profesional (hasta 240), "Qué busco / Qué ofrezco" (opciones + detalle libre), LinkedIn y sitio
+  web, con la paleta ejecutiva de ROUGE PRO. En un evento corporativo, "Así te ven" y el perfil de otra persona usan la
+  ficha: sin fotos de fiesta, loop, música, edad, Instagram, Squad ni Rescate. La noche no cambia.
+- **Contacto con privacidad por nivel** (`profile_personas.contact_email`, `contact_phone`, `privacy_level`):
+  `strict` (por defecto: solo tras una reunión o un contacto aceptado), `network` (además, quienes asisten a los eventos
+  donde se usa el perfil) y `public` (además, la organización: CRM y exportación). Es un contacto aparte: el teléfono de
+  la cuenta sigue sin mostrarse nunca. Espejo: `personaContactVisible` ⇔ `persona_contact_visible`.
+- **Panel rápido de la ficha** (`CorporateProfileSheet`): se abre solo la primera vez que alguien entra a un evento
+  corporativo sin perfil profesional y permite crearla sin salir del ingreso. "Revisar mi ficha" desde el ingreso y
+  "Editar ficha" desde el perfil. El editor completo (`/profile/personas/edit`) usa los mismos campos.
+- **Pase corporativo** (`CorporatePassView`): QR de acceso con la **categoría** (ASISTENTE, SPEAKER, VIP, PRENSA, SPONSOR),
+  "Tus accesos" por zona, switch **QR de Acceso ⇄ QR Tarjeta personal (vCard)** y **Guardar contacto (.vcf)** (descarga o
+  hoja de compartir del celular) con email y teléfono opcionales y la nota "NETWORKING: Conocido en <evento>".
+  Desde la ficha de otra persona también se guarda su contacto, solo con los datos que se pueden ver.
+- **Categorías** (`event_attendees.tier`, `event_invite_codes.tier`): el código de 1 uso da su categoría al entrar; la
+  organización la cambia desde el CRM (`set_attendee_tier`) y genera lotes de códigos por categoría.
+- **Control de acceso multi-zona**: zonas por evento (`event_zones`: puertas que acreditan y áreas con categorías
+  habilitadas), selector **obligatorio** de "Zona de control activa" en el escáner, verde con nombre, empresa y categoría
+  o rojo con el motivo ("Requiere VIP / SPEAKER"), y registro de cada lectura (`zone_check_ins`: persona, zona, hora,
+  personal y resultado) con "Últimas lecturas". RPC `zone_check_in`; `door_check_in` es la puerta principal. Panel de
+  zonas para dueño/a y producción. Sin zonas cargadas, la puerta funciona como siempre.
+- `src/lib/vcard.ts`: vCard 3.0 pura (escapes, plegado a 75 octetos, CRLF).
+- Tests: `executive.test.ts` (ficha, privacidad del contacto, categorías, zonas y vCard), contrato de los comandos nuevos,
+  escenario SQL en Postgres 16 y E2E `demo-pro-ficha-zonas.cjs`.
+
+### Cambiado (v1.10)
+- En corporativo, la puerta muestra la cara profesional (nombre, cargo, empresa y categoría, sin edad ni la cara de la
+  noche). Una vCard escaneada en la puerta avisa que no es un pase.
+- Las fuentes de ROUGE PRO (Inter + JetBrains Mono) se comparten desde `components/pro/fonts.ts`.
+- Modo Demo: versión 11 del estado (zonas, categorías, fichas con contacto y lecturas sembradas).
+
 ### Agregado (v1.9 · ROUGE PRO)
 - **`/pro`: landing corporativa de ROUGE PRO** con identidad ejecutiva propia (paleta navy/slate/alabaster, cobalto y
   dorado; Inter + JetBrains Mono solo en esa ruta) y metadata propia ("ROUGE PRO | Plataforma Integral para Eventos

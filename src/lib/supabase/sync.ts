@@ -14,7 +14,7 @@ import { BAR_MENU, STATE_VERSION } from "@/lib/mock/seed";
  * [v1.8] Columnas PÚBLICAS de `event_attendees` (column privileges): sin gasto, origen, RRPP, hora de ingreso ni
  * sectores visitados. Lo privado llega por my_attendances() (lo mío), event_attendance() (equipo) y shared_zones().
  */
-export const ATTENDEE_COLUMNS = "id,event_id,user_id,mood_tag,persona_id,ghost_mode,only_liked_can_icebreak,icebreaker_used,last_active_at,joined_at,is_checked_in";
+export const ATTENDEE_COLUMNS = "id,event_id,user_id,mood_tag,persona_id,ghost_mode,only_liked_can_icebreak,icebreaker_used,last_active_at,joined_at,is_checked_in,tier";
 
 /** Tarjeta pública de otra persona (profile_cards): edad en vez de fecha de nacimiento; sin teléfono. */
 type ProfileCard = Omit<Profile, "birth_date" | "phone_normalized" | "username"> & { username: string | null; age: number | null };
@@ -120,6 +120,14 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
     q<RougeState["venue_spots"][number]>(sb.from("venue_spots").select("*")).catch(() => []),
     q<RougeState["privacy_settings"][number]>(sb.from("privacy_settings").select("*").eq("user_id", userId)).catch(() => []),
   ]);
+  // [v1.10] Zonas de control (las ve quien está en el evento) y, para el personal de puerta, las últimas lecturas.
+  const doorStaff = isManager || myRole === "security";
+  const [zones, zoneReads] = await Promise.all([
+    q<RougeState["event_zones"][number]>(sb.from("event_zones").select("*")).catch(() => []),
+    eventId && doorStaff
+      ? q<RougeState["zone_check_ins"][number]>(sb.from("zone_check_ins").select("*").eq("event_id", eventId).order("created_at", { ascending: false }).limit(200)).catch(() => [])
+      : Promise.resolve([] as RougeState["zone_check_ins"]),
+  ]);
 
   // Cara de cada contacto en el evento donde se conocieron (chats e inbox de eventos pasados): su fila pública de
   // asistente en esos eventos (persona_id). Solo contrapartes de mis conexiones y reuniones: acotado.
@@ -210,21 +218,35 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
     current_user_id: userId,
     active_event_id: eventId,
     profiles: profiles.map((p) => ({ ...p, phone_normalized: phones.get(p.id) ?? null, photos: p.photos ?? [], music_genres: p.music_genres ?? [] })),
-    profile_personas: personas.map((p) => ({ ...p, photos: p.photos ?? [], music_genres: p.music_genres ?? [], looking_for: p.looking_for ?? [], offering: p.offering ?? [] })),
+    profile_personas: personas.map((p) => ({
+      ...p,
+      photos: p.photos ?? [],
+      music_genres: p.music_genres ?? [],
+      looking_for: p.looking_for ?? [],
+      offering: p.offering ?? [],
+      website_url: p.website_url ?? null,
+      looking_for_note: p.looking_for_note ?? "",
+      offering_note: p.offering_note ?? "",
+      contact_email: p.contact_email ?? null,
+      contact_phone: p.contact_phone ?? null,
+      privacy_level: p.privacy_level ?? "strict",
+    })),
     privacy_settings: privacy,
     venue_spots: spots.map((x) => ({ ...x, capacity: x.capacity ?? null, coord_x: x.coord_x ?? null, coord_y: x.coord_y ?? null })),
     meetings: meetings.map((m) => ({ ...m, pin_x: m.pin_x ?? null, pin_y: m.pin_y ?? null })),
+    event_zones: zones.map((z) => ({ ...z, allowed_tiers: z.allowed_tiers ?? [] })),
+    zone_check_ins: zoneReads,
     instagram_links: igRows.map((r) => ({ user_id: userId, username: r.username, account_type: r.account_type, connected_at: r.connected_at })),
     user_blocks: blocks,
     events: events.map((e) => ({ ...e, kind: e.kind ?? "nightlife", networking_checkin_only: e.networking_checkin_only ?? false, brand_id: e.brand_id ?? null, logo_url: e.logo_url ?? null, theme_primary: e.theme_primary ?? null, theme_accent: e.theme_accent ?? null })),
     brands,
     brand_payment_accounts: payAccounts,
     event_staff: eventStaff,
-    event_invite_codes: codes.map((c) => ({ ...c, checked_in_at: c.checked_in_at ?? null })),
+    event_invite_codes: codes.map((c) => ({ ...c, checked_in_at: c.checked_in_at ?? null, tier: c.tier ?? null })),
     promoter_links: promoterLinks.map((l) => ({ ...l, commission_per_entry: Number(l.commission_per_entry) })),
     api_keys: apiKeys,
     event_bans: bans,
-    event_attendees: allAttendees.map((a) => ({ ...a, persona_id: a.persona_id ?? null, total_spent: Number(a.total_spent), visited_sectors: a.visited_sectors ?? [], referred_by: a.referred_by ?? null, checked_in_at: a.checked_in_at ?? null })),
+    event_attendees: allAttendees.map((a) => ({ ...a, persona_id: a.persona_id ?? null, total_spent: Number(a.total_spent), visited_sectors: a.visited_sectors ?? [], referred_by: a.referred_by ?? null, checked_in_at: a.checked_in_at ?? null, tier: a.tier ?? "attendee" })),
     connections,
     squads,
     squad_members: squadMembers.filter((m) => squadIds.has(m.squad_id)),
@@ -249,7 +271,7 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
 }
 
 /** Tablas publicadas en `supabase_realtime` (ver schema.sql) que disparan una re-sincronización. */
-const REALTIME_TABLES = ["messages", "map_pins", "connections", "squad_members", "squads", "blast_deliveries", "user_perks_qrs", "bar_orders", "song_requests", "raffles", "event_attendees", "brands", "squad_expenses", "squad_settlements", "profile_personas", "meetings", "venue_spots"];
+const REALTIME_TABLES = ["messages", "map_pins", "connections", "squad_members", "squads", "blast_deliveries", "user_perks_qrs", "bar_orders", "song_requests", "raffles", "event_attendees", "brands", "squad_expenses", "squad_settlements", "profile_personas", "meetings", "venue_spots", "event_zones", "zone_check_ins"];
 
 /**
  * Escucha cambios relevantes. Realtime respeta RLS: cada usuario solo recibe

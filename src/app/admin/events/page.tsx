@@ -4,8 +4,8 @@ import * as C from "@/lib/store/commands";
 import { useMemo, useRef, useState } from "react";
 import { Ban, Copy, Download, ImagePlus, Link2, Plus, Printer, QrCode, Save, Trash2 } from "lucide-react";
 import Link from "next/link";
-import type { EventKind, LineupSlot, RougeEvent } from "@/lib/types";
-import { vertical } from "@/lib/engine/verticals";
+import { ATTENDEE_TIERS, type AttendeeTier, type EventKind, type LineupSlot, type RougeEvent } from "@/lib/types";
+import { tierLabel, vertical } from "@/lib/engine/verticals";
 import { generateInviteCodes, upsertEvent } from "@/lib/engine/actions";
 import { lobbyPhase } from "@/lib/engine/selectors";
 import { myBrands } from "@/lib/engine/branding";
@@ -270,6 +270,7 @@ function EventEditor({ event, onSaved }: { event: RougeEvent | null; onSaved: (i
 function AccessPanel({ event }: { event: RougeEvent }) {
   const { state, exec, notify } = useRouge();
   const [count, setCount] = useState(50);
+  const [codeTier, setCodeTier] = useState<AttendeeTier | "">("");
   const share = useShare();
   const [filter, setFilter] = useState<"all" | "free" | "used" | "revoked">("all");
   const origin = typeof window !== "undefined" ? window.location.origin : "";
@@ -343,10 +344,22 @@ function AccessPanel({ event }: { event: RougeEvent }) {
           <div className="w-32">
             <TextField label="Cantidad" type="number" min={1} max={1000} value={count} onChange={(e) => setCount(Number(e.target.value))} />
           </div>
+          {/* [v1.10] Categoría de las entradas del lote: define a qué zonas puede pasar quien la use. */}
+          <label className="block space-y-1.5">
+            <span className="font-display text-[13px] font-semibold text-primary">Categoría</span>
+            <select value={codeTier} onChange={(e) => setCodeTier(e.target.value as AttendeeTier | "")} className="min-h-[52px] rounded-2xl border border-white/10 bg-white/[0.04] px-3 text-sm" data-testid="code-tier">
+              <option value="">ASISTENTE</option>
+              {ATTENDEE_TIERS.filter((t) => t.id !== "attendee").map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <Button
             variant="vip"
             onClick={async () => {
-              const r = await exec(C.generateInviteCodes(event.id, count));
+              const r = await exec(C.generateInviteCodes(event.id, count, codeTier || null));
               if (r.ok) notify({ tone: "vip", title: `🎟️ ${r.data.length} códigos generados`, description: "Entregalos con cada entrada (email, ticketera o impresos)." });
             }}
           >
@@ -378,6 +391,7 @@ function AccessPanel({ event }: { event: RougeEvent }) {
                   <td className="px-4 py-2 text-xs text-muted">
                     {c.external_ref ?? "—"}
                     {c.label && <span className="ml-1 text-primary/80">· {c.label}</span>}
+                    {c.tier && <Badge tone="vip" className="ml-1.5">{tierLabel(c.tier)}</Badge>}
                     {c.source === "api" && <Badge tone="vip" className="ml-1.5">API</Badge>}
                   </td>
                   <td className="px-4 py-2">{c.is_used ? <Badge>Usado</Badge> : c.revoked_at ? <Badge tone="rouge">Anulado</Badge> : <Badge tone="squad">Libre</Badge>}</td>

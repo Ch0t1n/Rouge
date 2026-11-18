@@ -19,6 +19,8 @@ Este documento resume qué se guarda, quién lo ve y cómo se protege.
 | Fecha de nacimiento | ✔ | ✘ (solo la edad, calculada en el servidor) | ✘ | ✘ (edad en el CRM) |
 | Teléfono / email | ✔ | ✘ (privilegios por columna; el email vive en Auth) | ✘ | Teléfono vía `event_crm` |
 | Perfil profesional (cargo, empresa, LinkedIn) | ✔ | Si comparten el evento (`persona_cards`): LinkedIn solo tras reunión o contacto aceptado; empresa y cargo ocultos si lo eligió | Solo lo que ven los asistentes | ✔ completo (CRM) |
+| **[v1.10]** Email y teléfono de contacto de la ficha ejecutiva | ✔ | `strict`: solo tras reunión o contacto aceptado; `network`/`public`: asistentes de ese evento | Solo con `public` | Solo con `public` |
+| **[v1.10]** Categoría (tier) y registro de zonas | ✔ su categoría | Ven la categoría (badge) | Seguridad: registro de lecturas | ✔ (cambian la categoría) |
 | Gasto, cómo entró, RRPP, hora de ingreso, sectores visitados | ✔ (`my_attendances`) | ✘ (solo "acreditado sí/no" y las zonas en común) | Seguridad: hora de ingreso | ✔ (`event_attendance`) |
 | Pin en el plano | ✔ | Solo su Squad y los matches que eligió (o solo el Squad, si lo configuró) | **[v1.8]** Solo alertas de rescate | Solo alertas de rescate (conteo en `event_stats`) |
 | Reuniones | ✔ | Solo la otra persona | ✘ (solo conteos) | ✘ (solo conteos) |
@@ -60,6 +62,11 @@ Este documento resume qué se guarda, quién lo ve y cómo se protege.
   (conteos, sin personas). Su link se resuelve en el servidor como el link maestro.
 - **Puerta:** `door_check_in` solo para dueño/a, producción y seguridad; devuelve nombre, foto y edad de quien entra
   para verificar identidad y +18.
+- **[v1.10] Zonas y vCard:** `zone_check_in` (mismos roles) valida la categoría por zona y registra cada lectura; el
+  registro no lo ve ningún asistente y no se escribe por tabla. En corporativo devuelve la cara profesional, nunca la de
+  la noche ni la edad. La categoría la escribe solo la organización (`set_attendee_tier`) o el código de la entrada. La
+  vCard se arma en el cliente con la ficha ya saneada por `persona_cards`: nunca incluye datos que quien la guarda no
+  podía ver; en la propia, la persona elige si incluye email y teléfono.
 - **Cuentas de la mesa:** gastos y transferencias visibles solo para integrantes del Squad; el alias o CBU/CVU para
   cobrar lo ven solo quienes comparten un Squad con esa persona.
 - **Marca:** los colores pasan el mismo control de contraste en el motor y en Postgres; el rescate y el Squad no se

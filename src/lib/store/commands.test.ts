@@ -124,6 +124,10 @@ describe("contrato comandos ↔ schema.sql", () => {
     expect(FUNCS.get("request_meeting")).toContain("p_location_kind");
     expect(TABLES.get("meetings")?.has("proposed_by")).toBe(true);
     expect(TABLES.get("b2b_leads")?.has("attendees")).toBe(true);
+    expect(FUNCS.get("zone_check_in")).toEqual(["p_event", "p_zone", "p_value"]);
+    expect(FUNCS.get("generate_invite_codes")).toContain("p_tier");
+    expect(TABLES.get("event_zones")?.has("allowed_tiers")).toBe(true);
+    expect(TABLES.get("profile_personas")?.has("privacy_level")).toBe(true);
   });
 
   const s0 = () => createSeedState(NOW);
@@ -238,6 +242,15 @@ describe("contrato comandos ↔ schema.sql", () => {
     ["upsertVenueSpot (edición)", () => runRemote(C.upsertVenueSpot(DEMO_IDS.proEvent, { ...s0().venue_spots[0], is_active: false }), st())],
     ["deleteVenueSpot", () => runRemote(C.deleteVenueSpot(DEMO_IDS.proEvent, id(18001)), st())],
     ["upsertEvent (solo acreditados)", () => runRemote(C.upsertEvent({ ...s0().events[1], networking_checkin_only: true }), st())],
+    // [v1.10] Ficha ejecutiva, categorías y zonas de control
+    ["upsertPersona (ficha ejecutiva con contacto)", () => runRemote(C.upsertPersona(ME, { id: DEMO_IDS.mePro, kind: "corporate", website_url: "estudio.com", contact_email: "s@estudio.com", contact_phone: "11 4000-1001", looking_for_note: "Pymes", offering_note: "Tiendas", privacy_level: "network" }), s0())],
+    ["generateInviteCodes (con categoría)", () => runRemote(C.generateInviteCodes(DEMO_IDS.proEvent, 3, "vip"), st(), { generate_invite_codes: [] })],
+    ["setAttendeeTier", () => runRemote(C.setAttendeeTier(DEMO_IDS.proEvent, ME, "speaker"), st(), { set_attendee_tier: {} })],
+    ["zoneCheckIn (área)", () => runRemote(C.zoneCheckIn(DEMO_IDS.proEvent, id(20003), `ROUGE:PASS:${DEMO_IDS.proEvent}:${ME}`), { ...s0(), current_user_id: DEMO_IDS.security }, { zone_check_in: { status: "zone_denied" } })],
+    ["zoneCheckIn (puerta principal)", () => runRemote(C.zoneCheckIn(EV, null, s0().event_invite_codes[10].code), { ...s0(), current_user_id: DEMO_IDS.security }, { zone_check_in: { status: "ok" } })],
+    ["upsertZone (nueva)", () => runRemote(C.upsertZone(DEMO_IDS.proEvent, { name: "Backstage", kind: "area", allowed_tiers: ["speaker"] }), st())],
+    ["upsertZone (edición)", () => runRemote(C.upsertZone(DEMO_IDS.proEvent, { id: id(20003), name: "Sala VIP", kind: "area", allowed_tiers: ["vip"], is_active: false }), st())],
+    ["deleteZone", () => runRemote(C.deleteZone(DEMO_IDS.proEvent, id(20005)), st())],
     ["deleteEvent", () => { const r = C.duplicateEvent(EV, new Date(NOW + 7 * 86_400_000).toISOString()).local(st()); const s = (r as { state: RougeState; data: { event: { id: string } } }); return runRemote(C.deleteEvent(s.data.event.id), s.state); }],
   ];
 
@@ -261,6 +274,16 @@ describe("contrato comandos ↔ schema.sql", () => {
     expect(C.doorCheckIn(EV, v).local(as(DEMO_IDS.security)).ok).toBe(true);
     expect(C.doorCheckIn(EV, v).local(as(DEMO_IDS.bartender)).ok).toBe(false);
     expect(C.doorCheckIn(EV, v).local(as(DEMO_IDS.promoter)).ok).toBe(false);
+  });
+
+  it("zonas: seguridad escanea pero no configura; la categoría solo la cambia la organización", () => {
+    const as = (u: string) => ({ ...s0(), current_user_id: u });
+    const pass = `ROUGE:PASS:${DEMO_IDS.proEvent}:${ME}`;
+    expect(C.zoneCheckIn(DEMO_IDS.proEvent, id(20003), pass).local(as(DEMO_IDS.security)).ok).toBe(true);
+    expect(C.zoneCheckIn(DEMO_IDS.proEvent, id(20003), pass).local(as(DEMO_IDS.bartender)).ok).toBe(false);
+    expect(C.upsertZone(DEMO_IDS.proEvent, { name: "Backstage", kind: "area", allowed_tiers: [] }).local(as(DEMO_IDS.security)).ok).toBe(false);
+    expect(C.setAttendeeTier(DEMO_IDS.proEvent, ME, "vip").local(as(ME)).ok).toBe(false);
+    expect(C.setAttendeeTier(DEMO_IDS.proEvent, ME, "vip").local(as(DEMO_IDS.manager)).ok).toBe(true);
   });
 
   it("gestión del evento: solo dueño/a o producción; eliminar solo quien lo creó", () => {

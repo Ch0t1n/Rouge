@@ -8,6 +8,7 @@
  * con RLS + funciones RPC (ver supabase/schema.sql).
  */
 import type {
+  AttendeeTier,
   BarMenuItem,
   BarOrder,
   BarOrderItem,
@@ -64,18 +65,23 @@ import { checkEventBranding, normalizeHex } from "./branding";
 import { NOT_PAID, addSpend, initialPaymentStatus, isPayable, spendShares } from "./payments";
 import {
   COMPANY_MAX,
+  DEFAULT_PERSONA_PRIVACY,
   JOB_TITLE_MAX,
   MAX_PERSONAS,
+  NEED_NOTE_MAX,
   NEEDS_MAX,
   NOT_IN_VERTICAL,
   PERSONA_LABEL_MAX,
   checkMoodForEvent,
   checkPersonaForEvent,
   hasFeature,
+  parseContactEmail,
   parseLinkedin,
+  parseWebsite,
+  personaBioMax,
   vertical,
 } from "./verticals";
-import { BUSINESS_NEEDS, EVENT_KINDS, INDUSTRIES } from "@/lib/types";
+import { ATTENDEE_TIERS, BUSINESS_NEEDS, EVENT_KINDS, INDUSTRIES, PERSONA_PRIVACY_LEVELS } from "@/lib/types";
 
 export type Result<T = undefined> = { ok: true; state: RougeState; data: T } | { ok: false; error: string };
 
@@ -283,7 +289,8 @@ export function upsertPersona(state: RougeState, userId: UUID, input: PersonaInp
   if (!display_name) return fail("Ingresá el nombre con el que te van a ver.");
   if (display_name.length > NAME_MAX) return fail(`El nombre tiene un máximo de ${NAME_MAX} caracteres.`);
   const bio = (merged.bio ?? "").trim();
-  if (bio.length > BIO_MAX) return fail(`La bio tiene un máximo de ${BIO_MAX} caracteres.`);
+  const bioMax = personaBioMax(input.kind);
+  if (bio.length > bioMax) return fail(`La bio tiene un máximo de ${bioMax} caracteres.`);
   const photos = merged.photos ?? [];
   if (photos.length > MAX_PHOTOS) return fail(`Máximo ${MAX_PHOTOS} fotos.`);
 
@@ -304,6 +311,12 @@ export function upsertPersona(state: RougeState, userId: UUID, input: PersonaInp
     offering: [],
     linkedin_url: null,
     created_at: existing?.created_at ?? iso(now),
+    website_url: null,
+    looking_for_note: "",
+    offering_note: "",
+    contact_email: null,
+    contact_phone: null,
+    privacy_level: DEFAULT_PERSONA_PRIVACY,
   };
 
   if (input.kind === "corporate") {
@@ -326,7 +339,27 @@ export function upsertPersona(state: RougeState, userId: UUID, input: PersonaInp
       linkedin_url = parseLinkedin(merged.linkedin_url);
       if (!linkedin_url) return fail("Link de LinkedIn inválido (ej. linkedin.com/in/tu-nombre).");
     }
-    persona = { ...persona, job_title, company, industry, looking_for, offering, linkedin_url };
+    let website_url: string | null = null;
+    if (merged.website_url) {
+      website_url = parseWebsite(merged.website_url);
+      if (!website_url) return fail("Sitio web inválido (ej. tuempresa.com).");
+    }
+    const looking_for_note = (merged.looking_for_note ?? "").trim().replace(/\s+/g, " ");
+    const offering_note = (merged.offering_note ?? "").trim().replace(/\s+/g, " ");
+    if (looking_for_note.length > NEED_NOTE_MAX || offering_note.length > NEED_NOTE_MAX) return fail(`El detalle de qué buscás u ofrecés tiene un máximo de ${NEED_NOTE_MAX} caracteres.`);
+    let contact_email: string | null = null;
+    if (merged.contact_email) {
+      contact_email = parseContactEmail(merged.contact_email);
+      if (!contact_email) return fail("Email de contacto inválido.");
+    }
+    let contact_phone: string | null = null;
+    if (merged.contact_phone) {
+      contact_phone = normalizePhone(merged.contact_phone);
+      if (!contact_phone) return fail("Teléfono de contacto inválido.");
+    }
+    const privacy_level = merged.privacy_level ?? DEFAULT_PERSONA_PRIVACY;
+    if (!PERSONA_PRIVACY_LEVELS.some((l) => l.id === privacy_level)) return fail("Nivel de privacidad inválido.");
+    persona = { ...persona, job_title, company, industry, looking_for, offering, linkedin_url, website_url, looking_for_note, offering_note, contact_email, contact_phone, privacy_level };
   } else {
     const genres = merged.music_genres ?? [];
     const err = checkGenres(genres);
@@ -511,6 +544,8 @@ export function joinEvent(
       icebreaker_used: false,
       total_spent: 0,
       joined_via: via,
+      // La categoría de la entrada (VIP, SPEAKER…) viene del código de 1 uso; si no, asistente.
+      tier: inviteCode?.tier ?? "attendee",
       referred_by: promoter && promoter.user_id !== userId && vertical(event.kind).features.promoters ? promoter.user_id : null,
       checked_in_at: null,
       last_active_at: iso(now),
@@ -1496,18 +1531,28 @@ export function revokeApiKey(state: RougeState, userId: UUID, keyId: UUID, now =
   return ok({ ...state, api_keys: state.api_keys.map((k) => (k.id === keyId ? { ...k, revoked_at: k.revoked_at ?? iso(now) } : k)) }, undefined);
 }
 
-export function generateInviteCodes(state: RougeState, eventId: UUID, count: number, now = Date.now()): Result<EventInviteCode[]> {
+export function generateInviteCodes(state: RougeState, eventId: UUID, count: number, now = Date.now(), tier: AttendeeTier | null = null): Result<EventInviteCode[]> {
   if (!getEvent(state, eventId)) return fail("Evento inexistente.");
   if (count < 1 || count > 1000) return fail("Generá entre 1 y 1000 códigos por lote.");
+  if (tier && !ATTENDEE_TIERS.some((t) => t.id === tier)) return fail("Categoría inválida.");
   const taken = new Set(state.event_invite_codes.map((c) => c.code));
   const codes: EventInviteCode[] = [];
   while (codes.length < count) {
     const code = shortCode(ACCESS_CODE_LENGTH);
     if (taken.has(code)) continue;
     taken.add(code);
-    codes.push({ id: uid(), event_id: eventId, code, is_used: false, used_by_user_id: null, used_at: null, external_ref: null, label: null, source: "panel", api_key_id: null, revoked_at: null, checked_in_at: null, created_at: iso(now) });
+    codes.push({ id: uid(), event_id: eventId, code, is_used: false, used_by_user_id: null, used_at: null, external_ref: null, label: null, source: "panel", api_key_id: null, revoked_at: null, checked_in_at: null, tier, created_at: iso(now) });
   }
   return ok({ ...state, event_invite_codes: [...state.event_invite_codes, ...codes] }, codes);
+}
+
+/** Categoría de un asistente (VIP, SPEAKER, PRENSA…). Dueño/a y producción (⇔ RPC set_attendee_tier). */
+export function setAttendeeTier(state: RougeState, eventId: UUID, userId: UUID, tier: AttendeeTier): Result<EventAttendee> {
+  if (!ATTENDEE_TIERS.some((t) => t.id === tier)) return fail("Categoría inválida.");
+  const att = getAttendee(state, eventId, userId);
+  if (!att) return fail("Esa persona no está en este evento.");
+  const next = { ...att, tier };
+  return ok({ ...state, event_attendees: state.event_attendees.map((a) => (a.id === att.id ? next : a)) }, next);
 }
 
 // ═════════════════════════════════════════════════════════════════════

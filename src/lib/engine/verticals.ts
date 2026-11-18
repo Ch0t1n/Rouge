@@ -11,8 +11,9 @@
  * Un perfil de otra vertical nunca se muestra, y si el perfil profesional se borró se muestra una cara neutra
  * (nombre, sin fotos), jamás el Perfil principal de la noche.
  */
-import { BUSINESS_NEEDS, INDUSTRIES, MOOD_TAGS } from "@/lib/types";
-import type { BusinessNeed, EventKind, Industry, MoodTag, Profile, ProfilePersona, RougeEvent, RougeState, UUID } from "@/lib/types";
+import { ATTENDEE_TIERS, BUSINESS_NEEDS, INDUSTRIES, MOOD_TAGS } from "@/lib/types";
+import { isBlockedBetween } from "./selectors";
+import type { AttendeeTier, BusinessNeed, EventKind, Industry, MoodTag, PersonaPrivacyLevel, Profile, ProfilePersona, RougeEvent, RougeState, UUID } from "@/lib/types";
 
 // ── Configuración por vertical ───────────────────────────────────────
 
@@ -145,6 +146,34 @@ export const JOB_TITLE_MAX = 60;
 export const COMPANY_MAX = 60;
 export const NEEDS_MAX = 3;
 export const MAX_PERSONAS = 5;
+/** Bio profesional de la ficha ejecutiva (la de la noche sigue en 160). */
+export const PRO_BIO_MAX = 240;
+/** Detalle libre de "Qué busco" / "Qué ofrezco". */
+export const NEED_NOTE_MAX = 120;
+export const WEBSITE_MAX = 200;
+export const CONTACT_EMAIL_MAX = 120;
+export const DEFAULT_PERSONA_PRIVACY: PersonaPrivacyLevel = "strict";
+
+/** Bio máxima según el tipo de perfil (⇔ check `personas_bio_len_chk`). */
+export const personaBioMax = (kind: EventKind) => (kind === "corporate" ? PRO_BIO_MAX : 160);
+
+/** Sitio web: acepta "empresa.com" o "https://empresa.com/x"; lo guarda con https y el dominio en minúsculas (⇔ check). */
+export function parseWebsite(raw: string): string | null {
+  const v = raw.trim();
+  if (!v || /\s/.test(v)) return null;
+  const m = v.match(/^(?:https?:\/\/)?((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24})(\/[^\s]*)?$/i);
+  if (!m) return null;
+  const url = `https://${m[1].toLowerCase()}${(m[2] ?? "").replace(/\/$/, "")}`;
+  return url.length <= WEBSITE_MAX ? url : null;
+}
+
+/** Email de contacto: minúsculas y formato válido (⇔ check de `profile_personas.contact_email`). */
+export function parseContactEmail(raw: string): string | null {
+  const v = raw.trim().toLowerCase();
+  return v.length <= CONTACT_EMAIL_MAX && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v) ? v : null;
+}
+
+export const tierLabel = (t: AttendeeTier | null | undefined) => ATTENDEE_TIERS.find((x) => x.id === (t ?? "attendee"))?.label ?? "ASISTENTE";
 
 export const industryLabel = (id: Industry | null | undefined) => INDUSTRIES.find((i) => i.id === id)?.label ?? null;
 export const needLabel = (id: BusinessNeed) => BUSINESS_NEEDS.find((n) => n.id === id)?.label ?? id;
@@ -241,26 +270,58 @@ export function proUnlocked(s: RougeState, viewer: UUID, owner: UUID): boolean {
 /**
  * Perfil adicional tal como lo ve `viewer` (⇔ public.persona_cards): sin el nombre interno; LinkedIn solo tras una
  * reunión o contacto aceptado; empresa y cargo ocultos hasta entonces si su dueño/a lo eligió. Dueño/a y producción de
- * un evento donde se usa ese perfil ven todo (CRM).
+ * un evento donde se usa ese perfil ven los datos profesionales (CRM). Email y teléfono de contacto: según
+ * `privacy_level` (`personaContactVisible`), también para la organización.
  */
 export function sanitizePersonaFor(s: RougeState, p: ProfilePersona, viewer: UUID): ProfilePersona {
   if (p.user_id === viewer) return p;
-  const manager = s.event_attendees.some(
-    (a) =>
-      a.persona_id === p.id &&
-      (s.events.find((e) => e.id === a.event_id)?.created_by === viewer ||
-        s.event_staff.some((r) => r.event_id === a.event_id && r.user_id === viewer && (r.role === "owner" || r.role === "manager"))),
-  );
-  if (manager) return { ...p, label: "" };
+  if (managesPersonaEvent(s, p, viewer)) {
+    const contact = personaContactVisible(s, viewer, p);
+    return { ...p, label: "", contact_email: contact ? p.contact_email : null, contact_phone: contact ? p.contact_phone : null };
+  }
   const unlocked = proUnlocked(s, viewer, p.user_id);
   const hide = s.privacy_settings.find((x) => x.user_id === p.user_id)?.pro_details_after_meeting ?? false;
+  const contact = personaContactVisible(s, viewer, p);
   return {
     ...p,
     label: "",
     linkedin_url: unlocked ? p.linkedin_url : null,
     job_title: unlocked || !hide ? p.job_title : "",
     company: unlocked || !hide ? p.company : "",
+    contact_email: contact ? p.contact_email : null,
+    contact_phone: contact ? p.contact_phone : null,
   };
+}
+
+/** ¿Gestiona (dueño/a o producción) un evento donde se usa este perfil? */
+function managesPersonaEvent(s: RougeState, p: ProfilePersona, viewer: UUID) {
+  return s.event_attendees.some(
+    (a) =>
+      a.persona_id === p.id &&
+      (s.events.find((e) => e.id === a.event_id)?.created_by === viewer ||
+        s.event_staff.some((r) => r.event_id === a.event_id && r.user_id === viewer && (r.role === "owner" || r.role === "manager"))),
+  );
+}
+
+/**
+ * ¿`viewer` puede ver el email y el teléfono de contacto de este perfil? (⇔ public.persona_contact_visible)
+ *  - siempre tras una reunión aceptada o un contacto aceptado entre los dos (intercambio aprobado);
+ *  - `network`: además quien asiste a un evento donde se usa este perfil (y puede ver a su dueño/a);
+ *  - `public`: además el equipo y la organización de esos eventos.
+ * Nunca con bloqueo de por medio.
+ */
+export function personaContactVisible(s: RougeState, viewer: UUID, p: ProfilePersona): boolean {
+  if (p.user_id === viewer) return true;
+  if (!p.contact_email && !p.contact_phone) return false;
+  if (isBlockedBetween(s, viewer, p.user_id)) return false;
+  if (proUnlocked(s, viewer, p.user_id)) return true;
+  const level = p.privacy_level ?? DEFAULT_PERSONA_PRIVACY;
+  if (level === "strict") return false;
+  const uses = s.event_attendees.filter((a) => a.persona_id === p.id);
+  const attends = uses.some((a) => s.event_attendees.some((v) => v.event_id === a.event_id && v.user_id === viewer));
+  if (attends) return true;
+  if (level !== "public") return false;
+  return managesPersonaEvent(s, p, viewer) || uses.some((a) => s.event_staff.some((r) => r.event_id === a.event_id && r.user_id === viewer && r.role !== "promoter"));
 }
 
 /** Línea corta de la cara profesional: "Cargo · Empresa". */

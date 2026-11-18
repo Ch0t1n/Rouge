@@ -152,7 +152,33 @@ export interface ProfilePersona {
   offering: BusinessNeed[]; // ≤3
   linkedin_url: string | null;
   created_at: ISODate;
+  // ── Ficha ejecutiva (ROUGE Pro, v1.10) ──
+  /** Sitio web de la persona o su empresa (https, limpio). */
+  website_url: string | null;
+  /** Detalle libre de lo que busca ("Proveedores IT, inversores, talento"). ≤120. */
+  looking_for_note: string;
+  /** Detalle libre de lo que ofrece ("Soluciones de automatización y cloud"). ≤120. */
+  offering_note: string;
+  /** Email de contacto profesional (opcional). Lo ve quien permite `privacy_level` (⇔ persona_cards). */
+  contact_email: string | null;
+  /** Teléfono de contacto profesional, E.164 (opcional; NO es el teléfono de la cuenta, que nunca se muestra). */
+  contact_phone: string | null;
+  /** Quién ve el email y el teléfono de contacto. Por defecto `strict`. */
+  privacy_level: PersonaPrivacyLevel;
 }
+
+/**
+ * Quién ve el email y el teléfono de contacto de un perfil profesional (⇔ `persona_contact_visible` en SQL):
+ *  - `strict`  (por defecto): nadie, hasta aceptar una reunión 1 a 1 o un contacto entre los dos;
+ *  - `network`: además, quienes asisten a un evento donde usás este perfil (el networking del evento);
+ *  - `public`:  además, el equipo y la organización de esos eventos (CRM y exportación).
+ */
+export type PersonaPrivacyLevel = "strict" | "network" | "public";
+export const PERSONA_PRIVACY_LEVELS: { id: PersonaPrivacyLevel; label: string; description: string }[] = [
+  { id: "strict", label: "Estricto", description: "Email y teléfono ocultos hasta aceptar una reunión o un contacto." },
+  { id: "network", label: "Networking", description: "Los ven los asistentes de los eventos donde usás este perfil." },
+  { id: "public", label: "Público", description: "También la organización del evento (CRM)." },
+];
 
 /** Mi cuenta de Instagram conectada (sin token: el token vive solo en el servidor). Supabase: my_instagram(). */
 export interface InstagramLink {
@@ -287,6 +313,8 @@ export interface EventInviteCode {
   revoked_at: ISODate | null;
   /** Escaneado en la puerta (ingreso físico). Distinto de `is_used` (alguien lo usó para entrar a la app). */
   checked_in_at: ISODate | null;
+  /** Categoría de la entrada (v1.10). Al usarla, la asistencia toma esta categoría. null = asistente. */
+  tier: AttendeeTier | null;
   created_at: ISODate;
 }
 
@@ -348,7 +376,51 @@ export interface EventAttendee {
   checked_in_at: ISODate | null;
   /** Lo que ven los demás asistentes: si está acreditado/a, sin la hora (columna generada en SQL). */
   is_checked_in?: boolean;
+  /** Categoría de la entrada: define a qué zonas puede pasar (v1.10). La asigna el organizador o su código. */
+  tier: AttendeeTier;
   joined_at: ISODate;
+}
+
+// ── Categorías y zonas de control (v1.10) ───────────────────────────
+
+/** Categoría (tier) de un asistente. Contraparte SQL: `attendee_tier_t`. */
+export type AttendeeTier = "attendee" | "speaker" | "vip" | "press" | "sponsor";
+export const ATTENDEE_TIERS: { id: AttendeeTier; label: string }[] = [
+  { id: "attendee", label: "ASISTENTE" },
+  { id: "speaker", label: "SPEAKER" },
+  { id: "vip", label: "VIP" },
+  { id: "press", label: "PRENSA" },
+  { id: "sponsor", label: "SPONSOR" },
+];
+
+/**
+ * Zona de control del evento (tabla `event_zones`): una puerta de ingreso (`entrance`, marca la acreditación) o un
+ * área interna (`area`: Sala VIP, Auditorio A, Almuerzo ejecutivo). `allowed_tiers` vacío = pasa cualquier categoría.
+ */
+export interface EventZone {
+  id: UUID;
+  event_id: UUID;
+  name: string;
+  kind: "entrance" | "area";
+  allowed_tiers: AttendeeTier[];
+  sort_order: number;
+  is_active: boolean;
+  created_at: ISODate;
+}
+
+/** Lectura del escáner en una zona (tabla `zone_check_ins`). `zone_id` null = la puerta principal (sin zonas cargadas). */
+export interface ZoneCheckIn {
+  id: UUID;
+  event_id: UUID;
+  zone_id: UUID | null;
+  user_id: UUID | null;
+  code_id: UUID | null;
+  staff_id: UUID | null;
+  status: "granted" | "denied";
+  /** Detalle: ok, already, zone_denied, revoked, banned, not_attendee, other_event, invalid, general_link. */
+  reason: string;
+  tier: AttendeeTier | null;
+  created_at: ISODate;
 }
 
 // ── Privacidad ───────────────────────────────────────────────────────
@@ -685,6 +757,10 @@ export interface RougeState {
   venue_spots: VenueSpot[];
   /** Reuniones (Supabase: solo las mías). */
   meetings: Meeting[];
+  /** Zonas de control de los eventos cargados (puertas y áreas). */
+  event_zones: EventZone[];
+  /** Lecturas del escáner por zona (staff de puerta del evento activo; las más recientes). */
+  zone_check_ins: ZoneCheckIn[];
   /** Cuentas de Instagram conectadas (demo: todas las personas; Supabase: solo la mía). */
   instagram_links: InstagramLink[];
   user_blocks: UserBlock[];

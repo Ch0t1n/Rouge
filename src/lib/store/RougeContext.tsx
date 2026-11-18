@@ -147,6 +147,8 @@ function emptyState(userId: UUID = ""): RougeState {
     privacy_settings: [],
     venue_spots: [],
     meetings: [],
+    event_zones: [],
+    zone_check_ins: [],
     instagram_links: [],
     user_blocks: [],
     events: [],
