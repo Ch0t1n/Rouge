@@ -1,9 +1,10 @@
 /**
  * Métricas B2B para el panel del organizador, CRM y Pantalla LED.
  */
-import type { Gender, RougeState, UUID } from "@/lib/types";
-import { ageFrom } from "@/lib/utils";
+import type { AttendeeTier, Gender, RougeState, UUID } from "@/lib/types";
 import { activePinOf, getEvent, getProfile, lineupNow, squadMembers, squadOf, topSongs } from "./selectors";
+import { faceOf, industryLabel, needLabel } from "./verticals";
+import { ageOf } from "./privacy";
 
 export type SmartTag = "top_spender" | "squad_leader" | "power_matcher";
 
@@ -24,6 +25,19 @@ export interface CrmRow {
   age: number;
   gender: Gender;
   music_genres: string[];
+  /** Corporativo (perfil profesional con el que entró): datos para el seguimiento comercial del organizador. */
+  company: string;
+  job_title: string;
+  industry: string | null;
+  looking_for: string[];
+  offering: string[];
+  linkedin_url: string | null;
+  /** Ficha ejecutiva: sitio y contacto que su dueño/a deja ver a la organización (privacy_level "public"). */
+  website_url: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  /** Categoría de la entrada (VIP, SPEAKER…). */
+  tier: AttendeeTier;
   mood: string | null;
   squad_size: number;
   matches: number;
@@ -40,8 +54,10 @@ export function crmRows(s: RougeState, eventId: UUID): CrmRow[] {
 
   return attendees
     .map((a): CrmRow | null => {
-      const p = getProfile(s, a.user_id);
+      // La cara del evento: en corporativo, nombre y datos del perfil profesional (nunca los de la noche).
+      const p = faceOf(s, a.user_id, eventId);
       if (!p) return null;
+      const pro = p.persona?.kind === "corporate" ? p.persona : null;
       const sq = squadOf(s, eventId, a.user_id);
       const size = sq ? squadMembers(s, sq.squad.id).length : 0;
       const matches = statsFor(s, eventId)?.matches_by_user[a.user_id] ??
@@ -56,9 +72,19 @@ export function crmRows(s: RougeState, eventId: UUID): CrmRow[] {
         full_name: p.full_name,
         username: p.username,
         phone: p.phone_normalized,
-        age: ageFrom(p.birth_date),
+        age: ageOf(p) ?? 0,
         gender: p.gender,
         music_genres: p.music_genres,
+        company: pro?.company ?? "",
+        job_title: pro?.job_title ?? "",
+        industry: industryLabel(pro?.industry),
+        looking_for: (pro?.looking_for ?? []).map(needLabel),
+        offering: (pro?.offering ?? []).map(needLabel),
+        linkedin_url: pro?.linkedin_url ?? null,
+        website_url: pro?.website_url ?? null,
+        contact_email: pro?.contact_email ?? null,
+        contact_phone: pro?.contact_phone ?? null,
+        tier: a.tier ?? "attendee",
         mood: a.mood_tag,
         squad_size: size,
         matches,
@@ -94,7 +120,8 @@ export function eventMetrics(s: RougeState, eventId: UUID, now = Date.now()) {
     squads: squads.length,
     usersInSquads: attendees.filter((a) => squadOf(s, eventId, a.user_id)).length,
     biggestSquad: biggest ? { name: biggest.squad.name, size: biggest.size } : null,
-    activePins: attendees.filter((a) => activePinOf(s, eventId, a.user_id, now)).length,
+    // En Supabase el equipo no ve los pines (privacidad): el conteo viene de event_stats.
+    activePins: statsFor(s, eventId)?.active_pins ?? attendees.filter((a) => activePinOf(s, eventId, a.user_id, now)).length,
     rescueAlerts: s.squad_members.filter((m) => m.safety_status === "rescue_needed" && squads.some((sq) => sq.id === m.squad_id)).length,
     barRevenue: orders.reduce((acc, o) => acc + o.total_amount, 0),
     openOrders: orders.filter((o) => o.status !== "completed").length,

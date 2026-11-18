@@ -9,6 +9,7 @@ import { NO_PERMISSION, permissionForPath, ROLE_META, roleHome } from "@/lib/eng
 import { getProfile } from "@/lib/engine/selectors";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
+import { hasFeature } from "@/lib/engine/verticals";
 
 export const ADMIN_NAV = [
   { href: "/admin", label: "Resumen", icon: BarChart3 },
@@ -31,7 +32,8 @@ export function AdminChrome({ children }: { children: ReactNode }) {
   const perm = permissionForPath(pathname);
   // Crear un evento nuevo está abierto a cualquiera con sesión (queda como dueño/a); el resto exige su permiso.
   const allowed = signedIn && (!perm || can(perm) || pathname === "/admin/events");
-  const nav = ADMIN_NAV.filter((n) => can(permissionForPath(n.href)!));
+  // RRPP es solo de la noche: en eventos corporativos (ROUGE Pro) no aparece.
+  const nav = ADMIN_NAV.filter((n) => can(permissionForPath(n.href)!) && (n.href !== "/admin/rrpp" || hasFeature(state, state.active_event_id, "promoters")));
   const me = getProfile(state, state.current_user_id);
   const meta = ROLE_META[role];
 
@@ -50,6 +52,7 @@ export function AdminChrome({ children }: { children: ReactNode }) {
       >
         {state.events.map((e) => (
           <option key={e.id} value={e.id} className="bg-surface">
+            {e.kind === "corporate" ? "💼 " : "🌙 "}
             {e.name}
           </option>
         ))}

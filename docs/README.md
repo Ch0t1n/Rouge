@@ -10,6 +10,7 @@
 | [Guía para asistentes](producto/guia-asistentes.md) | Público / soporte: cómo se usa y preguntas frecuentes. |
 | [Guía para organizadores y equipo](producto/guia-equipo.md) | Dueños, producción, barra, mozos y seguridad: preparar y operar la noche. |
 | [Demo comercial y Modo Demo](producto/demo-comercial.md) | Ventas y redes: guion de 7 minutos, personas del demo, material. |
+| [Estrategia corporativa (ROUGE Pro)](producto/estrategia-corporativa.md) | Una marca para noche y eventos corporativos: debate, decisiones, perfiles múltiples y plan de validación con pymes. |
 
 ## Técnica
 

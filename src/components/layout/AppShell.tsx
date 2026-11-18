@@ -22,7 +22,8 @@ import { cn } from "@/lib/utils";
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? "/";
   // "/" (público) y "/organizadores" (oculto, para dueños y productoras): misma landing a ancho completo.
-  const landing = pathname === "/" || pathname === "/organizadores";
+  // "/pro": ROUGE PRO, la vertical corporativa (pública, a ancho completo, sin evento ni sesión).
+  const landing = pathname === "/" || pathname === "/organizadores" || pathname === "/pro";
   // /demo: página para anfitriones (guion + modo presentador), a ancho completo y pública.
   const demoPage = pathname === "/demo" || pathname.startsWith("/demo/");
   const expanded = landing || demoPage || pathname.startsWith("/admin");

@@ -20,6 +20,7 @@ import type { RougeState, UUID } from "@/lib/types";
 import type { Result } from "@/lib/engine/actions";
 import * as A from "@/lib/engine/actions";
 import { lobbyPhase } from "@/lib/engine/selectors";
+import { syncDemoMenu } from "@/lib/engine/eventAdmin";
 import { BAR_MENU, createSeedState, STATE_VERSION } from "@/lib/mock/seed";
 import { getSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import { friendlyError } from "@/lib/supabase/errors";
@@ -142,6 +143,12 @@ function emptyState(userId: UUID = ""): RougeState {
     current_user_id: userId,
     active_event_id: "",
     profiles: [],
+    profile_personas: [],
+    privacy_settings: [],
+    venue_spots: [],
+    meetings: [],
+    event_zones: [],
+    zone_check_ins: [],
     instagram_links: [],
     user_blocks: [],
     events: [],
@@ -181,7 +188,9 @@ export function RougeProvider({ children }: { children: ReactNode }) {
   const userRef = useRef<UUID | null>(null);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const commit = useCallback((s: RougeState) => {
+  const commit = useCallback((raw: RougeState) => {
+    // Demo: el menú de la barra sigue al evento activo (en Supabase no hace nada).
+    const s = syncDemoMenu(raw);
     stateRef.current = s;
     setState(s);
   }, []);

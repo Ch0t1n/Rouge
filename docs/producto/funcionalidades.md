@@ -23,7 +23,10 @@ Cada función existe en los dos modos de la app:
 [18. Demo en vivo](#18-demo-en-vivo-para-anfitriones) · [19. Marca y personalización](#19-marca-y-personalización) ·
 [20. Cobros con Mercado Pago](#20-cobros-con-mercado-pago) · [21. Cuentas de la mesa](#21-cuentas-de-la-mesa) ·
 [22. Gestión del evento](#22-gestión-del-evento) · [23. Ticket de comanda](#23-ticket-de-comanda) ·
-[24. RRPP](#24-rrpp) · [25. Puerta](#25-puerta) · [26. Sitio público y de organizadores](#26-sitio-público-y-de-organizadores)
+[24. RRPP](#24-rrpp) · [25. Puerta](#25-puerta) · [26. Sitio público y de organizadores](#26-sitio-público-y-de-organizadores) ·
+[27. Noche y corporativo (ROUGE Pro) · perfiles múltiples](#27-noche-y-corporativo-rouge-pro--perfiles-múltiples) ·
+[28. Privacidad por contexto](#28-privacidad-por-contexto) · [29. Reuniones y puntos de encuentro](#29-reuniones-y-puntos-de-encuentro) ·
+[30. ROUGE PRO (/pro)](#30-rouge-pro-pro)
 
 ---
 
@@ -339,3 +342,110 @@ cliente y para la barra. Es un comprobante interno: la factura la emite cada com
 - **`/organizadores`** — para dueños de boliches y productoras: barra y cobros, panel, CRM, Text Blasts, LED, RRPP,
   puerta, planes y preguntas de negocio. **Oculto:** no aparece en buscadores ni se enlaza desde `/`; se comparte por
   link junto con la [demo](#18-demo-en-vivo-para-anfitriones).
+
+## 27. Noche y corporativo (ROUGE Pro) · perfiles múltiples
+
+Un mismo ROUGE para fiestas y boliches y para eventos de empresas, pymes y networking. Estrategia y plan de validación:
+[estrategia corporativa](estrategia-corporativa.md).
+
+- **Tipo de evento** (*Eventos y accesos → Tipo de evento*): 🌙 Noche · ROUGE o 💼 Corporativo · ROUGE Pro. No cambia
+  una vez que entró alguien. En el selector del panel cada evento muestra su tipo.
+- **Una cuenta, varios perfiles** (*Mi perfil → Mis perfiles*, `/profile/personas`): el Perfil principal (noche) y hasta
+  5 perfiles más. Un perfil **profesional** tiene foto propia, cargo, empresa, rubro, hasta 3 cosas que busca y 3 que
+  ofrece, LinkedIn y una frase. Uno **de noche** tiene fotos, géneros y Spotify propios.
+- **Al entrar** a un evento se elige con qué perfil mostrarse (en corporativo, solo los profesionales: si no hay
+  ninguno, se crea en el momento) y después el mood de esa vertical. En el lobby, "Te ven con…" permite cambiarlo.
+- **Cada evento muestra solo la cara elegida:** grilla, perfil, bandeja, chats, plano, Equipo, CRM y LED. En
+  corporativo nunca aparece el perfil de la noche, ni siquiera si el profesional se borró (queda una cara neutra).
+  Los contactos se ven con la cara del evento donde se conocieron.
+- **Networking corporativo:** la grilla ordena por **afinidad de negocio** (lo que buscás cruzado con lo que ofrecen,
+  más el rubro: "% 🤝") y filtra por lo que ofrecen. Moods: networking, busco clientes / proveedores / socios /
+  inversión, contratando, aprender, coffee break.
+- **Vocabulario corporativo:** Networking, Contacto, Presentación (1 por evento), Equipo, Agenda, Barra y catering,
+  Modo Solo Contactos.
+- **Se apaga en corporativo:** trago de regalo, pedir temas, sorteo por género, RRPP, y edad, Instagram y loop en la
+  cara pública. **[v1.10]** Tampoco hay Rescate ni "Llegué a casa", y los equipos los arma la organización (ver §31). Lo
+  demás (plano, Equipo con chat y punto de encuentro, barra, perks, sorteos, avisos, LED, puerta, API) funciona igual.
+- **CRM corporativo:** empresa, cargo, rubro, busca / ofrece y LinkedIn, también en el CSV.
+- **Demo:** el *Encuentro Pyme Conecta* (`/join/PYME26`) está en vivo junto a la fiesta, con 10 perfiles profesionales.
+
+## 28. Privacidad por contexto
+
+- **Nadie lee el perfil de otra persona "por la base":** solo tarjetas saneadas según lo que comparten. Con su Perfil
+  principal en una fiesta en común se ve el perfil de la noche con la **edad** (nunca la fecha de nacimiento); si solo
+  comparten un evento corporativo, un equipo o un contacto, solo el nombre. Sin contexto o con bloqueo, nada ("no disponible").
+- **Nunca se muestran** a otros asistentes: teléfono, email, fecha de nacimiento, historial de eventos, gasto, cómo entró,
+  hora de ingreso ni los sectores donde estuvo (solo las zonas en común para "Coincidieron en tu zona").
+- **Ajustes** (*Mi perfil → Privacidad*): entrar siempre en **modo incógnito** (fuera de la grilla, con entrada, barra y
+  Squad funcionando), **ubicación solo para mi Squad** y **empresa y cargo solo después de una reunión** (el LinkedIn
+  siempre queda oculto hasta una reunión o contacto aceptado). Incógnito también por evento.
+- **El equipo del evento** ve solo las alertas de rescate en el plano (no los pines de la gente) y conteos agregados.
+- **Networking solo para acreditados** (*Eventos y accesos*): la grilla, Conectar, Rompehielos y reuniones solo entre
+  quienes ya pasaron por la puerta.
+
+## 29. Reuniones y puntos de encuentro
+
+- **Solicitar reunión** (corporativo, a cualquiera visible) o **Punto de encuentro** (noche, solo con matches) desde el
+  perfil: motivo (140), duración 15 o 30 min, horario en franjas dentro del evento ("Ahora" si está en curso) y lugar:
+  **sala / mesa / punto** del organizador (con disponibilidad), **pin en el plano** o **a definir al aceptar**.
+- **Mis reuniones** (`/meetings`): Para responder, Próximas, Enviadas e Historial. Estados: Pendiente, Aceptada,
+  Reprogramada, Rechazada, Cancelada y Completada (aceptada y terminada). Aceptar, rechazar, **proponer otro horario**
+  (responde la otra persona) o cancelar.
+- **Al aceptar** se abre el chat (contacto aceptado) con la reunión fijada arriba, y el lugar aparece en el plano
+  (`/map?meeting=<id>`). El modal avisa antes de enviar si el horario choca con tu agenda.
+- **Salas con cupo:** el organizador carga salas, mesas y puntos (*Eventos y accesos → Salas, mesas y puntos de
+  encuentro*), con cupo y ubicación en el plano. El servidor no deja reservar la misma sala dos veces ni superponer la
+  agenda de nadie. Un lugar con reuniones se desactiva en vez de borrarse.
+- Avisos en vivo: pedido nuevo, propuesta de cambio, confirmación, rechazo y cancelación. Máx. 10 pedidos sin respuesta.
+
+## 31. Ficha ejecutiva, pase con vCard y control multi-zona (ROUGE Pro)
+
+- **Ficha ejecutiva:** en un evento corporativo, tu perfil y el de los demás se ven como una ficha formal: foto
+  profesional, nombre, cargo, empresa, rubro, bio profesional (240 caracteres), **Qué busco / Qué ofrezco** (opciones y
+  un detalle en tus palabras), LinkedIn y sitio web. Nada de fotos de fiesta, loop, música, edad, Instagram, Squad ni
+  Rescate. Desde la ficha de otra persona: conectar, pedir reunión y **Guardar contacto (.vcf)**.
+- **Primera vez en un evento corporativo:** si no tenés perfil profesional, al entrar se abre un panel rápido para
+  crearlo ahí mismo. Después lo editás desde *Mi perfil → Editar ficha* o *Revisar mi ficha* al entrar.
+- **Email y teléfono de contacto (opcionales)** con tres niveles: **Estricto** (por defecto: solo después de aceptar
+  una reunión o un contacto), **Networking** (también quienes asisten al evento) y **Público** (también la organización,
+  en el CRM). No es el teléfono de tu cuenta, que nunca se muestra.
+- **Mi pase:** QR de acceso con tu **categoría** (ASISTENTE, SPEAKER, VIP, PRENSA, SPONSOR) y las zonas a las que podés
+  pasar. Con el switch **QR Tarjeta personal (vCard)**, otra persona te escanea con la cámara y te guarda en sus
+  contactos; **Guardar contacto (.vcf)** descarga o comparte tu tarjeta. Elegís si incluye email y teléfono; la nota
+  dice "NETWORKING: Conocido en <evento>".
+- **QR de acceso rotativo** (opcional por evento, en *Eventos y accesos*): el pase cambia cada 30 segundos y lo firma
+  el servidor, así que una captura de pantalla no sirve para entrar ni para pasar a una zona ("Pase vencido"). Necesita
+  señal en el celular de quien entra; las entradas de 1 uso de la ticketera siguen sirviendo.
+- **Categorías:** vienen con el código de la entrada (lotes por categoría en *Eventos y accesos*) y la organización las
+  cambia desde el CRM.
+- **Sin Rescate en corporativo:** el Botón de Rescate, "Ya estoy bien" y "Llegué a casa" no aparecen (ni en el Equipo
+  ni en el plano) y el servidor los rechaza. En la noche siguen igual.
+- **Equipos que arma la organización:** en un evento corporativo los asistentes no crean equipos ni invitan. La
+  organización los arma en *Eventos y accesos → Equipos del evento*: crea el equipo, suma personas (si estaban en otro,
+  se mueven), las quita, lo borra o comparte su link con QR para que se sumen solas. Cada equipo tiene su chat y su
+  punto de encuentro en el plano.
+- **Zonas de control:** la organización carga puertas (acreditan el ingreso) y áreas (Sala VIP, Auditorio A,
+  Almuerzo ejecutivo) con sus categorías habilitadas, en *Puerta → Zonas de control*. Quien controla elige primero la
+  **Zona de control activa**; al escanear ve **verde** (permitido, con nombre, empresa y categoría) o **rojo** (motivo,
+  p. ej. "Requiere VIP / SPEAKER"). Cada lectura queda registrada con zona, hora, personal y resultado. Sin zonas, la
+  puerta funciona como siempre.
+
+## 30. ROUGE PRO (/pro)
+
+- **`/pro`** es la página de la vertical corporativa (congresos, ferias, eventos internos, coworks), con identidad
+  ejecutiva propia (navy, alabaster, cobalto y dorado; Inter y JetBrains Mono) y sin los colores de la noche. Pública e
+  indexable; `/empresas` redirige acá. Se llega desde el **switch Nightlife ⇄ PRO** del header de `/`.
+- **Organizadores y asistentes, separados:** después del hero, "Dos experiencias, una sola plataforma" divide las dos
+  audiencias y cada bloque va rotulado:
+  - **Para quien organiza:** acreditación y control de acceso, centro de comando y analítica, leads para sponsors,
+    comunicaciones segmentadas, equipo con permisos por rol; escáner de la puerta y **simulador** del panel (embudo
+    invitados → confirmados → acreditados, reuniones y ocupación de salas por momento del evento, export CSV).
+  - **Para quien asiste:** saben con quién hablar, reuniones 1 a 1 con sala o pin (tablero de salas sin doble reserva),
+    mapa del predio, perfil profesional en 1 minuto, agenda en vivo y control de sus datos.
+  - **Seguridad y privacidad:** qué ve otro asistente antes y después de una reunión (asistentes) y permisos por rol (equipo).
+- **Casos de uso** en pestañas (congresos y cumbres, ferias, eventos internos y offsites, coworks), navegables con flechas.
+- **Demo ejecutiva:** "Solicitar Demo" abre un modal (Escape para cerrar) y la sección final tiene el formulario: nombre,
+  empresa, cargo, tipo de evento, asistentes, email y WhatsApp → `POST /api/leads` (validación, honeypot, límite por IP,
+  `b2b_leads` y aviso al equipo comercial por `LEADS_WEBHOOK_URL`).
+- Lo que todavía no existe (SMS/WhatsApp masivos, Q&A de oradores, auditoría, reporte PDF, mapa de calor por stand, pases
+  recurrentes) se muestra como **Próximamente**; los números de la maqueta y del simulador dicen "datos de ejemplo".

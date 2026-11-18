@@ -4,14 +4,19 @@ import * as C from "@/lib/store/commands";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { CalendarClock, DoorOpen, Lock, MapPin, Ticket, Users, UsersRound } from "lucide-react";
-import type { EventAttendee, MoodTag, Profile, RougeEvent } from "@/lib/types";
+import { Briefcase, CalendarClock, Check, DoorOpen, Lock, MapPin, PencilLine, Plus, Ticket, Users, UsersRound } from "lucide-react";
+import type { EventAttendee, MoodTag, Profile, ProfilePersona, RougeEvent, UUID } from "@/lib/types";
+import { CorporateProfileSheet } from "@/components/pro/CorporateProfileSheet";
+import { personaChoicesFor, proHeadline, vertical, type PersonaChoice } from "@/lib/engine/verticals";
 import { resolveAccessCode } from "@/lib/engine/actions";
 import { getSupabase } from "@/lib/supabase/client";
 import { getAttendee, getProfile, lobbyPhase, squadMembers } from "@/lib/engine/selectors";
 import { useNow, useRouge } from "@/lib/store/RougeContext";
 import { cn, formatDateTime, formatTime } from "@/lib/utils";
 import { MoodPicker } from "@/components/event/MoodPicker";
+import { moodKind } from "@/lib/engine/verticals";
+
+const moodsKind = (m: MoodTag) => moodKind(m);
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -20,7 +25,7 @@ import { eventTheme, resolveTheme, type EventTheme } from "@/lib/engine/branding
 import type { Brand } from "@/lib/types";
 
 interface Preview {
-  event: Pick<RougeEvent, "id" | "name" | "description" | "venue_name" | "starts_at" | "ends_at" | "lineup_json" | "lobby_opens_at" | "lobby_expires_at" | "max_capacity">;
+  event: Pick<RougeEvent, "id" | "kind" | "name" | "description" | "venue_name" | "starts_at" | "ends_at" | "lineup_json" | "lobby_opens_at" | "lobby_expires_at" | "max_capacity">;
   via: EventAttendee["joined_via"];
   attendees: number;
   codeUsedByOther: boolean;
@@ -75,7 +80,7 @@ export default function JoinPage() {
       setRemote({
         code,
         preview: d
-          ? { event: d.event, via: d.via, attendees: d.attendees, codeUsedByOther: d.code_used_by_other, squad: d.squad ? { name: d.squad.name, members: d.squad.members, creatorFirstName: d.squad.creator_first_name ?? undefined } : undefined, fromServer: true, theme: resolveTheme(d.event, d.brand) }
+          ? { event: { ...d.event, kind: d.event.kind ?? "nightlife" }, via: d.via, attendees: d.attendees, codeUsedByOther: d.code_used_by_other, squad: d.squad ? { name: d.squad.name, members: d.squad.members, creatorFirstName: d.squad.creator_first_name ?? undefined } : undefined, fromServer: true, theme: resolveTheme(d.event, d.brand) }
           : null,
       });
     });
@@ -88,8 +93,27 @@ export default function JoinPage() {
   // Demo: si no se resuelve en local, es inválido. Supabase: undefined = esperando al servidor.
   const preview = localPreview ?? (mode === "demo" ? null : remote?.code === code ? remote.preview : undefined);
   const existing = preview ? getAttendee(state, preview.event.id, state.current_user_id) : undefined;
+  const kind = preview?.event.kind ?? "nightlife";
+  const v = vertical(kind);
+  const choices = personaChoicesFor(state, state.current_user_id, kind);
+  // Mood de otra vertical no sirve (p. ej. un mood viejo): se vuelve a elegir.
   const [mood, setMood] = useState<MoodTag | null>(existing?.mood_tag ?? null);
+  const [personaPick, setPersonaPick] = useState<UUID | null | undefined>(existing ? existing.persona_id : undefined);
+  // Sin elección explícita: el que ya usaba, si no el primero disponible (Perfil principal en la noche).
+  const persona: PersonaChoice | undefined =
+    personaPick !== undefined ? (choices.find((c) => (c?.id ?? null) === personaPick) ?? choices[0]) : choices[0];
   useBrandTheme(preview?.theme.custom ? preview.theme : null);
+  // ROUGE Pro: la primera vez que entrás a un evento corporativo sin ficha ejecutiva, se abre el panel rápido para
+  // crearla acá mismo (sin salir del ingreso). "new" = crear; una persona = editarla.
+  const [proSheet, setProSheet] = useState<"new" | ProfilePersona | null>(null);
+  const [autoOpened, setAutoOpened] = useState(false);
+  const needsPro = kind === "corporate" && !!me && choices.length === 0;
+  useEffect(() => {
+    if (needsPro && !autoOpened) {
+      setAutoOpened(true);
+      setProSheet("new");
+    }
+  }, [needsPro, autoOpened]);
 
   if (preview === undefined) {
     return (
@@ -135,21 +159,23 @@ export default function JoinPage() {
             ? "El evento alcanzó su cupo máximo en la app."
             : null;
 
+  const moodOk = !!mood && v.kind === (moodsKind(mood) ?? "nightlife");
   const enter = async () => {
-    if (!mood) return;
-    const r = await exec(C.joinEvent(state.current_user_id, code, mood, preview.fromServer ? event.id : undefined));
+    if (!mood || !moodOk || persona === undefined) return;
+    const r = await exec(C.joinEvent(state.current_user_id, code, mood, preview.fromServer ? event.id : undefined, persona?.id ?? null));
     if (!r.ok) return;
     setActiveEvent(r.data.eventId);
     notify({
       tone: "rouge",
-      title: existing ? "Mood actualizado ✓" : `🔥 Entraste a ${event.name}`,
-      description: via === "squad_link" && squad ? `Y te sumaste al Squad ${squad.name}.` : "Ya aparecés en la grilla de asistentes.",
+      title: existing ? "Listo, actualizado ✓" : `${v.kind === "corporate" ? "🤝" : "🔥"} Entraste a ${event.name}`,
+      description: via === "squad_link" && squad ? `Y te sumaste al ${v.copy.squad} ${squad.name}.` : "Ya aparecés en la grilla de asistentes.",
     });
     router.push("/lobby");
   };
+  const createProHref = `/profile/personas/edit?kind=${kind}&next=${encodeURIComponent(`/join/${code}`)}`;
 
   return (
-    <Shell>
+    <Shell pro={kind === "corporate"}>
       {/* Hero del evento */}
       <section className="relative overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-br from-rouge/30 via-surface to-squad/15 p-5">
         <div aria-hidden className="absolute -right-12 -top-12 size-44 rounded-full bg-rouge/35 blur-3xl" />
@@ -157,8 +183,9 @@ export default function JoinPage() {
           {preview.theme.logo_url && <BrandLogo theme={preview.theme} className="mb-4 h-12 max-w-[200px]" />}
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={via === "single_use_code" ? "vip" : via === "squad_link" ? "squad" : "rouge"} size="md">
-              {via === "single_use_code" ? "🎟️ Entrada única" : via === "squad_link" ? "👯 Invitación de Squad" : "🔗 Link del evento"}
+              {via === "single_use_code" ? "🎟️ Entrada única" : via === "squad_link" ? `👯 Invitación de ${v.copy.squad}` : "🔗 Link del evento"}
             </Badge>
+            {kind === "corporate" && <Badge tone="squad" size="md">💼 {v.copy.brand}</Badge>}
             {phase === "live" && <Badge tone="live" size="md">En vivo</Badge>}
           </div>
           <h1 className="mt-3 text-[30px] leading-[1.05]">{event.name}</h1>
@@ -193,7 +220,7 @@ export default function JoinPage() {
             </p>
             <p className="text-xs text-muted">
               <UsersRound className="mr-1 inline size-3.5" />
-              {squad.members} en el Squad · se ven en el plano y se cuidan entre sí
+              {squad.members} en el {v.copy.squad} · se ven en el plano y se cuidan entre sí
             </p>
           </div>
         </section>
@@ -206,40 +233,112 @@ export default function JoinPage() {
         </div>
       ) : mode === "supabase" && !signedIn ? (
         <div className="space-y-3 text-center">
-          <p className="text-sm text-muted">Ingresá con tu email para entrar al lobby. Tu perfil sirve para todas tus fiestas.</p>
+          <p className="text-sm text-muted">Ingresá con tu email para entrar. Con una sola cuenta elegís con qué perfil mostrarte en cada evento.</p>
           <Link href={`/login?next=${encodeURIComponent(`/join/${code}`)}`} className={buttonVariants({ size: "lg", block: true })}>
             Ingresar y entrar
           </Link>
         </div>
       ) : !me ? (
         <div className="space-y-3 text-center">
-          <p className="text-sm text-muted">Creá tu perfil una sola vez y usalo en todas tus fiestas.</p>
+          <p className="text-sm text-muted">{kind === "corporate" ? "Creá tu cuenta y después tu perfil profesional para este evento." : "Creá tu perfil una sola vez y usalo en todas tus fiestas."}</p>
           <Link href={`/onboarding?next=${encodeURIComponent(`/join/${code}`)}`} className={buttonVariants({ size: "lg", block: true })}>
             Crear mi perfil y entrar
           </Link>
         </div>
       ) : (
         <section className="space-y-4">
-          <div>
-            <h2 className="text-lg">{existing ? "Ya estás adentro · ¿cambió tu mood?" : `${me.full_name.split(" ")[0]}, ¿cómo venís hoy?`}</h2>
-            <p className="text-sm text-muted">Tu perfil ya está listo. Solo elegí tu Mood de la noche.</p>
+          {/* 1. Con qué perfil mostrarse (una cuenta, varias caras) */}
+          <div className="space-y-2">
+            <div>
+              <h2 className="text-lg">{existing ? "Ya estás adentro · ¿con qué perfil te ven?" : "¿Con qué perfil te mostrás?"}</h2>
+              <p className="text-sm text-muted">
+                {kind === "corporate"
+                  ? "En este evento te ven solo con tu perfil profesional: nunca con el de la noche."
+                  : "Elegí cuál ven los demás en esta fiesta. Lo podés cambiar cuando quieras."}
+              </p>
+            </div>
+            {choices.length === 0 ? (
+              <button type="button" onClick={() => setProSheet("new")} className="flex w-full items-center gap-3 rounded-2xl border border-dashed border-pro-sapphire/60 bg-pro-slate p-4 text-left" data-testid="create-corporate-profile">
+                <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-pro-sapphire/20 text-white">
+                  <Briefcase className="size-5" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block font-semibold text-white">Crear mi ficha ejecutiva</span>
+                  <span className="block text-xs text-pro-mist">Cargo, empresa y qué buscás u ofrecés. Te toma 1 minuto.</span>
+                </span>
+                <Plus className="size-5 text-white" />
+              </button>
+            ) : (
+              <div className="space-y-2" role="radiogroup" aria-label="Perfil para este evento">
+                {choices.map((c) => {
+                  const on = (c?.id ?? null) === (persona?.id ?? null);
+                  return (
+                    <button
+                      key={c?.id ?? "main"}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      onClick={() => setPersonaPick(c?.id ?? null)}
+                      className={cn("flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition", on ? "border-rouge bg-rouge/10" : "border-white/10 bg-white/[0.03]")}
+                    >
+                      <Avatar profile={c ? { ...me, full_name: c.display_name, photos: c.photos } : me} size={44} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-semibold">{c ? c.label : "Perfil principal"}</span>
+                        <span className="block truncate text-xs text-muted">{c ? (c.kind === "corporate" ? proHeadline(c) : c.music_genres.join(" · ") || c.display_name) : `@${me.username}`}</span>
+                      </span>
+                      {on && <Check className="size-5 shrink-0 text-rouge" />}
+                    </button>
+                  );
+                })}
+                <div className="flex flex-wrap items-center gap-x-4">
+                  {kind === "corporate" && persona && (
+                    <button type="button" onClick={() => setProSheet(persona)} className="inline-flex min-h-touch items-center gap-1.5 px-1 text-sm text-primary/90 hover:text-primary">
+                      <PencilLine className="size-4" /> Revisar mi ficha
+                    </button>
+                  )}
+                  <Link href={createProHref} className="inline-flex min-h-touch items-center gap-1.5 px-1 text-sm text-muted hover:text-primary">
+                    <Plus className="size-4" /> Crear otro perfil {kind === "corporate" ? "profesional" : "para la noche"}
+                  </Link>
+                </div>
+              </div>
+            )}
           </div>
-          <MoodPicker value={mood} onChange={setMood} />
-          <Button block size="lg" disabled={!mood} onClick={enter}>
-            <DoorOpen /> {existing ? "Volver al lobby" : "Entrar a la fiesta"}
-          </Button>
+
+          {/* 2. Mood / a qué viene */}
+          {choices.length > 0 && (
+            <>
+              <div>
+                <h2 className="text-lg">{existing ? `¿Cambió tu ${kind === "corporate" ? "objetivo" : "mood"}?` : v.copy.moodQuestion(me.full_name.split(" ")[0])}</h2>
+                <p className="text-sm text-muted">{v.copy.moodTitle}: se ve en tu tarjeta y ajusta a quién te recomendamos.</p>
+              </div>
+              <MoodPicker kind={kind} value={moodOk ? mood : null} onChange={setMood} />
+              <Button block size="lg" disabled={!moodOk || persona === undefined} onClick={enter}>
+                <DoorOpen /> {existing ? "Volver al lobby" : v.copy.enterCta}
+              </Button>
+            </>
+          )}
           {via === "single_use_code" && !existing && <p className="text-center text-xs text-muted">Este código es personal: queda asociado a tu perfil al entrar.</p>}
         </section>
+      )}
+      {proSheet && (
+        <CorporateProfileSheet
+          key={proSheet === "new" ? "new" : proSheet.id}
+          open
+          onClose={() => setProSheet(null)}
+          persona={proSheet === "new" ? null : proSheet}
+          title={proSheet === "new" ? `Tu ficha para ${event.name}` : undefined}
+          onSaved={(p) => setPersonaPick(p.id)}
+        />
       )}
     </Shell>
   );
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+function Shell({ children, pro }: { children: React.ReactNode; pro?: boolean }) {
   return (
     <main className="safe-top space-y-5 px-4 pb-10 pt-4">
       <Link href="/" className="font-display text-2xl font-bold tracking-tight text-rouge text-glow-rouge">
-        ROUGE
+        ROUGE{pro && <span className="ml-1.5 align-middle font-sans text-sm font-semibold uppercase tracking-[0.2em] text-primary/80">Pro</span>}
       </Link>
       {children}
     </main>

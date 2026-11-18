@@ -15,9 +15,15 @@ Este documento resume qué se guarda, quién lo ve y cómo se protege.
 
 | Dato | El propio usuario | Otros asistentes | Barra / Mozo / Seguridad | Dueño/a y Producción |
 |---|---|---|---|---|
-| Nombre, @, fotos, bio, música, Instagram | ✔ | ✔ (salvo bloqueo) | ✔ | ✔ |
-| Teléfono | ✔ | ✘ (privilegios por columna) | ✘ | ✔ vía `event_crm` |
-| Pin en el plano | ✔ | Solo su Squad y los matches que eligió | Todos los del evento | Todos los del evento |
+| Perfil principal (@, fotos, bio, música, Instagram, **edad**) | ✔ | **[v1.8]** Solo si comparten un evento de noche donde se mostró con él (`profile_cards` nivel "full"); si no, solo el nombre o nada | Nombre (y el perfil del evento) | ✔ en su evento |
+| Fecha de nacimiento | ✔ | ✘ (solo la edad, calculada en el servidor) | ✘ | ✘ (edad en el CRM) |
+| Teléfono / email | ✔ | ✘ (privilegios por columna; el email vive en Auth) | ✘ | Teléfono vía `event_crm` |
+| Perfil profesional (cargo, empresa, LinkedIn) | ✔ | Si comparten el evento (`persona_cards`): LinkedIn solo tras reunión o contacto aceptado; empresa y cargo ocultos si lo eligió | Solo lo que ven los asistentes | ✔ completo (CRM) |
+| **[v1.10]** Email y teléfono de contacto de la ficha ejecutiva | ✔ | `strict`: solo tras reunión o contacto aceptado; `network`/`public`: asistentes de ese evento | Solo con `public` | Solo con `public` |
+| **[v1.10]** Categoría (tier) y registro de zonas | ✔ su categoría | Ven la categoría (badge) | Seguridad: registro de lecturas | ✔ (cambian la categoría) |
+| Gasto, cómo entró, RRPP, hora de ingreso, sectores visitados | ✔ (`my_attendances`) | ✘ (solo "acreditado sí/no" y las zonas en común) | Seguridad: hora de ingreso | ✔ (`event_attendance`) |
+| Pin en el plano | ✔ | Solo su Squad y los matches que eligió (o solo el Squad, si lo configuró) | **[v1.8]** Solo alertas de rescate | Solo alertas de rescate (conteo en `event_stats`) |
+| Reuniones | ✔ | Solo la otra persona | ✘ (solo conteos) | ✘ (solo conteos) |
 | Con quién hizo match | ✔ | Solo la otra persona | ✘ (solo conteos) | ✘ (solo conteos) |
 | Chats | ✔ | Solo los participantes | ✘ | ✘ |
 | Pedidos | Propios y los compartidos con él/ella | ✘ | ✔ del evento | ✔ del evento |
@@ -56,6 +62,15 @@ Este documento resume qué se guarda, quién lo ve y cómo se protege.
   (conteos, sin personas). Su link se resuelve en el servidor como el link maestro.
 - **Puerta:** `door_check_in` solo para dueño/a, producción y seguridad; devuelve nombre, foto y edad de quien entra
   para verificar identidad y +18.
+- **[v1.10] Zonas y vCard:** `zone_check_in` (mismos roles) valida la categoría por zona y registra cada lectura; el
+  registro no lo ve ningún asistente y no se escribe por tabla. En corporativo devuelve la cara profesional, nunca la de
+  la noche ni la edad. La categoría la escribe solo la organización (`set_attendee_tier`) o el código de la entrada. La
+  vCard se arma en el cliente con la ficha ya saneada por `persona_cards`: nunca incluye datos que quien la guarda no
+  podía ver; en la propia, la persona elige si incluye email y teléfono.
+- **[v1.10] QR rotativo:** con `dynamic_pass`, el pase es un token HMAC-SHA256 por ventana de 30 s con un secreto por
+  evento (`event_pass_secrets`, sin acceso de clientes). Las funciones que firman o validan no las ejecuta ningún
+  cliente; cada persona solo obtiene su propio token (`my_pass_token`). El escáner acepta ≈ 90 s de margen y rechaza
+  el pase fijo, capturas viejas y firmas de otra persona. Limitación: sin señal el pase no se renueva.
 - **Cuentas de la mesa:** gastos y transferencias visibles solo para integrantes del Squad; el alias o CBU/CVU para
   cobrar lo ven solo quienes comparten un Squad con esa persona.
 - **Marca:** los colores pasan el mismo control de contraste en el motor y en Postgres; el rescate y el Squad no se
@@ -74,6 +89,8 @@ Este documento resume qué se guarda, quién lo ve y cómo se protege.
   (ej. en el borde/CDN) es una mejora recomendada antes de abrirla a muchos clientes.
 - **Moderación:** no hay reportes de contenido ni moderación de fotos en la v1 (solo bloqueo).
 - **Verificación de edad:** es declarativa (fecha de nacimiento +18).
+- **Rate limit de /api/leads** en memoria por instancia (5 cada 10 min por IP): en un despliegue con muchas instancias
+  conviene sumarlo en el borde (CDN / WAF).
 
 ## Cumplimiento (Argentina)
 

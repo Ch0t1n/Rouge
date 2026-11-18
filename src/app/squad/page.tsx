@@ -42,6 +42,14 @@ import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
+import { faceOf, hasFeature, verticalOf } from "@/lib/engine/verticals";
+import { profileHref } from "@/lib/engine/privacy";
+
+/** Vocabulario de la vertical: "Squad" en la noche, "Equipo" en corporativo. */
+function useSq() {
+  const { state } = useRouge();
+  return verticalOf(state, state.active_event_id).copy.squad;
+}
 
 export default function SquadPage() {
   const me = useRequireProfile();
@@ -56,6 +64,7 @@ const SAFETY: Record<SafetyStatus, { label: string; cls: string }> = {
 };
 
 function Squad() {
+  const sq = useSq();
   const { state } = useRouge();
   const now = useNow(15_000);
   const event = activeEvent(state)!;
@@ -68,7 +77,7 @@ function Squad() {
     <main className="safe-top">
       <header className="sticky top-0 z-30 bg-background/85 px-4 pb-3 pt-4 backdrop-blur-xl">
         <p className="text-[11px] font-semibold uppercase tracking-wider text-squad">{event.name}</p>
-        <h1 className="text-2xl">{mine ? mine.squad.name : "Tu Squad"}</h1>
+        <h1 className="text-2xl">{mine ? mine.squad.name : `Tu ${sq}`}</h1>
       </header>
 
       <div className="space-y-4 px-4 pb-10">
@@ -95,7 +104,7 @@ function Squad() {
           </section>
         ))}
 
-        {mine ? <MySquad /> : open ? <NoSquad /> : <p className="rounded-3xl border border-dashed border-white/10 p-8 text-center text-sm text-muted">El lobby cerró: los Squads de esta noche ya no están activos.</p>}
+        {mine ? <MySquad /> : open ? <NoSquad /> : <p className="rounded-3xl border border-dashed border-white/10 p-8 text-center text-sm text-muted">El lobby cerró: los {sq === "Squad" ? "Squads de esta noche" : "equipos de este evento"} ya no están activos.</p>}
       </div>
     </main>
   );
@@ -104,12 +113,13 @@ function Squad() {
 
 // ── Sin squad ─────────────────────────────────────────────────────
 function NoSquad() {
+  const sq = useSq();
 const { state, exec, notify } = useRouge();
 const now = useNow(15_000);
 const event = activeEvent(state)!;
 const meId = state.current_user_id;
 const router = useRouter();
-  const [name, setName] = useState(`Squad de ${getProfile(state, meId)!.full_name.split(" ")[0]}`);
+  const [name, setName] = useState(`${sq} de ${faceOf(state, meId)!.full_name.split(" ")[0]}`);
   const [code, setCode] = useState("");
   const invites = pendingSquadInvites(state, event.id, meId);
   const vip = openVipSquads(state, event.id, meId);
@@ -118,7 +128,7 @@ const router = useRouter();
   return (
     <>
       {invites.map(({ member, squad }) => {
-        const by = getProfile(state, member.invited_by);
+        const by = faceOf(state, member.invited_by);
         return (
           <section key={member.id} className="rounded-3xl border border-squad/40 bg-squad/[0.07] p-4">
             <div className="flex items-center gap-3">
@@ -145,9 +155,17 @@ const router = useRouter();
         );
       })}
 
+      {!hasFeature(state, event.id, "selfServeTeams") ? (
+        // Corporativo: los equipos los arma la organización; acá solo se entra con el link o la asignación.
+        <section className="rounded-3xl border border-squad/30 bg-squad/[0.06] p-5" data-testid="teams-by-organizer">
+          <UsersRound className="size-8 text-squad" />
+          <h2 className="mt-3 text-xl leading-tight">Los equipos los arma la organización</h2>
+          <p className="mt-1 text-sm text-muted">Cuando te sumen a uno lo vas a ver acá, con su chat y su punto de encuentro. Si te pasaron el link o el código de tu equipo, ingresalo abajo.</p>
+        </section>
+      ) : (
       <section className="relative overflow-hidden rounded-3xl border border-squad/30 bg-gradient-to-br from-squad/15 via-surface to-surface p-5">
         <UsersRound className="size-8 text-squad" />
-        <h2 className="mt-3 text-2xl leading-tight">Armá tu Squad</h2>
+        <h2 className="mt-3 text-2xl leading-tight">Armá tu {sq}</h2>
         <p className="mt-1 text-sm text-muted">Se ven en el plano, tienen chat grupal y botón de rescate entre ustedes. Nadie se pierde.</p>
         {rule && (
           <p className="mt-3 flex items-center gap-2 rounded-2xl bg-vip/10 px-3 py-2 text-sm text-vip">
@@ -156,7 +174,7 @@ const router = useRouter();
           </p>
         )}
         <div className="mt-4 space-y-3">
-          <TextField label="Nombre del Squad" value={name} maxLength={32} onChange={(e) => setName(e.target.value)} />
+          <TextField label={`Nombre del ${sq}`} value={name} maxLength={32} onChange={(e) => setName(e.target.value)} />
           <Button
             block
             size="lg"
@@ -166,10 +184,11 @@ const router = useRouter();
               if (r.ok) notify({ tone: "squad", title: `✨ Creaste ${r.data.name}`, description: "Invitá a tu gente con el link o por @username." });
             }}
           >
-            Crear Squad
+            Crear {sq}
           </Button>
         </div>
       </section>
+      )}
 
       <form
         className="glass flex items-end gap-2 rounded-3xl p-4"
@@ -179,7 +198,7 @@ const router = useRouter();
         }}
       >
         <div className="flex-1">
-          <TextField label="¿Te pasaron un código de Squad?" placeholder="SQ-XXXX" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} />
+          <TextField label={`¿Te pasaron un código de ${sq}?`} placeholder="SQ-XXXX" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} />
         </div>
         <Button type="submit" variant="glass" disabled={!code.trim()}>
           Unirme
@@ -193,6 +212,7 @@ const router = useRouter();
 
 // ── Con squad ─────────────────────────────────────────────────────
 function MySquad() {
+  const sq = useSq();
 const { state, exec, notify } = useRouge();
 const now = useNow(15_000);
 const event = activeEvent(state)!;
@@ -212,6 +232,9 @@ const meId = state.current_user_id;
   const link = typeof window !== "undefined" ? `${window.location.origin}/join/${squad.invite_code}` : `/join/${squad.invite_code}`;
 
   const myRescuePin = activePinOf(state, event.id, meId, now);
+  // Corporativo: sin Rescate / Llegué a casa, y los integrantes los suma la organización.
+  const rescueOn = hasFeature(state, event.id, "rescue");
+  const selfServe = hasFeature(state, event.id, "selfServeTeams");
 
   const rescue = () => {
     const pin = activePinOf(state, event.id, meId, now);
@@ -222,16 +245,17 @@ const meId = state.current_user_id;
 
   const shareSheet = useShare();
   const share = () =>
-    shareSheet.open({ url: link, title: `Sumate a ${squad.name}`, text: `Sumate a mi Squad "${squad.name}" en ROUGE 👯 (entrás al evento y quedás en el grupo)`, fileName: `rouge-squad-${squad.invite_code}`, accent: "squad", caption: squad.invite_code });
+    shareSheet.open({ url: link, title: `Sumate a ${squad.name}`, text: `Sumate a mi ${sq} "${squad.name}" en ROUGE 👯 (entrás al evento y quedás en el grupo)`, fileName: `rouge-squad-${squad.invite_code}`, accent: "squad", caption: squad.invite_code });
 
   return (
     <>
       {shareSheet.sheet}
       {/* Seguridad */}
+      {rescueOn && (
       <section className="grid grid-cols-2 gap-3">
         {member.safety_status === "rescue_needed" ? (
           <div className="col-span-2 space-y-2 rounded-3xl border border-sos bg-sos/10 p-4 shadow-glow-sos" role="status">
-            <p className="font-display font-bold text-sos">🚨 Tu Squad recibió la alerta</p>
+            <p className="font-display font-bold text-sos">🚨 Tu {sq} recibió la alerta</p>
             <p className="text-sm text-primary/90">
               Ven tu pin rojo{myRescuePin?.sector_name ? ` en ${myRescuePin.sector_name}` : ""}.{" "}
               <Link href="/map?rescue=1" className="font-semibold text-sos underline underline-offset-4">
@@ -255,16 +279,17 @@ const meId = state.current_user_id;
             disabled={member.safety_status === "home_safe"}
             onClick={async () => {
               const r = await exec(C.markHomeSafe(event.id, meId));
-              if (r.ok) notify({ tone: "squad", title: "🏠 Avisamos a tu Squad que llegaste bien", description: "Borramos tu pin del plano." });
+              if (r.ok) notify({ tone: "squad", title: `🏠 Avisamos a tu ${sq} que llegaste bien`, description: "Borramos tu pin del plano." });
             }}
             className="flex min-h-[96px] flex-col items-center justify-center gap-1 rounded-3xl border border-squad/40 bg-squad/10 px-3 text-center font-display font-bold text-squad transition active:scale-95 disabled:opacity-60"
           >
             <House className="size-7" />
             <span className="leading-tight">{member.safety_status === "home_safe" ? "Ya avisaste" : "Llegué a casa"}</span>
-            <span className="text-[11px] font-medium opacity-85">Avisa a todo el Squad</span>
+            <span className="text-[11px] font-medium opacity-85">Avisa a todo el {sq}</span>
           </button>
         )}
       </section>
+      )}
 
       {/* Integrantes */}
       <section className="glass rounded-3xl p-4">
@@ -276,12 +301,12 @@ const meId = state.current_user_id;
         </div>
         <ul className="space-y-1">
           {members.map((m) => {
-            const p = getProfile(state, m.user_id);
+            const p = faceOf(state, m.user_id);
             if (!p) return null;
             const pin = pins.get(m.user_id);
             return (
               <li key={m.id} className="flex min-h-touch items-center gap-3">
-                <Link href={m.user_id === meId ? "/profile" : `/u/${p.username}`}>
+                <Link href={m.user_id === meId ? "/profile" : profileHref(p, state.active_event_id)}>
                   <Avatar profile={p} size={40} ring={m.status === "joined" ? "squad" : "none"} className={m.status === "invited" ? "opacity-50" : undefined} />
                 </Link>
                 <div className="min-w-0 flex-1">
@@ -295,9 +320,13 @@ const meId = state.current_user_id;
             );
           })}
         </ul>
-        <Button block variant="squad" className="mt-3" onClick={() => setInviteOpen(true)}>
-          <UserPlus /> Invitar a mi Squad
-        </Button>
+        {selfServe ? (
+          <Button block variant="squad" className="mt-3" onClick={() => setInviteOpen(true)}>
+            <UserPlus /> Invitar a mi {sq}
+          </Button>
+        ) : (
+          <p className="mt-3 text-xs text-muted">Los integrantes los suma la organización del evento.</p>
+        )}
       </section>
 
       {/* Perk por squad */}
@@ -353,8 +382,8 @@ const meId = state.current_user_id;
           <MessageCircle className="size-5" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="font-semibold">Chat del Squad</p>
-          <p className="truncate text-sm text-muted">{last ? `${last.message_type === "system_alert" ? "" : `${getProfile(state, last.sender_id)?.full_name.split(" ")[0]}: `}${last.message_type === "image" ? "📷 Foto" : last.content}` : "Todavía no hay mensajes"}</p>
+          <p className="font-semibold">Chat del {sq}</p>
+          <p className="truncate text-sm text-muted">{last ? `${last.message_type === "system_alert" ? "" : `${faceOf(state, last.sender_id)?.full_name.split(" ")[0]}: `}${last.message_type === "image" ? "📷 Foto" : last.content}` : "Todavía no hay mensajes"}</p>
         </div>
       </Link>
 
@@ -387,11 +416,11 @@ const meId = state.current_user_id;
       <VipTables list={openVipSquads(state, event.id, meId)} />
 
       <Button variant="ghost" block onClick={() => setLeaveOpen(true)}>
-        <LogOut /> Salir del Squad
+        <LogOut /> Salir del {sq}
       </Button>
 
       {/* Invitar */}
-      <BottomSheet open={inviteOpen} onClose={() => setInviteOpen(false)} title="Invitar a mi Squad" description="Por link, por @username o desde el perfil de cualquier asistente.">
+      <BottomSheet open={inviteOpen} onClose={() => setInviteOpen(false)} title={`Invitar a mi ${sq}`} description="Por link, por @username o desde el perfil de cualquier asistente.">
         <div className="space-y-5">
           <div className="space-y-2">
             <p className="font-display text-[13px] font-semibold">Link rápido</p>
@@ -468,9 +497,11 @@ const meId = state.current_user_id;
           </div>
         }
       >
-        <p className="flex items-center gap-2 text-sm text-muted">
-          <ShieldAlert className="size-4 text-sos" /> Sin Squad no vas a tener Botón de Rescate.
-        </p>
+        {rescueOn && (
+          <p className="flex items-center gap-2 text-sm text-muted">
+            <ShieldAlert className="size-4 text-sos" /> Sin {sq} no vas a tener Botón de Rescate.
+          </p>
+        )}
       </BottomSheet>
     </>
   );
@@ -494,7 +525,7 @@ function VipTables({ list }: { list: ReturnType<typeof openVipSquads> }) {
               <p className="truncate text-xs text-muted">{squad.base_pin_label ?? "Sector VIP"} · {members.length} personas</p>
             </div>
             {members[0] && (
-              <Link href={`/u/${members[0].username}`} className={buttonVariants({ size: "sm", variant: "glass" })}>
+              <Link href={profileHref(members[0], squad.event_id)} className={buttonVariants({ size: "sm", variant: "glass" })}>
                 Ver
               </Link>
             )}

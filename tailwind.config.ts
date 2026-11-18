@@ -12,6 +12,23 @@ const config: Config = {
     container: { center: true, padding: "1rem" },
     extend: {
       colors: {
+        // ROUGE PRO: paleta ejecutiva, SOLO para /pro (components/pro). Nunca mezclar con rouge/squad/vip.
+        pro: {
+          navy: "#0B1120",
+          slate: "#0F172A",
+          panel: "#1E293B",
+          line: "#1E293B",
+          "line-light": "#E2E8F0",
+          alabaster: "#F8FAFC",
+          ink: "#0F172A",
+          "ink-soft": "#475569",
+          mist: "#94A3B8",
+          cobalt: "#1D4ED8",
+          sapphire: "#2563EB",
+          gold: "#D97706",
+          "gold-deep": "#B45309",
+          emerald: "#059669",
+        },
         background: "#070709", // Obsidian Black — fondo base
         surface: {
           DEFAULT: "#121216", // Charcoal Glass
@@ -43,6 +60,9 @@ const config: Config = {
       fontFamily: {
         display: ["var(--font-display)", "ui-sans-serif", "system-ui", "sans-serif"],
         sans: ["var(--font-body)", "ui-sans-serif", "system-ui", "sans-serif"],
+        // ROUGE PRO (/pro): fuentes cargadas solo en esa ruta (src/app/pro/layout.tsx).
+        pro: ["var(--font-pro)", "ui-sans-serif", "system-ui", "sans-serif"],
+        "pro-mono": ["var(--font-pro-mono)", "ui-monospace", "SFMono-Regular", "monospace"],
       },
       boxShadow: {
         "glow-rouge": "0 0 20px rgb(var(--c-rouge) / 0.35)",

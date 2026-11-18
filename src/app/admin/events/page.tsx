@@ -4,7 +4,8 @@ import * as C from "@/lib/store/commands";
 import { useMemo, useRef, useState } from "react";
 import { Ban, Copy, Download, ImagePlus, Link2, Plus, Printer, QrCode, Save, Trash2 } from "lucide-react";
 import Link from "next/link";
-import type { LineupSlot, RougeEvent } from "@/lib/types";
+import { ATTENDEE_TIERS, type AttendeeTier, type EventKind, type LineupSlot, type RougeEvent } from "@/lib/types";
+import { tierLabel, vertical } from "@/lib/engine/verticals";
 import { generateInviteCodes, upsertEvent } from "@/lib/engine/actions";
 import { lobbyPhase } from "@/lib/engine/selectors";
 import { myBrands } from "@/lib/engine/branding";
@@ -22,7 +23,11 @@ import { VenueMap } from "@/components/venue/VenueMap";
 import { VENUE_LAYOUT } from "@/lib/mock/seed";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { TextAreaField, TextField } from "@/components/ui/field";
+import { Segmented, TextAreaField, TextField } from "@/components/ui/field";
+import { Switch } from "@/components/ui/switch";
+import { VenueSpotsPanel } from "@/components/admin/VenueSpotsPanel";
+import { OrganizerTeamsPanel } from "@/components/admin/OrganizerTeamsPanel";
+import { hasFeature } from "@/lib/engine/verticals";
 
 const H = 3_600_000;
 /** ISO → valor de <input type="datetime-local"> en hora local */
@@ -68,6 +73,9 @@ export default function AdminEventsPage() {
       </div>
       <EventEditor key={editing} event={event} onSaved={(id) => { setEditing(id); setActiveEvent(id); }} />
       {event && <AccessPanel event={event} />}
+      {event && <VenueSpotsPanel event={event} />}
+      {/* Corporativo: los equipos los arma la organización (los asistentes no crean). */}
+      {event && !hasFeature(state, event.id, "selfServeTeams") && <OrganizerTeamsPanel event={event} />}
       {event && (
         <div className="grid gap-6 xl:grid-cols-3">
           <ApiKeysPanel event={event} />
@@ -97,6 +105,13 @@ function EventEditor({ event, onSaved }: { event: RougeEvent | null; onSaved: (i
     start.setHours(23, 30, 0, 0);
     return { starts: start.toISOString(), ends: new Date(start.getTime() + 6 * H).toISOString() };
   }, []);
+  const [kind, setKind] = useState<EventKind>(event?.kind ?? "nightlife");
+  // La vertical no cambia una vez que entró gente (moods y perfiles ya elegidos): mismo control que el servidor.
+  const kindLocked = !!event && state.event_attendees.some((a) => a.event_id === event.id);
+  const v = vertical(kind);
+  const [checkinOnly, setCheckinOnly] = useState(event?.networking_checkin_only ?? false);
+  // QR de acceso rotativo (pase firmado que cambia cada 30 s): recomendado con lista nominal o zonas pagas.
+  const [dynamicPass, setDynamicPass] = useState(event?.dynamic_pass ?? false);
   const [name, setName] = useState(event?.name ?? "");
   const [slug, setSlug] = useState(event?.slug ?? "");
   const [venue, setVenue] = useState(event?.venue_name ?? "");
@@ -119,6 +134,9 @@ function EventEditor({ event, onSaved }: { event: RougeEvent | null; onSaved: (i
       C.upsertEvent({
         // Un evento nuevo arranca con mi marca (logo, colores y cobro); se cambia en Marca y cobros.
         ...(event ? { id: event.id } : { brand_id: myBrands(state)[0]?.id ?? null }),
+        kind,
+        networking_checkin_only: checkinOnly,
+        dynamic_pass: dynamicPass,
         name,
         slug: slug || undefined,
         venue_name: venue,
@@ -161,6 +179,24 @@ function EventEditor({ event, onSaved }: { event: RougeEvent | null; onSaved: (i
   return (
     <div className="grid gap-6 xl:grid-cols-3">
       <Panel title={event ? "Datos del evento" : "Nuevo evento"} className="xl:col-span-2">
+        <div className="mb-5 space-y-2">
+          <Segmented<EventKind>
+            label="Tipo de evento"
+            options={[
+              { value: "nightlife", label: "🌙 Noche · ROUGE" },
+              { value: "corporate", label: "💼 Corporativo · ROUGE Pro" },
+            ]}
+            value={kind}
+            onChange={(k) => !kindLocked && setKind(k)}
+          />
+          <p className="text-xs text-muted">
+            {kindLocked
+              ? "Ya entró gente con perfiles y moods de este tipo: el tipo de evento no se puede cambiar."
+              : kind === "corporate"
+                ? "Networking por lo que cada uno busca y ofrece, perfil profesional obligatorio, Agenda en lugar de Line-up y sin RRPP, pedidos de temas ni trago de regalo."
+                : "Grilla por afinidad musical, Rompehielos con trago de regalo, RRPP, pedidos al DJ y Line-up."}
+          </p>
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField label="Nombre" value={name} onChange={(e) => setName(e.target.value)} placeholder="ROUGE Night × Bresh" />
           <TextField label="Link del evento" prefix="/join/" className="pl-[4.2rem]" value={slug} onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))} placeholder="se genera del nombre" />
@@ -171,28 +207,46 @@ function EventEditor({ event, onSaved }: { event: RougeEvent | null; onSaved: (i
           <TextField label="El lobby abre (horas antes)" type="number" min={0} value={opensBefore} onChange={(e) => setOpensBefore(Number(e.target.value))} hint="Para armar Squads y conectar antes de la fiesta." />
           <TextField label="El lobby cierra (horas después)" type="number" min={0} value={closesAfter} onChange={(e) => setClosesAfter(Number(e.target.value))} hint="Efecto Cenicienta: los matches y chats quedan." />
         </div>
+        <div className="mt-4 rounded-2xl border border-white/10 px-3">
+          <Switch
+            tone="squad"
+            id="checkin-only"
+            checked={checkinOnly}
+            onCheckedChange={setCheckinOnly}
+            label="Networking solo para acreditados"
+            description="La grilla, Conectar, Rompehielos y las reuniones son solo entre quienes ya pasaron por la puerta (escáner). Ideal para congresos y eventos con lista nominal."
+          />
+          <Switch
+            tone="squad"
+            id="dynamic-pass"
+            checked={dynamicPass}
+            onCheckedChange={setDynamicPass}
+            label="QR de acceso rotativo"
+            description="El pase de la app cambia cada 30 segundos y lo firma el servidor: una captura de pantalla no sirve para entrar ni para pasar a una zona. Necesita señal en el celular de quien entra. Las entradas de 1 uso (ticketera) siguen sirviendo."
+          />
+        </div>
         <div className="mt-4">
           <TextAreaField label="Descripción" value={description} maxLength={300} onChange={(e) => setDescription(e.target.value)} />
         </div>
 
         <div className="mt-6">
           <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-base">Line-up</h3>
+            <h3 className="text-base">{v.copy.lineup}</h3>
             <Button size="sm" variant="glass" onClick={addSlot}>
-              <Plus /> Agregar set
+              <Plus /> Agregar {v.copy.lineupItem}
             </Button>
           </div>
-          {lineup.length === 0 && <p className="rounded-2xl border border-dashed border-white/10 p-4 text-center text-sm text-muted">Sin sets todavía.</p>}
+          {lineup.length === 0 && <p className="rounded-2xl border border-dashed border-white/10 p-4 text-center text-sm text-muted">Sin {v.copy.lineupItem === "set" ? "sets" : "charlas"} todavía.</p>}
           <ul className="space-y-2">
             {lineup.map((sl) => (
               <li key={sl.id} className="grid grid-cols-1 items-end gap-2 rounded-2xl border border-white/10 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] 2xl:grid-cols-[minmax(10rem,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_auto_auto]">
                 <div className="min-w-0 sm:col-span-4 2xl:col-span-1">
-                  <TextField label="Artista" value={sl.artist} onChange={(e) => patchSlot(sl.id, { artist: e.target.value })} />
+                  <TextField label={v.copy.lineupArtist} value={sl.artist} onChange={(e) => patchSlot(sl.id, { artist: e.target.value })} />
                 </div>
                 <TextField label="Desde" type="datetime-local" value={toLocal(sl.starts_at)} onChange={(e) => patchSlot(sl.id, { starts_at: fromLocal(e.target.value) })} />
                 <TextField label="Hasta" type="datetime-local" value={toLocal(sl.ends_at)} onChange={(e) => patchSlot(sl.id, { ends_at: fromLocal(e.target.value) })} />
                 <label className="flex min-h-[52px] items-center gap-2 text-sm">
-                  <input type="checkbox" checked={!!sl.is_headliner} onChange={(e) => patchSlot(sl.id, { is_headliner: e.target.checked })} className="size-5 accent-rouge" /> Headliner
+                  <input type="checkbox" checked={!!sl.is_headliner} onChange={(e) => patchSlot(sl.id, { is_headliner: e.target.checked })} className="size-5 accent-rouge" /> {kind === "corporate" ? "Destacada" : "Headliner"}
                 </label>
                 <Button size="icon" variant="ghost" aria-label={`Quitar ${sl.artist || "set"}`} onClick={() => setLineup(lineup.filter((x) => x.id !== sl.id))}>
                   <Trash2 />
@@ -231,6 +285,7 @@ function EventEditor({ event, onSaved }: { event: RougeEvent | null; onSaved: (i
 function AccessPanel({ event }: { event: RougeEvent }) {
   const { state, exec, notify } = useRouge();
   const [count, setCount] = useState(50);
+  const [codeTier, setCodeTier] = useState<AttendeeTier | "">("");
   const share = useShare();
   const [filter, setFilter] = useState<"all" | "free" | "used" | "revoked">("all");
   const origin = typeof window !== "undefined" ? window.location.origin : "";
@@ -304,10 +359,22 @@ function AccessPanel({ event }: { event: RougeEvent }) {
           <div className="w-32">
             <TextField label="Cantidad" type="number" min={1} max={1000} value={count} onChange={(e) => setCount(Number(e.target.value))} />
           </div>
+          {/* [v1.10] Categoría de las entradas del lote: define a qué zonas puede pasar quien la use. */}
+          <label className="block space-y-1.5">
+            <span className="font-display text-[13px] font-semibold text-primary">Categoría</span>
+            <select value={codeTier} onChange={(e) => setCodeTier(e.target.value as AttendeeTier | "")} className="min-h-[52px] rounded-2xl border border-white/10 bg-white/[0.04] px-3 text-sm" data-testid="code-tier">
+              <option value="">ASISTENTE</option>
+              {ATTENDEE_TIERS.filter((t) => t.id !== "attendee").map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <Button
             variant="vip"
             onClick={async () => {
-              const r = await exec(C.generateInviteCodes(event.id, count));
+              const r = await exec(C.generateInviteCodes(event.id, count, codeTier || null));
               if (r.ok) notify({ tone: "vip", title: `🎟️ ${r.data.length} códigos generados`, description: "Entregalos con cada entrada (email, ticketera o impresos)." });
             }}
           >
@@ -339,6 +406,7 @@ function AccessPanel({ event }: { event: RougeEvent }) {
                   <td className="px-4 py-2 text-xs text-muted">
                     {c.external_ref ?? "—"}
                     {c.label && <span className="ml-1 text-primary/80">· {c.label}</span>}
+                    {c.tier && <Badge tone="vip" className="ml-1.5">{tierLabel(c.tier)}</Badge>}
                     {c.source === "api" && <Badge tone="vip" className="ml-1.5">API</Badge>}
                   </td>
                   <td className="px-4 py-2">{c.is_used ? <Badge>Usado</Badge> : c.revoked_at ? <Badge tone="rouge">Anulado</Badge> : <Badge tone="squad">Libre</Badge>}</td>

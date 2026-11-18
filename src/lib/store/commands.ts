@@ -9,7 +9,7 @@
  * En Modo Demo solo corre `local`. Las pantallas siempre llaman `exec(C.algo(...))`.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { ApiKey, BarOrder, Connection, EventAttendee, EventInviteCode, MoodTag, PerkRule, Raffle, RaffleFilter, RougeEvent, RougeState, SongRequest, Squad, StaffRole, UUID } from "@/lib/types";
+import type { ApiKey, AttendeeTier, BarOrder, Connection, EventAttendee, EventInviteCode, MoodTag, PerkRule, Raffle, RaffleFilter, RougeEvent, RougeState, SongRequest, Squad, StaffRole, UUID } from "@/lib/types";
 import * as A from "@/lib/engine/actions";
 import type { Result } from "@/lib/engine/actions";
 import { can, NO_PERMISSION, type Permission } from "@/lib/engine/roles";
@@ -19,6 +19,9 @@ import * as T from "@/lib/engine/settle";
 import * as E from "@/lib/engine/eventAdmin";
 import * as RP from "@/lib/engine/promoters";
 import * as D from "@/lib/engine/door";
+import * as PV from "@/lib/engine/privacy";
+import * as MT from "@/lib/engine/meetings";
+import { BAR_MENU, CORPORATE_MENU } from "@/lib/mock/seed";
 
 export interface Command<T> {
   name: string;
@@ -125,17 +128,141 @@ export const unblock = (blockerId: UUID, blockId: UUID): Command<undefined> => (
  * `serverEventId`: el código lo resolvió el servidor (resolve_access_code) porque el cliente no puede
  * verlo por RLS (códigos de 1 uso, squads ajenos). Si la regla local no lo encuentra, decide el servidor.
  */
-export const joinEvent = (userId: UUID, code: string, mood: MoodTag, serverEventId?: UUID): Command<{ eventId: UUID; squadId?: UUID }> => ({
+export const joinEvent = (userId: UUID, code: string, mood: MoodTag, serverEventId?: UUID, personaId: UUID | null = null): Command<{ eventId: UUID; squadId?: UUID }> => ({
   name: "joinEvent",
   optimistic: false,
   local: (s) => {
-    const r = A.joinEvent(s, userId, code, mood);
+    const r = A.joinEvent(s, userId, code, mood, Date.now(), personaId);
     if (!r.ok && serverEventId && !A.resolveAccessCode(s, code)) return { ok: true, state: s, data: { eventId: serverEventId } };
     return r;
   },
   remote: async (sb, local) => {
-    const eventId = await rpc<UUID>(sb, "join_event", { p_code: code, p_mood: mood });
+    const eventId = await rpc<UUID>(sb, "join_event", { p_code: code, p_mood: mood, p_persona: personaId });
     return { ...local, eventId };
+  },
+});
+
+// ── Perfiles adicionales (una cuenta, varias caras) ──────────────────
+
+/** Crea o edita un perfil adicional. Mismo id en el insert que en el optimista (no se duplica). */
+export const upsertPersona = (userId: UUID, input: A.PersonaInput): Command<RougeState["profile_personas"][number]> => ({
+  name: "upsertPersona",
+  local: (s) => A.upsertPersona(s, userId, input),
+  remote: async (sb, p, before) => {
+    const fields = {
+      label: p.label,
+      display_name: p.display_name,
+      bio: p.bio,
+      photos: p.photos,
+      music_genres: p.music_genres,
+      spotify_embed_url: p.spotify_embed_url,
+      job_title: p.job_title,
+      company: p.company,
+      industry: p.industry,
+      looking_for: p.looking_for,
+      offering: p.offering,
+      linkedin_url: p.linkedin_url,
+      website_url: p.website_url,
+      looking_for_note: p.looking_for_note,
+      offering_note: p.offering_note,
+      contact_email: p.contact_email,
+      contact_phone: p.contact_phone,
+      privacy_level: p.privacy_level,
+    };
+    const existed = before.profile_personas.some((x) => x.id === p.id);
+    if (existed) must(await sb.from("profile_personas").update(fields).eq("id", p.id).eq("user_id", userId));
+    else must(await sb.from("profile_personas").insert({ id: p.id, user_id: userId, kind: p.kind, ...fields }));
+  },
+});
+
+// ── Privacidad (v1.8) ────────────────────────────────────────────────
+
+/** Ajustes de privacidad de la cuenta: incógnito por defecto, pin solo Squad, datos profesionales tras reunión. */
+export const updatePrivacySettings = (userId: UUID, patch: PV.PrivacyPatch): Command<RougeState["privacy_settings"][number]> => ({
+  name: "updatePrivacySettings",
+  local: (s) => PV.updatePrivacySettings(s, userId, patch),
+  remote: async (sb, p) => {
+    must(
+      await sb.from("privacy_settings").upsert(
+        { user_id: userId, incognito_default: p.incognito_default, pin_share_matches: p.pin_share_matches, pro_details_after_meeting: p.pro_details_after_meeting, updated_at: p.updated_at },
+        { onConflict: "user_id" },
+      ),
+    );
+  },
+});
+
+// ── Reuniones y puntos de encuentro (v1.8) ───────────────────────────
+
+const locationArgs = (loc: MT.MeetingLocation) => ({
+  p_location_kind: loc.kind,
+  p_spot: loc.kind === "spot" ? loc.spotId : null,
+  p_x: loc.kind === "pin" ? loc.x : null,
+  p_y: loc.kind === "pin" ? loc.y : null,
+  p_label: loc.kind === "pin" ? (loc.label ?? null) : null,
+});
+
+/** Pedir una reunión. El id lo genera el servidor (no optimista). */
+export const requestMeeting = (eventId: UUID, requesterId: UUID, inviteeId: UUID, input: MT.MeetingInput): Command<RougeState["meetings"][number]> => ({
+  name: "requestMeeting",
+  optimistic: false,
+  local: (s) => MT.requestMeeting(s, eventId, requesterId, inviteeId, input),
+  remote: async (sb) =>
+    rpc<RougeState["meetings"][number]>(sb, "request_meeting", {
+      p_event: eventId,
+      p_invitee: inviteeId,
+      p_topic: input.topic.trim(),
+      p_starts_at: input.startsAt,
+      p_duration: input.duration,
+      ...locationArgs(input.location),
+    }),
+});
+
+/** Aceptar (abre el chat) o rechazar. Si el lugar estaba "a definir", `location` lo fija. */
+export const respondMeeting = (meetingId: UUID, userId: UUID, accept: boolean, location?: MT.MeetingLocation): Command<RougeState["meetings"][number]> => ({
+  name: "respondMeeting",
+  optimistic: false, // al aceptar, el servidor crea la conexión (chat) con su id
+  local: (s) => MT.respondMeeting(s, meetingId, userId, accept, location),
+  remote: async (sb) =>
+    rpc<RougeState["meetings"][number]>(sb, "respond_meeting", { p_meeting: meetingId, p_accept: accept, ...(location ? locationArgs(location) : {}) }),
+});
+
+export const rescheduleMeeting = (meetingId: UUID, userId: UUID, input: Omit<MT.MeetingInput, "topic">): Command<RougeState["meetings"][number]> => ({
+  name: "rescheduleMeeting",
+  local: (s) => MT.rescheduleMeeting(s, meetingId, userId, input),
+  remote: async (sb) =>
+    rpc<RougeState["meetings"][number]>(sb, "reschedule_meeting", { p_meeting: meetingId, p_starts_at: input.startsAt, p_duration: input.duration, ...locationArgs(input.location) }),
+});
+
+export const cancelMeeting = (meetingId: UUID, userId: UUID): Command<RougeState["meetings"][number]> => ({
+  name: "cancelMeeting",
+  local: (s) => MT.cancelMeeting(s, meetingId, userId),
+  remote: async (sb) => rpc<RougeState["meetings"][number]>(sb, "cancel_meeting", { p_meeting: meetingId }),
+});
+
+/** Sala / mesa / punto de encuentro del evento (dueño/a o producción). Mismo id en el insert que en el optimista. */
+export const upsertVenueSpot = (eventId: UUID, input: MT.VenueSpotInput): Command<RougeState["venue_spots"][number]> => ({
+  name: "upsertVenueSpot",
+  local: guarded("admin.events", () => eventId, (s) => MT.upsertVenueSpot(s, eventId, input)),
+  remote: async (sb, x, before) => {
+    const fields = { name: x.name, kind: x.kind, capacity: x.capacity, coord_x: x.coord_x, coord_y: x.coord_y, is_active: x.is_active };
+    if (before.venue_spots.some((v) => v.id === x.id)) must(await sb.from("venue_spots").update(fields).eq("id", x.id).eq("event_id", eventId));
+    else must(await sb.from("venue_spots").insert({ id: x.id, event_id: eventId, ...fields }));
+  },
+});
+
+export const deleteVenueSpot = (eventId: UUID, spotId: UUID): Command<undefined> => ({
+  name: "deleteVenueSpot",
+  local: guarded("admin.events", () => eventId, (s) => MT.deleteVenueSpot(s, spotId)),
+  remote: async (sb) => {
+    must(await sb.from("venue_spots").delete().eq("id", spotId).eq("event_id", eventId));
+  },
+});
+
+export const deletePersona = (userId: UUID, personaId: UUID): Command<undefined> => ({
+  name: "deletePersona",
+  local: (s) => A.deletePersona(s, userId, personaId),
+  remote: async (sb) => {
+    await rpc(sb, "delete_persona", { p_persona: personaId });
   },
 });
 
@@ -207,6 +334,33 @@ export const leaveSquad = (userId: UUID, squadId: UUID): Command<undefined> => (
   local: (s) => A.leaveSquad(s, userId, squadId),
   remote: async (sb) => {
     must(await sb.from("squad_members").delete().eq("squad_id", squadId).eq("user_id", userId));
+  },
+});
+
+// Equipos que arma la organización (corporativo). Dueño/a y producción.
+
+/** Crea un equipo vacío; el código de invitación lo genera el servidor. */
+export const organizerCreateTeam = (eventId: UUID, name: string): Command<Squad> => ({
+  name: "organizerCreateTeam",
+  optimistic: false,
+  local: guarded("admin.events", () => eventId, (s) => A.organizerCreateTeam(s, eventId, name)),
+  remote: async (sb) => rpc<Squad>(sb, "create_team", { p_event: eventId, p_name: name.trim() }),
+});
+
+/** Suma (add) o quita a un asistente de un equipo; si estaba en otro equipo del evento, lo mueve. */
+export const organizerSetTeamMember = (eventId: UUID, squadId: UUID, userId: UUID, add: boolean): Command<{ moved: boolean; grantedPerks: RougeState["user_perks_qrs"] }> => ({
+  name: "organizerSetTeamMember",
+  local: guarded("admin.events", () => eventId, (s) => A.organizerSetTeamMember(s, squadId, userId, add)),
+  remote: async (sb) => {
+    await rpc(sb, "set_team_member", { p_squad: squadId, p_user: userId, p_add: add });
+  },
+});
+
+export const organizerDeleteTeam = (eventId: UUID, squadId: UUID): Command<undefined> => ({
+  name: "organizerDeleteTeam",
+  local: guarded("admin.events", () => eventId, (s) => A.organizerDeleteTeam(s, squadId)),
+  remote: async (sb) => {
+    await rpc(sb, "delete_team", { p_squad: squadId });
   },
 });
 
@@ -455,6 +609,7 @@ export const upsertEvent = (input: Parameters<typeof A.upsertEvent>[1]): Command
     const isNew = !before.events.some((x) => x.id === e.id);
     const row = {
       id: e.id,
+      kind: e.kind,
       slug: e.slug,
       name: e.name,
       description: e.description,
@@ -472,23 +627,35 @@ export const upsertEvent = (input: Parameters<typeof A.upsertEvent>[1]): Command
       logo_url: e.logo_url,
       theme_primary: e.theme_primary,
       theme_accent: e.theme_accent,
+      networking_checkin_only: e.networking_checkin_only,
+      dynamic_pass: e.dynamic_pass,
       ...(isNew ? { master_invite_code: e.master_invite_code, created_by: e.created_by } : {}),
     };
     if (isNew) {
       must(await sb.from("events").insert(row));
-      // Menú base de Barra Express para el evento nuevo (el staff lo puede editar después).
-      must(await sb.from("bar_menu_items").insert(before.bar_menu.map((i) => ({ id: i.id, event_id: e.id, name: i.name, category: i.category, price: i.price, emoji: i.emoji }))));
+      // Menú base para el evento nuevo según su vertical (el staff lo puede editar después).
+      const sameKind = before.events.find((x) => x.id === before.active_event_id)?.kind === e.kind;
+      const menu = sameKind && before.bar_menu.length ? before.bar_menu : e.kind === "corporate" ? CORPORATE_MENU : BAR_MENU;
+      must(await sb.from("bar_menu_items").insert(menu.map((i) => ({ id: i.id, event_id: e.id, name: i.name, category: i.category, price: i.price, emoji: i.emoji }))));
     } else {
       must(await sb.from("events").update(row).eq("id", e.id));
     }
   },
 });
 
-export const generateInviteCodes = (eventId: UUID, count: number): Command<EventInviteCode[]> => ({
+/** Lote de códigos de 1 uso. `tier`: categoría de esas entradas (VIP, SPEAKER…), que pasa a quien la use. */
+export const generateInviteCodes = (eventId: UUID, count: number, tier: AttendeeTier | null = null): Command<EventInviteCode[]> => ({
   name: "generateInviteCodes",
   optimistic: false,
-  local: guarded("admin.events", () => eventId, (s) => A.generateInviteCodes(s, eventId, count)),
-  remote: async (sb) => rpc<EventInviteCode[]>(sb, "generate_invite_codes", { p_event: eventId, p_count: count }),
+  local: guarded("admin.events", () => eventId, (s) => A.generateInviteCodes(s, eventId, count, Date.now(), tier)),
+  remote: async (sb) => rpc<EventInviteCode[]>(sb, "generate_invite_codes", { p_event: eventId, p_count: count, p_tier: tier }),
+});
+
+/** Categoría de un asistente (dueño/a y producción). */
+export const setAttendeeTier = (eventId: UUID, userId: UUID, tier: AttendeeTier): Command<EventAttendee> => ({
+  name: "setAttendeeTier",
+  local: guarded("admin.events", () => eventId, (s) => A.setAttendeeTier(s, eventId, userId, tier)),
+  remote: async (sb) => rpc<EventAttendee>(sb, "set_attendee_tier", { p_event: eventId, p_user: userId, p_tier: tier }),
 });
 
 // ── Equipo del evento (solo dueño/a) ─────────────────────────────────
@@ -646,10 +813,12 @@ export const duplicateEvent = (eventId: UUID, startsAt: string): Command<{ event
   remote: async (sb, { event: e, rules }, before) => {
     must(
       await sb.from("events").insert({
-        id: e.id, slug: e.slug, name: e.name, description: e.description, venue_name: e.venue_name, venue_map_url: e.venue_map_url,
+        id: e.id, kind: e.kind, slug: e.slug, name: e.name, description: e.description, venue_name: e.venue_name, venue_map_url: e.venue_map_url,
         venue_layout_json: e.venue_layout_json, lineup_json: e.lineup_json, cover_url: e.cover_url, starts_at: e.starts_at, ends_at: e.ends_at,
         lobby_opens_at: e.lobby_opens_at, lobby_expires_at: e.lobby_expires_at, max_capacity: e.max_capacity, master_invite_code: e.master_invite_code,
         created_by: e.created_by, brand_id: e.brand_id, logo_url: e.logo_url, theme_primary: e.theme_primary, theme_accent: e.theme_accent,
+        networking_checkin_only: e.networking_checkin_only,
+      dynamic_pass: e.dynamic_pass,
       }),
     );
     must(await sb.from("bar_menu_items").insert(before.bar_menu.map((i) => ({ id: i.id, event_id: e.id, name: i.name, category: i.category, price: i.price, emoji: i.emoji, is_available: i.is_available }))));
@@ -705,4 +874,34 @@ export const doorCheckIn = (eventId: UUID, value: string): Command<D.DoorResult>
   optimistic: false,
   local: guarded("door.scan", () => eventId, (s) => D.doorCheckIn(s, eventId, value)),
   remote: async (sb) => rpc<D.DoorResult>(sb, "door_check_in", { p_event: eventId, p_value: value }),
+});
+
+/**
+ * Escaneo en una zona de control (v1.10). `zoneId` null = puerta principal. El servidor valida la categoría para la
+ * zona, acredita si es una puerta y registra la lectura (zone_check_ins).
+ */
+export const zoneCheckIn = (eventId: UUID, zoneId: UUID | null, value: string): Command<D.DoorResult> => ({
+  name: "zoneCheckIn",
+  optimistic: false,
+  local: guarded("door.scan", () => eventId, (s) => D.zoneCheckIn(s, eventId, zoneId, value)),
+  remote: async (sb) => rpc<D.DoorResult>(sb, "zone_check_in", { p_event: eventId, p_zone: zoneId, p_value: value }),
+});
+
+/** Alta o edición de una zona de control (dueño/a y producción). Mismo id que el optimista. */
+export const upsertZone = (eventId: UUID, input: D.ZoneInput): Command<RougeState["event_zones"][number]> => ({
+  name: "upsertZone",
+  local: guarded("admin.events", () => eventId, (s) => D.upsertZone(s, eventId, input)),
+  remote: async (sb, z, before) => {
+    const fields = { name: z.name, kind: z.kind, allowed_tiers: z.allowed_tiers, sort_order: z.sort_order, is_active: z.is_active };
+    if (before.event_zones.some((x) => x.id === z.id)) must(await sb.from("event_zones").update(fields).eq("id", z.id).eq("event_id", eventId));
+    else must(await sb.from("event_zones").insert({ id: z.id, event_id: eventId, ...fields }));
+  },
+});
+
+export const deleteZone = (eventId: UUID, zoneId: UUID): Command<undefined> => ({
+  name: "deleteZone",
+  local: guarded("admin.events", () => eventId, (s) => D.deleteZone(s, zoneId)),
+  remote: async (sb) => {
+    must(await sb.from("event_zones").delete().eq("id", zoneId).eq("event_id", eventId));
+  },
 });

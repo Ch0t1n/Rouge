@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import * as C from "@/lib/store/commands";
 import { ArrowDownUp, Ban, Download, MessageCircle, Search, UserX } from "lucide-react";
-import { MOOD_TAGS } from "@/lib/types";
+import { ATTENDEE_TIERS, MOOD_TAGS, type AttendeeTier } from "@/lib/types";
 import { crmRows, SMART_TAG_META, type CrmRow, type SmartTag } from "@/lib/engine/analytics";
 import { formatPhone } from "@/lib/engine/profile";
 import { activeEvent, getProfile } from "@/lib/engine/selectors";
@@ -13,6 +13,7 @@ import { cn, formatMoney, toCSV, whatsappLink } from "@/lib/utils";
 import { AdminHeader, downloadCSV } from "@/components/admin/AdminChrome";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { faceOf, tierLabel, verticalOf } from "@/lib/engine/verticals";
 
 type SortKey = "total_spent" | "squad_size" | "matches" | "age" | "full_name";
 const GENDER: Record<CrmRow["gender"], string> = { female: "Mujer", male: "Hombre", non_binary: "No binarie", undisclosed: "—" };
@@ -21,6 +22,8 @@ export default function AdminCrmPage() {
   const { state, exec, notify } = useRouge();
   const event = activeEvent(state)!;
   const bans = state.event_bans.filter((b) => b.event_id === event.id);
+  const v = verticalOf(state, event.id);
+  const pro = v.kind === "corporate";
   /** Expulsar del evento: deja el lobby, su Squad de hoy y el plano; con bloqueo, no puede volver a entrar. */
   const expel = async (r: CrmRow) => {
     const first = r.full_name.split(" ")[0];
@@ -38,7 +41,7 @@ export default function AdminCrmPage() {
     const needle = q.trim().toLowerCase().replace(/^@/, "");
     return all
       .filter((r) => !tag || r.tags.includes(tag))
-      .filter((r) => !needle || r.full_name.toLowerCase().includes(needle) || r.username.includes(needle) || r.music_genres.some((g) => g.toLowerCase().includes(needle)))
+      .filter((r) => !needle || r.full_name.toLowerCase().includes(needle) || r.username.includes(needle) || r.music_genres.some((g) => g.toLowerCase().includes(needle)) || r.company.toLowerCase().includes(needle))
       .sort((a, b) => {
         const va = a[sort.key];
         const vb = b[sort.key];
@@ -57,9 +60,10 @@ export default function AdminCrmPage() {
           username: `@${r.username}`,
           telefono: r.phone ?? "",
           whatsapp: r.phone ? whatsappLink(r.phone) : "",
-          edad: r.age,
-          genero: GENDER[r.gender],
-          generos_musicales: r.music_genres,
+          ...(pro
+            ? { empresa: r.company, cargo: r.job_title, rubro: r.industry ?? "", busca: r.looking_for, ofrece: r.offering, linkedin: r.linkedin_url ?? "", sitio: r.website_url ?? "", email_contacto: r.contact_email ?? "", telefono_contacto: r.contact_phone ?? "" }
+            : { edad: r.age, genero: GENDER[r.gender], generos_musicales: r.music_genres }),
+          categoria: tierLabel(r.tier),
           mood: MOOD_TAGS.find((m) => m.id === r.mood)?.label ?? "",
           tamano_squad: r.squad_size,
           matches: r.matches,
@@ -98,7 +102,7 @@ export default function AdminCrmPage() {
         <label className="relative min-w-[240px] flex-1">
           <span className="sr-only">Buscar</span>
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nombre, @username o género musical" className="min-h-touch w-full rounded-2xl border border-white/10 bg-white/[0.04] pl-9 pr-3 text-sm focus:border-vip/50 focus:outline-none" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={pro ? "Buscar por nombre o empresa" : "Buscar por nombre, @username o género musical"} className="min-h-touch w-full rounded-2xl border border-white/10 bg-white/[0.04] pl-9 pr-3 text-sm focus:border-vip/50 focus:outline-none" />
         </label>
         <button type="button" onClick={() => setTag(null)} className={cn("min-h-[40px] rounded-full px-3 text-xs font-semibold", !tag ? "bg-vip text-background" : "bg-white/[0.05] text-muted")}>
           Todos
@@ -117,10 +121,19 @@ export default function AdminCrmPage() {
               <tr>
                 <Th k="full_name" className="pl-5">Asistente</Th>
                 <Th>Teléfono</Th>
-                <Th k="age">Edad</Th>
-                <Th>Géneros</Th>
-                <Th k="squad_size">Squad</Th>
-                <Th k="matches">Matches</Th>
+                {pro ? (
+                  <>
+                    <Th>Empresa · cargo</Th>
+                    <Th>Busca / ofrece</Th>
+                  </>
+                ) : (
+                  <>
+                    <Th k="age">Edad</Th>
+                    <Th>Géneros</Th>
+                  </>
+                )}
+                <Th k="squad_size">{v.copy.squad}</Th>
+                <Th k="matches">{v.copy.matches}</Th>
                 <Th>Tags</Th>
                 <Th k="total_spent" className="text-right">Gasto</Th>
                 <Th className="pr-5"><span className="sr-only">Acciones</span></Th>
@@ -131,19 +144,50 @@ export default function AdminCrmPage() {
                 <tr key={r.user_id} className="border-t border-white/5 hover:bg-white/[0.02]">
                   <td className="py-3 pl-5 pr-3">
                     <p className="font-semibold">{r.full_name}</p>
-                    <p className="text-xs text-muted">@{r.username} · {GENDER[r.gender]}{r.mood ? ` · ${MOOD_TAGS.find((m) => m.id === r.mood)?.emoji}` : ""}</p>
+                    <p className="text-xs text-muted">{pro ? r.industry ?? "—" : `@${r.username} · ${GENDER[r.gender]}`}{r.mood ? ` · ${MOOD_TAGS.find((m) => m.id === r.mood)?.emoji}` : ""}</p>
+                    {/* [v1.10] Categoría de la entrada: define a qué zonas puede pasar. */}
+                    <select
+                      aria-label={`Categoría de ${r.full_name}`}
+                      value={r.tier}
+                      onChange={async (e) => {
+                        const res = await exec(C.setAttendeeTier(event.id, r.user_id, e.target.value as AttendeeTier));
+                        if (res.ok) notify({ tone: "vip", title: `${r.full_name.split(" ")[0]} ahora es ${tierLabel(res.data.tier)}` });
+                      }}
+                      className={cn("mt-1 min-h-[32px] rounded-lg border bg-white/[0.04] px-2 font-display text-[11px] font-bold tracking-wider", r.tier === "attendee" ? "border-white/10 text-muted" : "border-vip/50 text-vip")}
+                    >
+                      {ATTENDEE_TIERS.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.label}
+                        </option>
+                      ))}
+                    </select>
                   </td>
                   <td className="px-3 py-3">
                     {r.phone ? (
-                      <a href={whatsappLink(r.phone, `¡Hola ${r.full_name.split(" ")[0]}! Gracias por venir a ${event.name} 🔥`)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-squad hover:underline">
+                      <a href={whatsappLink(r.phone, pro ? `¡Hola ${r.full_name.split(" ")[0]}! Gracias por venir a ${event.name}.` : `¡Hola ${r.full_name.split(" ")[0]}! Gracias por venir a ${event.name} 🔥`)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-squad hover:underline">
                         <MessageCircle className="size-3.5" /> {formatPhone(r.phone)}
                       </a>
                     ) : (
                       <span className="text-muted">—</span>
                     )}
                   </td>
-                  <td className="px-3 py-3 tabular-nums">{r.age}</td>
-                  <td className="px-3 py-3 text-xs text-muted">{r.music_genres.join(", ")}</td>
+                  {pro ? (
+                    <>
+                      <td className="px-3 py-3 text-xs">
+                        <p className="font-semibold text-primary">{r.company || "—"}</p>
+                        <p className="text-muted">{r.job_title}</p>
+                      </td>
+                      <td className="px-3 py-3 text-xs text-muted">
+                        <p>Busca: {r.looking_for.join(", ") || "—"}</p>
+                        <p>Ofrece: {r.offering.join(", ") || "—"}</p>
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td className="px-3 py-3 tabular-nums">{r.age}</td>
+                      <td className="px-3 py-3 text-xs text-muted">{r.music_genres.join(", ")}</td>
+                    </>
+                  )}
                   <td className="px-3 py-3 tabular-nums">{r.squad_size || "—"}</td>
                   <td className="px-3 py-3 tabular-nums">{r.matches}</td>
                   <td className="px-3 py-3">
@@ -179,7 +223,7 @@ export default function AdminCrmPage() {
           <h2 id="bans" className="flex items-center gap-2 text-lg"><Ban className="size-5 text-rouge" /> Bloqueados en este evento</h2>
           <ul className="mt-3 divide-y divide-white/5">
             {bans.map((b) => {
-              const p = getProfile(state, b.user_id);
+              const p = faceOf(state, b.user_id);
               return (
                 <li key={b.user_id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
                   <span>{p ? `${p.full_name} · @${p.username}` : "Perfil no disponible"}{b.reason ? <span className="text-muted"> — {b.reason}</span> : null}</span>

@@ -19,6 +19,7 @@ import { QrBlock } from "@/components/perks/QrCard";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
+import { faceOf, verticalOf } from "@/lib/engine/verticals";
 
 const CATEGORIES: { id: BarMenuItem["category"]; label: string }[] = [
   { id: "trago", label: "Tragos" },
@@ -137,7 +138,7 @@ function Bar() {
 
   return (
     <main className="pb-32">
-      <PageHeader title="Barra Express" subtitle={online ? "Pedí y pagá con Mercado Pago, sin fila" : "Pedí sin hacer fila"} backHref="/app" />
+      <PageHeader title={verticalOf(state, event.id).copy.bar} subtitle={online ? "Pedí y pagá con Mercado Pago, sin fila" : "Pedí sin hacer fila"} backHref="/app" />
       <div className="space-y-5 px-4">
         {active.map((o) => (
           <OrderCard
@@ -261,7 +262,7 @@ function Bar() {
             </div>
             <ul className="no-scrollbar -mx-1 mt-2 flex gap-2 overflow-x-auto px-1 pb-1">
               {members.map((m) => {
-                const p = getProfile(state, m.user_id);
+                const p = faceOf(state, m.user_id);
                 const on = sharing ? splitWith.includes(m.user_id) : m.user_id === meId;
                 return (
                   <li key={m.id}>

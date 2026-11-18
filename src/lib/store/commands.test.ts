@@ -12,6 +12,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSeedState, DEMO_IDS } from "@/lib/mock/seed";
 import type { RougeState } from "@/lib/types";
 import * as C from "./commands";
+import * as MT from "@/lib/engine/meetings";
 import type { Command } from "./commands";
 
 const SQL = readFileSync(path.resolve(__dirname, "../../../supabase/schema.sql"), "utf8");
@@ -112,9 +113,24 @@ function checkContract(calls: Call[]) {
 
 describe("contrato comandos ↔ schema.sql", () => {
   it("el parser encontró las funciones y tablas del esquema", () => {
-    expect(FUNCS.get("join_event")).toEqual(["p_code", "p_mood"]);
+    expect(FUNCS.get("join_event")).toEqual(["p_code", "p_mood", "p_persona"]);
     expect(TABLES.get("profiles")?.has("phone_normalized")).toBe(true);
     expect(TABLES.get("event_attendees")?.has("visited_sectors")).toBe(true);
+    expect(TABLES.get("event_attendees")?.has("persona_id")).toBe(true);
+    expect(TABLES.get("events")?.has("kind")).toBe(true);
+    expect(TABLES.get("profile_personas")?.has("looking_for")).toBe(true);
+    expect(FUNCS.get("delete_persona")).toEqual(["p_persona"]);
+    expect(FUNCS.get("profile_cards")).toEqual(["p_ids"]);
+    expect(FUNCS.get("request_meeting")).toContain("p_location_kind");
+    expect(TABLES.get("meetings")?.has("proposed_by")).toBe(true);
+    expect(TABLES.get("b2b_leads")?.has("attendees")).toBe(true);
+    expect(FUNCS.get("zone_check_in")).toEqual(["p_event", "p_zone", "p_value"]);
+    // QR rotativo: la app pide su pase a my_pass_token (usePassToken) y el escáner lo valida en zone_check_in.
+    expect(FUNCS.get("my_pass_token")).toEqual(["p_event"]);
+    expect(TABLES.get("events")?.has("dynamic_pass")).toBe(true);
+    expect(FUNCS.get("generate_invite_codes")).toContain("p_tier");
+    expect(TABLES.get("event_zones")?.has("allowed_tiers")).toBe(true);
+    expect(TABLES.get("profile_personas")?.has("privacy_level")).toBe(true);
   });
 
   const s0 = () => createSeedState(NOW);
@@ -126,6 +142,8 @@ describe("contrato comandos ↔ schema.sql", () => {
     return r.state;
   };
   const squadRule = s0().perk_rules[0];
+  /** Un horario libre del evento (franjas de 15 min; `skip` saltea las primeras). */
+  const slotIn = (s: RougeState, eventId: string, skip = 1) => MT.meetingSlots(s.events.find((e) => e.id === eventId)!, NOW, 30).filter((x) => !x.now)[skip].value;
   const readyOrder = () => {
     let s = s0();
     const o = C.createBarOrder(EV, ME, [{ itemId: "gin", qty: 1 }], "fast_pickup").local(s);
@@ -208,6 +226,39 @@ describe("contrato comandos ↔ schema.sql", () => {
     ["duplicateEvent", () => runRemote(C.duplicateEvent(EV, new Date(NOW + 7 * 86_400_000).toISOString()), st())],
     ["removeAttendee", () => runRemote(C.removeAttendee(EV, id(2), true, "motivo"), st())],
     ["unbanAttendee", () => { const r = C.removeAttendee(EV, id(2), true).local(st()); const s = (r as { state: RougeState }).state; return runRemote(C.unbanAttendee(EV, id(2)), s); }],
+    // [v1.7] Verticales y perfiles adicionales
+    ["joinEvent (corporativo con perfil profesional)", () => runRemote(C.joinEvent(ME, "PYME26", "pro_selling", undefined, DEMO_IDS.mePro), s0(), { join_event: DEMO_IDS.proEvent })],
+    ["upsertPersona (nuevo)", () => runRemote(C.upsertPersona(ME, { kind: "corporate", label: "Consultora", job_title: "Socia", company: "Benítez & Co", looking_for: ["clients"], offering: ["marketing"], linkedin_url: "linkedin.com/in/sofi" }), s0())],
+    ["upsertPersona (edición)", () => runRemote(C.upsertPersona(ME, { id: DEMO_IDS.mePro, kind: "corporate", job_title: "Directora de diseño" }), s0())],
+    ["upsertPersona (noche)", () => runRemote(C.upsertPersona(ME, { kind: "nightlife", label: "Techno", music_genres: ["Techno"] }), s0())],
+    ["deletePersona", () => { const r = C.upsertPersona(ME, { kind: "nightlife", label: "Otro", music_genres: ["House"] }).local(s0()); const s = (r as { state: RougeState; data: { id: string } }); return runRemote(C.deletePersona(ME, s.data.id), s.state); }],
+    ["upsertEvent (corporativo nuevo)", () => runRemote(C.upsertEvent({ kind: "corporate", name: "Encuentro Exportadores", starts_at: new Date(NOW + 72e5).toISOString(), ends_at: new Date(NOW + 9e6).toISOString() }), s0())],
+    // [v1.8] Privacidad, reuniones y salas
+    ["updatePrivacySettings", () => runRemote(C.updatePrivacySettings(ME, { incognito_default: true, pro_details_after_meeting: true }), s0())],
+    ["requestMeeting (sala)", () => { const s = s0(); const at = slotIn(s, DEMO_IDS.proEvent); return runRemote(C.requestMeeting(DEMO_IDS.proEvent, id(24), id(25), { topic: "Mentoría", startsAt: at, duration: 30, location: { kind: "spot", spotId: id(18001) } }), s, { request_meeting: { id: id(77) } }); }],
+    ["requestMeeting (pin)", () => { const s = s0(); return runRemote(C.requestMeeting(EV, id(2), id(11), { topic: "Patio", startsAt: slotIn(s, EV), duration: 15, location: { kind: "pin", x: 14, y: 70, label: "Fogón" } }), s, { request_meeting: { id: id(78) } }); }],
+    ["respondMeeting (aceptar con lugar)", () => runRemote(C.respondMeeting(id(19003), id(8), true, { kind: "spot", spotId: id(18005) }), s0(), { respond_meeting: { id: id(19003) } })],
+    ["respondMeeting (rechazar)", () => runRemote(C.respondMeeting(id(19001), ME, false), s0(), { respond_meeting: { id: id(19001) } })],
+    ["rescheduleMeeting", () => { const s = s0(); const later = slotIn(s, DEMO_IDS.proEvent, 4); return runRemote(C.rescheduleMeeting(id(19002), ME, { startsAt: later, duration: 15, location: { kind: "tbd" } }), s, { reschedule_meeting: {} }); }],
+    ["cancelMeeting", () => runRemote(C.cancelMeeting(id(19002), ME), s0(), { cancel_meeting: {} })],
+    ["upsertVenueSpot (nuevo)", () => runRemote(C.upsertVenueSpot(DEMO_IDS.proEvent, { name: "Sala 9", kind: "room", capacity: 2, coord_x: 50, coord_y: 50 }), st())],
+    ["upsertVenueSpot (edición)", () => runRemote(C.upsertVenueSpot(DEMO_IDS.proEvent, { ...s0().venue_spots[0], is_active: false }), st())],
+    ["deleteVenueSpot", () => runRemote(C.deleteVenueSpot(DEMO_IDS.proEvent, id(18001)), st())],
+    ["upsertEvent (solo acreditados)", () => runRemote(C.upsertEvent({ ...s0().events[1], networking_checkin_only: true }), st())],
+    // [v1.10] Ficha ejecutiva, categorías y zonas de control
+    ["upsertPersona (ficha ejecutiva con contacto)", () => runRemote(C.upsertPersona(ME, { id: DEMO_IDS.mePro, kind: "corporate", website_url: "estudio.com", contact_email: "s@estudio.com", contact_phone: "11 4000-1001", looking_for_note: "Pymes", offering_note: "Tiendas", privacy_level: "network" }), s0())],
+    ["generateInviteCodes (con categoría)", () => runRemote(C.generateInviteCodes(DEMO_IDS.proEvent, 3, "vip"), st(), { generate_invite_codes: [] })],
+    ["setAttendeeTier", () => runRemote(C.setAttendeeTier(DEMO_IDS.proEvent, ME, "speaker"), st(), { set_attendee_tier: {} })],
+    ["zoneCheckIn (área)", () => runRemote(C.zoneCheckIn(DEMO_IDS.proEvent, id(20003), `ROUGE:PASS:${DEMO_IDS.proEvent}:${ME}`), { ...s0(), current_user_id: DEMO_IDS.security }, { zone_check_in: { status: "zone_denied" } })],
+    ["zoneCheckIn (puerta principal)", () => runRemote(C.zoneCheckIn(EV, null, s0().event_invite_codes[10].code), { ...s0(), current_user_id: DEMO_IDS.security }, { zone_check_in: { status: "ok" } })],
+    ["upsertZone (nueva)", () => runRemote(C.upsertZone(DEMO_IDS.proEvent, { name: "Backstage", kind: "area", allowed_tiers: ["speaker"] }), st())],
+    ["upsertZone (edición)", () => runRemote(C.upsertZone(DEMO_IDS.proEvent, { id: id(20003), name: "Sala VIP", kind: "area", allowed_tiers: ["vip"], is_active: false }), st())],
+    ["deleteZone", () => runRemote(C.deleteZone(DEMO_IDS.proEvent, id(20005)), st())],
+    // [v1.10] Equipos que arma la organización (corporativo)
+    ["organizerCreateTeam", () => runRemote(C.organizerCreateTeam(DEMO_IDS.proEvent, "Logística"), st(), { create_team: { id: id(9), invite_code: "EQ-ABC123" } })],
+    ["organizerSetTeamMember (sumar)", () => runRemote(C.organizerSetTeamMember(DEMO_IDS.proEvent, DEMO_IDS.proTeam, id(25), true), st())],
+    ["organizerSetTeamMember (quitar)", () => runRemote(C.organizerSetTeamMember(DEMO_IDS.proEvent, DEMO_IDS.proTeam, ME, false), st())],
+    ["organizerDeleteTeam", () => runRemote(C.organizerDeleteTeam(DEMO_IDS.proEvent, DEMO_IDS.proTeam), st())],
     ["deleteEvent", () => { const r = C.duplicateEvent(EV, new Date(NOW + 7 * 86_400_000).toISOString()).local(st()); const s = (r as { state: RougeState; data: { event: { id: string } } }); return runRemote(C.deleteEvent(s.data.event.id), s.state); }],
   ];
 
@@ -231,6 +282,18 @@ describe("contrato comandos ↔ schema.sql", () => {
     expect(C.doorCheckIn(EV, v).local(as(DEMO_IDS.security)).ok).toBe(true);
     expect(C.doorCheckIn(EV, v).local(as(DEMO_IDS.bartender)).ok).toBe(false);
     expect(C.doorCheckIn(EV, v).local(as(DEMO_IDS.promoter)).ok).toBe(false);
+  });
+
+  it("zonas: seguridad escanea pero no configura; la categoría solo la cambia la organización", () => {
+    const as = (u: string) => ({ ...s0(), current_user_id: u });
+    const pass = `ROUGE:PASS:${DEMO_IDS.proEvent}:${ME}`;
+    expect(C.zoneCheckIn(DEMO_IDS.proEvent, id(20003), pass).local(as(DEMO_IDS.security)).ok).toBe(true);
+    expect(C.zoneCheckIn(DEMO_IDS.proEvent, id(20003), pass).local(as(DEMO_IDS.bartender)).ok).toBe(false);
+    expect(C.upsertZone(DEMO_IDS.proEvent, { name: "Backstage", kind: "area", allowed_tiers: [] }).local(as(DEMO_IDS.security)).ok).toBe(false);
+    expect(C.setAttendeeTier(DEMO_IDS.proEvent, ME, "vip").local(as(ME)).ok).toBe(false);
+    expect(C.setAttendeeTier(DEMO_IDS.proEvent, ME, "vip").local(as(DEMO_IDS.manager)).ok).toBe(true);
+    expect(C.organizerCreateTeam(DEMO_IDS.proEvent, "Logística").local(as(ME)).ok).toBe(false);
+    expect(C.organizerCreateTeam(DEMO_IDS.proEvent, "Logística").local(as(DEMO_IDS.manager)).ok).toBe(true);
   });
 
   it("gestión del evento: solo dueño/a o producción; eliminar solo quien lo creó", () => {
@@ -291,7 +354,17 @@ describe("contrato del cargador (fetchRemoteState) ↔ schema.sql", () => {
       },
       rpc: (fn: string, args: Record<string, unknown> = {}) => {
         reads.push({ rpc: fn, args, filters: [] });
-        const data = fn === "my_profile" ? [{ ...seed.profiles.find((p) => p.id === ME) }] : fn === "event_crm" ? [{ user_id: id(5), phone: "+5491150001005" }] : [];
+        const ids = (args.p_ids as string[] | undefined) ?? [];
+        const data =
+          fn === "my_profile"
+            ? [{ ...seed.profiles.find((p) => p.id === ME) }]
+            : fn === "event_crm"
+              ? [{ user_id: id(5), phone: "+5491150001005" }]
+              : fn === "profile_cards"
+                ? seed.profiles.filter((p) => ids.includes(p.id)).map(({ birth_date: _b, phone_normalized: _p, ...rest }) => ({ ...rest, age: 30 }))
+                : fn === "my_attendances"
+                  ? seed.event_attendees.filter((a) => a.user_id === ME)
+                  : [];
         return { then: (res: (v: { data: unknown; error: null }) => unknown) => Promise.resolve({ data, error: null }).then(res), catch: () => undefined };
       },
     } as unknown as SupabaseClient;
@@ -308,8 +381,12 @@ describe("contrato del cargador (fetchRemoteState) ↔ schema.sql", () => {
       if (r.select && r.select !== "*") for (const c of r.select.split(",")) expect(cols, `${r.table}.${c}`).toContain(c);
       for (const f of r.filters) expect(cols, `${r.table}.${f} (filtro)`).toContain(f);
     }
-    // El teléfono nunca se pide en el select de profiles (column privileges)
-    expect(reads.find((r) => r.table === "profiles")?.select).not.toMatch(/phone/);
+    // [v1.8] Los perfiles de otros nunca se leen por tabla: solo tarjetas saneadas (profile_cards, sin teléfono ni fecha).
+    expect(reads.some((r) => r.table === "profiles")).toBe(false);
+    expect(reads.some((r) => r.rpc === "profile_cards")).toBe(true);
+    // Las columnas privadas de la asistencia no se piden por tabla.
+    for (const r of reads.filter((x) => x.table === "event_attendees")) expect(r.select).not.toMatch(/total_spent|checked_in_at|referred_by|joined_via|visited_sectors|\*/);
+    expect(snap.state.profiles.find((p) => p.id === id(5))?.birth_date).toBeNull();
     expect(snap.isStaff).toBe(true); // created_by = yo
     expect(snap.state.active_event_id).toBe(EV);
     expect(snap.state.profiles.find((p) => p.id === ME)?.phone_normalized).toBe(seed.profiles.find((p) => p.id === ME)?.phone_normalized);
@@ -362,11 +439,11 @@ describe("permisos por rol (misma regla que has_staff_role en SQL)", () => {
   });
   it("solo dueño/a arma el equipo; producción no puede darse más permisos", () => {
     const r = C.setStaffRole(EV, "dani.barra", "manager").local(as(DEMO_IDS.organizer));
-    expect(r.ok && r.state.event_staff.find((x) => x.user_id === DEMO_IDS.bartender)?.role).toBe("manager");
+    expect(r.ok && r.state.event_staff.find((x) => x.event_id === EV && x.user_id === DEMO_IDS.bartender)?.role).toBe("manager");
     expect(C.setStaffRole(EV, "lucho.produccion", "owner").local(as(DEMO_IDS.manager)).ok).toBe(false);
     expect(C.setStaffRole(EV, "paula.owner", null).local(as(DEMO_IDS.organizer))).toMatchObject({ ok: false, error: "Quien creó el evento siempre es dueño/a." });
     const removed = C.setStaffRole(EV, "marta.seguridad", null).local(as(DEMO_IDS.organizer));
-    expect(removed.ok && removed.state.event_staff.some((x) => x.user_id === DEMO_IDS.security)).toBe(false);
+    expect(removed.ok && removed.state.event_staff.some((x) => x.event_id === EV && x.user_id === DEMO_IDS.security)).toBe(false);
     expect(C.setStaffRole(EV, "no.existe", "waiter").local(as(DEMO_IDS.organizer)).ok).toBe(false);
     expect(C.setStaffRole(EV, "no.existe", "waiter", { serverLookup: true }).local(as(DEMO_IDS.organizer)).ok).toBe(true);
   });

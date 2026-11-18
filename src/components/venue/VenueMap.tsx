@@ -28,6 +28,8 @@ interface VenueMapProps {
   /** Pin provisorio mientras el usuario elige ubicación */
   draft?: { x: number; y: number } | null;
   highlightSector?: string | null;
+  /** Salas, mesas y puntos de encuentro, o reuniones (marcadores con etiqueta). */
+  marks?: MapMark[];
   onTap?: (x: number, y: number, sector?: VenueSector) => void;
   onPinClick?: (pin: VisiblePin) => void;
   className?: string;
@@ -37,6 +39,26 @@ interface VenueMapProps {
 }
 
 const W = 300;
+
+/** Marcador simple del plano (salas/mesas del organizador, lugar de una reunión). */
+export interface MapMark {
+  key: string;
+  x: number;
+  y: number;
+  label: string;
+  icon: string;
+  tone: "vip" | "squad" | "rouge" | "muted";
+  /** Resaltado (la reunión enfocada, la sala elegida). */
+  emphasis?: boolean;
+  onClick?: () => void;
+}
+
+const MARK_TONE: Record<MapMark["tone"], string> = {
+  vip: "bg-vip text-background ring-vip/40",
+  squad: "bg-squad text-background ring-squad/40",
+  rouge: "bg-rouge text-white ring-rouge/40",
+  muted: "bg-white/80 text-background ring-white/30",
+};
 
 const SECTOR_STYLE: Record<VenueSector["kind"], { fill: string; stroke: string; label: string }> = {
   // Pista, cabina y VIP siguen los colores de la marca (variables CSS): se aplican con style, no con atributos SVG.
@@ -48,6 +70,10 @@ const SECTOR_STYLE: Record<VenueSector["kind"], { fill: string; stroke: string; 
   booth: { fill: "rgb(var(--c-rouge) / 0.14)", stroke: "rgb(var(--c-rouge) / 0.8)", label: "#FFFFFF" },
   restroom: { fill: "rgba(148,163,184,0.05)", stroke: "rgba(148,163,184,0.25)", label: "#94A3B8" },
   lounge: { fill: "rgba(148,163,184,0.04)", stroke: "rgba(148,163,184,0.28)", label: "#94A3B8" },
+  // Corporativo: escenario (como la cabina), stands de expositores (acento) y salas de reunión.
+  stage: { fill: "rgb(var(--c-rouge) / 0.12)", stroke: "rgb(var(--c-rouge) / 0.7)", label: "#FFFFFF" },
+  stand: { fill: "rgb(var(--c-vip) / 0.06)", stroke: "rgb(var(--c-vip) / 0.5)", label: "color-mix(in srgb, rgb(var(--c-vip)) 70%, white)" },
+  meeting: { fill: "rgba(248,250,252,0.04)", stroke: "rgba(248,250,252,0.35)", label: "#CBD5E1" },
 };
 
 export function VenueMap({
@@ -57,6 +83,7 @@ export function VenueMap({
   basePin,
   draft,
   highlightSector,
+  marks = [],
   onTap,
   onPinClick,
   className,
@@ -356,6 +383,24 @@ export function VenueMap({
               </MapMarker>
             );
           })}
+
+          {marks.map((m) => (
+            <MapMarker key={m.key} x={m.x} y={m.y} z={view.z}>
+              <button
+                type="button"
+                data-pin
+                onClick={m.onClick}
+                disabled={!m.onClick}
+                aria-label={m.label}
+                className="flex flex-col items-center disabled:cursor-default"
+              >
+                <span className={cn("grid place-items-center rounded-full font-display text-xs font-bold ring-4", MARK_TONE[m.tone], m.emphasis ? "size-8 animate-pin-pulse" : "size-6")}>{m.icon}</span>
+                {(!compact || m.emphasis) && (
+                  <span className={cn("mt-1 max-w-[120px] truncate rounded-full px-2 py-0.5 font-display text-[10px] font-bold", m.emphasis ? MARK_TONE[m.tone] : "bg-background/80 text-primary")}>{m.label}</span>
+                )}
+              </button>
+            </MapMarker>
+          ))}
 
           {draft && (
             <MapMarker x={draft.x} y={draft.y} z={view.z}>

@@ -6,6 +6,7 @@ import { House, Inbox, LayoutGrid, Map as MapIcon, UsersRound } from "lucide-rea
 import { inboxOf, pendingSquadInvites, rescueAlertsFor } from "@/lib/engine/selectors";
 import { useRouge } from "@/lib/store/RougeContext";
 import { cn } from "@/lib/utils";
+import { verticalOf } from "@/lib/engine/verticals";
 
 const ITEMS = [
   { href: "/app", label: "Inicio", icon: House },
@@ -16,7 +17,7 @@ const ITEMS = [
 ] as const;
 
 /** Rutas donde se muestra la navegación inferior. */
-export const NAV_ROUTES: readonly string[] = [...ITEMS.map((i) => i.href), "/profile", "/perks"];
+export const NAV_ROUTES: readonly string[] = [...ITEMS.map((i) => i.href), "/profile", "/perks", "/meetings"];
 
 export function BottomNav() {
   const pathname = usePathname();
@@ -24,6 +25,9 @@ export function BottomNav() {
   const pending = inboxOf(state, state.current_user_id, state.active_event_id).length;
   const rescue = rescueAlertsFor(state, state.active_event_id, state.current_user_id).length;
   const invites = pendingSquadInvites(state, state.active_event_id, state.current_user_id).length;
+  const v = verticalOf(state, state.active_event_id);
+  // Vocabulario de la vertical: en corporativo "Networking" y "Equipo".
+  const labelOf = (href: string, label: string) => (href === "/lobby" ? (v.kind === "corporate" ? "Networking" : label) : href === "/squad" ? v.copy.squad : label);
 
   return (
     <nav
@@ -31,7 +35,8 @@ export function BottomNav() {
       className="fixed inset-x-0 bottom-0 z-40 mx-auto max-w-md border-t border-white/10 bg-background/85 pb-[var(--safe-bottom)] backdrop-blur-xl"
     >
       <ul className="grid grid-cols-5">
-        {ITEMS.map(({ href, label, icon: Icon }) => {
+        {ITEMS.map(({ href, label: rawLabel, icon: Icon }) => {
+          const label = labelOf(href, rawLabel);
           const active = href === "/app" ? pathname === "/app" : pathname.startsWith(href);
           return (
             <li key={href}>
