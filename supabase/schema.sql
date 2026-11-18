@@ -2812,6 +2812,412 @@ do $$ declare f text; begin
 end $$;
 
 -- ════════════════════════════════════════════════════════════════════════
+-- [v1.11] ROUGE PRO · AGENDA MULTI-TRACK, "MI AGENDA" Y Q&A / ENCUESTAS EN VIVO (espejo: engine/schedule.ts)
+--   Solo eventos corporativos. Horario local del evento (America/Argentina/Buenos_Aires): day + "HH:MM".
+--   La organización (dueño/a, producción) carga charlas y las pone en vivo; el resto, todo por RPC.
+--   Privacidad: la autoría de una pregunta NUNCA está en session_questions (ni en Realtime): vive en
+--   session_question_authors, que solo lee su autor/a. Inscripciones y votos: cada persona ve los suyos;
+--   los totales son contadores del servidor (enrolled_count, upvotes, results).
+-- ════════════════════════════════════════════════════════════════════════
+create table if not exists public.event_sessions (
+  id              uuid primary key default gen_random_uuid(),
+  event_id        uuid not null references public.events(id) on delete cascade,
+  title           text not null check (char_length(title) between 3 and 120),
+  description     text not null default '' check (char_length(description) <= 600),
+  track           text not null check (char_length(track) between 2 and 40),
+  room_name       text not null check (char_length(room_name) between 2 and 60),
+  spot_id         uuid references public.venue_spots(id) on delete set null,  -- pin del plano indoor ("Ubicar sala")
+  day             date not null,
+  start_time      text not null check (start_time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'),
+  end_time        text not null check (end_time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'),
+  speakers        jsonb not null default '[]'::jsonb check (jsonb_typeof(speakers) = 'array' and jsonb_array_length(speakers) <= 6),
+  capacity        integer check (capacity is null or capacity between 1 and 5000),
+  enrolled_count  integer not null default 0 check (enrolled_count >= 0),
+  is_live_now     boolean not null default false,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+  constraint event_sessions_time_chk check (end_time > start_time)
+);
+create index if not exists idx_sessions_event on public.event_sessions (event_id, day, start_time);
+
+create table if not exists public.session_enrollments (
+  session_id  uuid not null references public.event_sessions(id) on delete cascade,
+  event_id    uuid not null references public.events(id) on delete cascade,
+  user_id     uuid not null references public.profiles(id) on delete cascade,
+  created_at  timestamptz not null default now(),
+  primary key (session_id, user_id)
+);
+create index if not exists idx_enrollments_user on public.session_enrollments (user_id, event_id);
+
+create table if not exists public.session_questions (
+  id            uuid primary key default gen_random_uuid(),
+  session_id    uuid not null references public.event_sessions(id) on delete cascade,
+  event_id      uuid not null references public.events(id) on delete cascade,
+  body          text not null check (char_length(body) between 3 and 280),
+  is_anonymous  boolean not null default false,
+  author_label  text check (author_label is null or char_length(author_label) <= 140),  -- "Nombre · Empresa" o null
+  status        text not null default 'open' check (status in ('open','answered','hidden')),
+  is_featured   boolean not null default false,
+  upvotes       integer not null default 0 check (upvotes >= 0),
+  created_at    timestamptz not null default now(),
+  answered_at   timestamptz,
+  constraint session_questions_anon_chk check (not is_anonymous or author_label is null)
+);
+create index if not exists idx_questions_session on public.session_questions (session_id, created_at);
+
+create table if not exists public.session_question_authors (
+  question_id  uuid primary key references public.session_questions(id) on delete cascade,
+  user_id      uuid not null references public.profiles(id) on delete cascade
+);
+create index if not exists idx_question_authors_user on public.session_question_authors (user_id);
+
+create table if not exists public.session_question_votes (
+  question_id  uuid not null references public.session_questions(id) on delete cascade,
+  user_id      uuid not null references public.profiles(id) on delete cascade,
+  created_at   timestamptz not null default now(),
+  primary key (question_id, user_id)
+);
+
+create table if not exists public.session_polls (
+  id          uuid primary key default gen_random_uuid(),
+  session_id  uuid not null references public.event_sessions(id) on delete cascade,
+  event_id    uuid not null references public.events(id) on delete cascade,
+  question    text not null check (char_length(question) between 3 and 140),
+  options     jsonb not null check (jsonb_typeof(options) = 'array' and jsonb_array_length(options) between 2 and 6),
+  results     jsonb not null default '{}'::jsonb,
+  status      text not null default 'open' check (status in ('open','closed')),
+  created_at  timestamptz not null default now(),
+  closed_at   timestamptz
+);
+create index if not exists idx_polls_session on public.session_polls (session_id, created_at desc);
+create unique index if not exists session_polls_one_open on public.session_polls (session_id) where status = 'open';
+
+create table if not exists public.session_poll_votes (
+  poll_id     uuid not null references public.session_polls(id) on delete cascade,
+  user_id     uuid not null references public.profiles(id) on delete cascade,
+  option_id   text not null,
+  created_at  timestamptz not null default now(),
+  primary key (poll_id, user_id)
+);
+
+alter table public.event_sessions           enable row level security;
+alter table public.session_enrollments      enable row level security;
+alter table public.session_questions        enable row level security;
+alter table public.session_question_authors enable row level security;
+alter table public.session_question_votes   enable row level security;
+alter table public.session_polls            enable row level security;
+alter table public.session_poll_votes       enable row level security;
+
+-- Agenda habilitada solo en eventos corporativos (⇔ features.agenda en verticals.ts).
+create or replace function public.agenda_enabled(p_event uuid)
+returns boolean language sql stable security definer set search_path = public, extensions as $$
+  select exists (select 1 from public.events where id = p_event and kind::text = 'corporate');
+$$;
+
+-- Instante de fin de una charla (hora local del evento).
+create or replace function public.session_ends_at(p_day date, p_end text)
+returns timestamptz language sql stable set search_path = public, extensions as $$
+  select ((p_day::text || ' ' || p_end)::timestamp at time zone 'America/Argentina/Buenos_Aires');
+$$;
+
+-- ¿Se pisan dos charlas? Mismo día y [inicio, fin) que se cruzan (⇔ sessionsOverlap).
+create or replace function public.sessions_overlap(p_day_a date, p_start_a text, p_end_a text, p_day_b date, p_start_b text, p_end_b text)
+returns boolean language sql immutable set search_path = public, extensions as $$
+  select p_day_a = p_day_b and p_start_a < p_end_b and p_start_b < p_end_a;
+$$;
+
+-- Validación de cada alta/edición (⇔ upsertSession): vertical, días del evento, pin del plano, sala libre, oradores, cupo.
+create or replace function public.tg_session_check()
+returns trigger language plpgsql security definer set search_path = public, extensions as $$
+declare v_ev public.events; v_sp jsonb;
+begin
+  if tg_op = 'UPDATE' and new.event_id <> old.event_id then raise exception 'forbidden'; end if;
+  -- Contadores y "En vivo" (RPC): no se re-valida la charla (el evento pudo cambiar de fechas después).
+  if tg_op = 'UPDATE' and (new.title, new.description, new.track, new.room_name, new.spot_id, new.day, new.start_time, new.end_time, new.speakers, new.capacity)
+     is not distinct from (old.title, old.description, old.track, old.room_name, old.spot_id, old.day, old.start_time, old.end_time, old.speakers, old.capacity) then
+    return new;
+  end if;
+  select * into v_ev from public.events where id = new.event_id;
+  if v_ev.id is null then raise exception 'not_found'; end if;
+  if v_ev.kind::text <> 'corporate' then raise exception 'not_in_vertical'; end if;
+  if tg_op = 'INSERT' and (select count(*) from public.event_sessions where event_id = new.event_id) >= 200 then raise exception 'too_many_sessions'; end if;
+  new.title := btrim(regexp_replace(new.title, '\s+', ' ', 'g'));
+  new.track := btrim(regexp_replace(new.track, '\s+', ' ', 'g'));
+  new.room_name := btrim(regexp_replace(new.room_name, '\s+', ' ', 'g'));
+  if new.end_time <= new.start_time then raise exception 'invalid_session_time'; end if;
+  if new.day < (v_ev.starts_at at time zone 'America/Argentina/Buenos_Aires')::date
+     or new.day > ((v_ev.ends_at - interval '1 millisecond') at time zone 'America/Argentina/Buenos_Aires')::date then
+    raise exception 'outside_event';
+  end if;
+  if new.spot_id is not null and (tg_op = 'INSERT' or new.spot_id is distinct from old.spot_id)
+     and not exists (select 1 from public.venue_spots where id = new.spot_id and event_id = new.event_id and is_active) then
+    raise exception 'invalid_session_spot';
+  end if;
+  if exists (select 1 from public.event_sessions x where x.event_id = new.event_id and x.id <> new.id
+             and lower(x.room_name) = lower(new.room_name)
+             and public.sessions_overlap(x.day, x.start_time, x.end_time, new.day, new.start_time, new.end_time)) then
+    raise exception 'room_busy';
+  end if;
+  for v_sp in select * from jsonb_array_elements(new.speakers) loop
+    if jsonb_typeof(v_sp) <> 'object' or char_length(btrim(coalesce(v_sp->>'name', ''))) not between 2 and 60
+       or char_length(coalesce(v_sp->>'role', '')) > 60 or char_length(coalesce(v_sp->>'company', '')) > 60
+       or char_length(coalesce(v_sp->>'avatar_url', '')) > 500 then
+      raise exception 'invalid_speaker';
+    end if;
+  end loop;
+  if tg_op = 'UPDATE' and new.capacity is not null and new.capacity < old.enrolled_count then raise exception 'capacity_below_enrolled'; end if;
+  new.updated_at := now();
+  return new;
+end $$;
+drop trigger if exists session_check on public.event_sessions;
+create trigger session_check before insert or update on public.event_sessions for each row execute function public.tg_session_check();
+
+-- EVENT SESSIONS ── la agenda la ve quien está en el evento (y el equipo); la gestionan dueño/a o producción.
+-- enrolled_count e is_live_now no se escriben por tabla (column privileges): solo por RPC.
+drop policy if exists sessions_select on public.event_sessions;
+create policy sessions_select on public.event_sessions for select to authenticated
+  using (public.is_event_attendee(event_id) or public.is_event_staff(event_id));
+drop policy if exists sessions_manage on public.event_sessions;
+create policy sessions_manage on public.event_sessions for all to authenticated
+  using (public.is_event_manager(event_id)) with check (public.is_event_manager(event_id));
+revoke all on public.event_sessions from anon, authenticated;
+grant select, delete on public.event_sessions to authenticated;
+grant insert (id, event_id, title, description, track, room_name, spot_id, day, start_time, end_time, speakers, capacity)
+  on public.event_sessions to authenticated;
+grant update (title, description, track, room_name, spot_id, day, start_time, end_time, speakers, capacity)
+  on public.event_sessions to authenticated;
+
+-- MI AGENDA / VOTOS ── cada persona ve solo lo suyo; se escribe por RPC.
+drop policy if exists enrollments_select on public.session_enrollments;
+create policy enrollments_select on public.session_enrollments for select to authenticated using (user_id = auth.uid());
+drop policy if exists question_authors_select on public.session_question_authors;
+create policy question_authors_select on public.session_question_authors for select to authenticated using (user_id = auth.uid());
+drop policy if exists question_votes_select on public.session_question_votes;
+create policy question_votes_select on public.session_question_votes for select to authenticated using (user_id = auth.uid());
+drop policy if exists poll_votes_select on public.session_poll_votes;
+create policy poll_votes_select on public.session_poll_votes for select to authenticated using (user_id = auth.uid());
+
+-- PREGUNTAS ── las ve quien está en el evento; las ocultas, solo la moderación y su autor/a.
+drop policy if exists questions_select on public.session_questions;
+create policy questions_select on public.session_questions for select to authenticated
+  using ((public.is_event_attendee(event_id) or public.is_event_staff(event_id))
+         and (status <> 'hidden' or public.is_event_manager(event_id)
+              or exists (select 1 from public.session_question_authors a where a.question_id = session_questions.id and a.user_id = auth.uid())));
+-- ENCUESTAS ── las ve quien está en el evento (resultados agregados).
+drop policy if exists polls_select on public.session_polls;
+create policy polls_select on public.session_polls for select to authenticated
+  using (public.is_event_attendee(event_id) or public.is_event_staff(event_id));
+
+do $$ declare t text; begin
+  foreach t in array array['session_enrollments','session_questions','session_question_authors','session_question_votes','session_polls','session_poll_votes'] loop
+    execute format('revoke all on public.%I from anon, authenticated', t);
+    execute format('grant select on public.%I to authenticated', t);
+  end loop;
+end $$;
+
+-- Charla para participar (⇔ participantCheck en el motor): existe, es corporativa y estoy en el evento.
+create or replace function public.session_for_attendee(p_session uuid, p_live boolean default false)
+returns public.event_sessions language plpgsql stable security definer set search_path = public, extensions as $$
+declare v_s public.event_sessions;
+begin
+  if auth.uid() is null then raise exception 'not_authenticated'; end if;
+  select * into v_s from public.event_sessions where id = p_session;
+  if v_s.id is null then raise exception 'session_not_found'; end if;
+  if not public.agenda_enabled(v_s.event_id) then raise exception 'not_in_vertical'; end if;
+  if not public.is_event_attendee(v_s.event_id) then raise exception 'agenda_not_attendee'; end if;
+  if p_live and not v_s.is_live_now then raise exception 'not_live'; end if;
+  return v_s;
+end $$;
+
+-- Agendar (⇔ enrollSession). p_replace = charlas de mi agenda que salen en la misma operación ("Reemplazar").
+create or replace function public.enroll_session(p_session uuid, p_replace uuid[] default '{}')
+returns public.event_sessions language plpgsql security definer set search_path = public, extensions as $$
+declare v_s public.event_sessions; v_uid uuid := auth.uid();
+begin
+  perform public.session_for_attendee(p_session);
+  select * into v_s from public.event_sessions where id = p_session for update;
+  if public.session_ends_at(v_s.day, v_s.end_time) <= now() then raise exception 'session_over'; end if;
+  if exists (select 1 from public.session_enrollments where session_id = p_session and user_id = v_uid) then return v_s; end if;
+  if v_s.capacity is not null and v_s.enrolled_count >= v_s.capacity then raise exception 'session_full'; end if;
+  with gone as (
+    delete from public.session_enrollments e
+    where e.user_id = v_uid and e.event_id = v_s.event_id and e.session_id <> p_session and e.session_id = any(coalesce(p_replace, '{}'))
+    returning e.session_id
+  )
+  update public.event_sessions x set enrolled_count = greatest(0, x.enrolled_count - 1) from gone where x.id = gone.session_id;
+  insert into public.session_enrollments (session_id, event_id, user_id) values (p_session, v_s.event_id, v_uid);
+  update public.event_sessions set enrolled_count = enrolled_count + 1 where id = p_session returning * into v_s;
+  return v_s;
+end $$;
+
+create or replace function public.unenroll_session(p_session uuid)
+returns public.event_sessions language plpgsql security definer set search_path = public, extensions as $$
+declare v_s public.event_sessions;
+begin
+  if auth.uid() is null then raise exception 'not_authenticated'; end if;
+  select * into v_s from public.event_sessions where id = p_session for update;
+  if v_s.id is null then raise exception 'session_not_found'; end if;
+  delete from public.session_enrollments where session_id = p_session and user_id = auth.uid();
+  if found then
+    update public.event_sessions set enrolled_count = greatest(0, enrolled_count - 1) where id = p_session returning * into v_s;
+  end if;
+  return v_s;
+end $$;
+
+-- "Activar En Vivo" / "Terminar" (dueño/a, producción). Al terminar se cierra la encuesta abierta.
+create or replace function public.set_session_live(p_session uuid, p_live boolean)
+returns public.event_sessions language plpgsql security definer set search_path = public, extensions as $$
+declare v_s public.event_sessions;
+begin
+  select * into v_s from public.event_sessions where id = p_session;
+  if v_s.id is null then raise exception 'session_not_found'; end if;
+  if not public.is_event_manager(v_s.event_id) then raise exception 'forbidden'; end if;
+  update public.event_sessions set is_live_now = p_live where id = p_session returning * into v_s;
+  if not p_live then
+    update public.session_polls set status = 'closed', closed_at = now() where session_id = p_session and status = 'open';
+  end if;
+  return v_s;
+end $$;
+
+-- Cómo firma una pregunta no anónima: "Nombre · Empresa" de la cara con la que entró al evento (⇔ authorLabel).
+create or replace function public.question_author_label(p_event uuid, p_user uuid)
+returns text language sql stable security definer set search_path = public, extensions as $$
+  select left(coalesce(nullif(btrim(pp.display_name), ''), nullif(btrim(p.full_name), ''), 'Asistente')
+              || coalesce(' · ' || nullif(btrim(pp.company), ''), ''), 140)
+  from public.event_attendees a
+  join public.profiles p on p.id = a.user_id
+  left join public.profile_personas pp on pp.id = a.persona_id
+  where a.event_id = p_event and a.user_id = p_user;
+$$;
+
+-- Preguntar (⇔ askQuestion). Hasta 5 abiertas por persona y charla. La autoría queda en session_question_authors.
+create or replace function public.ask_question(p_session uuid, p_body text, p_anonymous boolean default false)
+returns public.session_questions language plpgsql security definer set search_path = public, extensions as $$
+declare v_s public.event_sessions; v_q public.session_questions; v_body text := btrim(regexp_replace(coalesce(p_body, ''), '[ \t]+', ' ', 'g'));
+begin
+  v_s := public.session_for_attendee(p_session, true);
+  if char_length(v_body) not between 3 and 280 then raise exception 'invalid_question'; end if;
+  if (select count(*) from public.session_questions q join public.session_question_authors a on a.question_id = q.id
+      where q.session_id = p_session and q.status = 'open' and a.user_id = auth.uid()) >= 5 then
+    raise exception 'too_many_questions';
+  end if;
+  insert into public.session_questions (session_id, event_id, body, is_anonymous, author_label)
+  values (p_session, v_s.event_id, v_body, coalesce(p_anonymous, false),
+          case when coalesce(p_anonymous, false) then null else public.question_author_label(v_s.event_id, auth.uid()) end)
+  returning * into v_q;
+  insert into public.session_question_authors (question_id, user_id) values (v_q.id, auth.uid());
+  return v_q;
+end $$;
+
+-- Votar ▲ / sacar el voto (⇔ toggleQuestionVote). Nunca a la propia pregunta.
+create or replace function public.vote_question(p_question uuid)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare v_q public.session_questions; v_voted boolean;
+begin
+  select * into v_q from public.session_questions where id = p_question for update;
+  if v_q.id is null or v_q.status = 'hidden' then raise exception 'question_not_found'; end if;
+  perform public.session_for_attendee(v_q.session_id, true);
+  if exists (select 1 from public.session_question_authors where question_id = p_question and user_id = auth.uid()) then raise exception 'own_question'; end if;
+  delete from public.session_question_votes where question_id = p_question and user_id = auth.uid();
+  v_voted := not found;
+  if v_voted then insert into public.session_question_votes (question_id, user_id) values (p_question, auth.uid()); end if;
+  update public.session_questions set upvotes = greatest(0, upvotes + case when v_voted then 1 else -1 end)
+  where id = p_question returning * into v_q;
+  return jsonb_build_object('voted', v_voted, 'upvotes', v_q.upvotes);
+end $$;
+
+-- Moderar (⇔ moderateQuestion): feature (una por charla), unfeature, answer, reopen, hide, unhide. Dueño/a y producción.
+create or replace function public.moderate_question(p_question uuid, p_action text)
+returns public.session_questions language plpgsql security definer set search_path = public, extensions as $$
+declare v_q public.session_questions;
+begin
+  select * into v_q from public.session_questions where id = p_question;
+  if v_q.id is null then raise exception 'question_not_found'; end if;
+  if not public.is_event_manager(v_q.event_id) then raise exception 'forbidden'; end if;
+  if p_action = 'feature' then
+    update public.session_questions set is_featured = false where session_id = v_q.session_id and is_featured and id <> p_question;
+    update public.session_questions set is_featured = true, status = 'open', answered_at = null where id = p_question returning * into v_q;
+  elsif p_action = 'unfeature' then
+    update public.session_questions set is_featured = false where id = p_question returning * into v_q;
+  elsif p_action = 'answer' then
+    update public.session_questions set status = 'answered', is_featured = false, answered_at = now() where id = p_question returning * into v_q;
+  elsif p_action = 'hide' then
+    update public.session_questions set status = 'hidden', is_featured = false where id = p_question returning * into v_q;
+  elsif p_action in ('reopen', 'unhide') then
+    update public.session_questions set status = 'open', answered_at = null where id = p_question returning * into v_q;
+  else
+    raise exception 'invalid_action';
+  end if;
+  return v_q;
+end $$;
+
+-- Lanzar una encuesta (⇔ launchPoll): charla en vivo, 2 a 6 opciones distintas; cierra la que estaba abierta.
+create or replace function public.launch_poll(p_session uuid, p_question text, p_options text[])
+returns public.session_polls language plpgsql security definer set search_path = public, extensions as $$
+declare v_s public.event_sessions; v_p public.session_polls; v_q text := btrim(regexp_replace(coalesce(p_question, ''), '\s+', ' ', 'g'));
+        v_labels text[]; v_opts jsonb := '[]'::jsonb; v_res jsonb := '{}'::jsonb; i int;
+begin
+  select * into v_s from public.event_sessions where id = p_session;
+  if v_s.id is null then raise exception 'session_not_found'; end if;
+  if not public.is_event_manager(v_s.event_id) then raise exception 'forbidden'; end if;
+  if not public.agenda_enabled(v_s.event_id) then raise exception 'not_in_vertical'; end if;
+  if not v_s.is_live_now then raise exception 'not_live'; end if;
+  select coalesce(array_agg(l order by o), '{}') into v_labels
+  from (select btrim(regexp_replace(x, '\s+', ' ', 'g')) as l, o from unnest(coalesce(p_options, '{}')) with ordinality as u(x, o)) t where l <> '';
+  if char_length(v_q) not between 3 and 140 or cardinality(v_labels) not between 2 and 6
+     or (select count(distinct lower(l)) from unnest(v_labels) l) <> cardinality(v_labels)
+     or exists (select 1 from unnest(v_labels) l where char_length(l) > 60) then
+    raise exception 'invalid_poll';
+  end if;
+  for i in 1 .. cardinality(v_labels) loop
+    v_opts := v_opts || jsonb_build_array(jsonb_build_object('id', 'o' || i, 'label', v_labels[i]));
+    v_res := v_res || jsonb_build_object('o' || i, 0);
+  end loop;
+  update public.session_polls set status = 'closed', closed_at = now() where session_id = p_session and status = 'open';
+  insert into public.session_polls (session_id, event_id, question, options, results)
+  values (p_session, v_s.event_id, v_q, v_opts, v_res) returning * into v_p;
+  return v_p;
+end $$;
+
+create or replace function public.close_poll(p_poll uuid)
+returns public.session_polls language plpgsql security definer set search_path = public, extensions as $$
+declare v_p public.session_polls;
+begin
+  select * into v_p from public.session_polls where id = p_poll;
+  if v_p.id is null then raise exception 'not_found'; end if;
+  if not public.is_event_manager(v_p.event_id) then raise exception 'forbidden'; end if;
+  update public.session_polls set status = 'closed', closed_at = coalesce(closed_at, now()) where id = p_poll returning * into v_p;
+  return v_p;
+end $$;
+
+-- Votar en un toque (⇔ votePoll): un voto por persona, se puede cambiar mientras la encuesta está abierta.
+create or replace function public.vote_poll(p_poll uuid, p_option text)
+returns public.session_polls language plpgsql security definer set search_path = public, extensions as $$
+declare v_p public.session_polls; v_prev text;
+begin
+  select * into v_p from public.session_polls where id = p_poll for update;
+  if v_p.id is null then raise exception 'not_found'; end if;
+  perform public.session_for_attendee(v_p.session_id, true);
+  if v_p.status <> 'open' then raise exception 'poll_closed'; end if;
+  if not exists (select 1 from jsonb_array_elements(v_p.options) o where o->>'id' = p_option) then raise exception 'invalid_option'; end if;
+  select option_id into v_prev from public.session_poll_votes where poll_id = p_poll and user_id = auth.uid();
+  if v_prev = p_option then return v_p; end if;
+  insert into public.session_poll_votes (poll_id, user_id, option_id) values (p_poll, auth.uid(), p_option)
+  on conflict (poll_id, user_id) do update set option_id = excluded.option_id, created_at = now();
+  update public.session_polls
+  set results = case when v_prev is null then results
+                     else jsonb_set(results, array[v_prev], to_jsonb(greatest(0, coalesce((results->>v_prev)::int, 0) - 1))) end
+  where id = p_poll;
+  update public.session_polls
+  set results = jsonb_set(results, array[p_option], to_jsonb(coalesce((results->>p_option)::int, 0) + 1))
+  where id = p_poll returning * into v_p;
+  return v_p;
+end $$;
+
+revoke execute on function public.session_for_attendee(uuid, boolean) from public, anon;
+revoke execute on function public.question_author_label(uuid, uuid) from public, anon, authenticated;
+
+-- ════════════════════════════════════════════════════════════════════════
 -- REALTIME (chat, pines, alertas, blasts, comandas)
 -- ════════════════════════════════════════════════════════════════════════
 do $$
@@ -2820,7 +3226,8 @@ begin
   foreach t in array array['messages','map_pins','connections','squad_members','squads','blast_deliveries',
                            'user_perks_qrs','bar_orders','song_requests','raffles','event_attendees',
                            'brands','squad_expenses','squad_settlements','profile_personas','meetings','venue_spots',
-                           'event_zones','zone_check_ins'] loop
+                           'event_zones','zone_check_ins','event_sessions','session_enrollments','session_questions',
+                           'session_question_authors','session_question_votes','session_polls','session_poll_votes'] loop
     begin
       execute format('alter publication supabase_realtime add table public.%I', t);
     exception when duplicate_object then null; when undefined_object then null;

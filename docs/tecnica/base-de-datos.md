@@ -150,6 +150,20 @@ visitado; pedidos → `updated_at`; perfil → Instagram verificado (`profile_in
 | `zone_check_ins` | lectura: dueño/a, producción y seguridad · escritura: solo RPC | Registro de lecturas: zona, persona, código, personal, `granted`/`denied`, motivo y categoría. |
 | `zone_check_in(event, zone, value)` | dueño/a, producción, seguridad | Escáner por zona (⇔ `zoneCheckIn`): valida la categoría; en puertas acredita. `door_check_in` = puerta principal. En corporativo devuelve la cara profesional (sin edad). |
 
+### Agenda multi-track, Mi Agenda y Q&A / encuestas en vivo (v1.11)
+
+| Objeto | Quién | Qué hace |
+|---|---|---|
+| `event_sessions` | lectura: quien está en el evento · gestión: dueño/a y producción | Charlas (solo `kind = corporate`): título, descripción, track, sala, `spot_id` (pin del plano), `day` + `start_time`/`end_time` "HH:MM" (hora de Argentina), oradores (jsonb, ≤ 6), cupo. Trigger `session_check`: días del evento (`outside_event`), pin activo del evento, sala libre (`room_busy`), oradores, cupo ≥ agendados, ≤ 200 por evento. `enrolled_count` e `is_live_now` no son escribibles por tabla (column privileges). |
+| `session_enrollments` | lectura: cada persona las suyas · escritura: RPC | Mi Agenda. |
+| `enroll_session(session, replace[])` / `unenroll_session(session)` | asistente | Agenda con cupo (`session_full`), no charlas terminadas (`session_over`); `replace` saca charlas propias en la misma operación. Idempotente. |
+| `set_session_live(session, live)` | dueño/a y producción | Abre/cierra Q&A y encuestas; al terminar cierra la encuesta abierta. |
+| `session_questions` | lectura: quien está en el evento (las `hidden`, solo moderación y su autor/a) · escritura: RPC | Preguntas sin columna de autor: `author_label` ("Nombre · Empresa") o null si es anónima; `upvotes` contador del servidor. |
+| `session_question_authors` / `session_question_votes` | lectura: cada persona lo suyo | Autoría (privada, incluso para la organización) y votos ▲. |
+| `ask_question` / `vote_question` / `moderate_question` | asistente / asistente / dueño/a y producción | Preguntar (charla en vivo, 3–280, ≤ 5 abiertas), votar o sacar el voto (nunca la propia: `own_question`), y `feature` (una por charla), `unfeature`, `answer`, `reopen`, `hide`, `unhide`. |
+| `session_polls` / `session_poll_votes` | lectura: quien está en el evento / cada persona su voto | Encuestas (una abierta por charla: índice único parcial) con `results` agregados en el servidor. |
+| `launch_poll` / `close_poll` / `vote_poll` | dueño/a y producción / ídem / asistente | Lanzar (2–6 opciones distintas, cierra la anterior), cerrar y votar (cambiable mientras está abierta). |
+
 Los valores nuevos del enum `mood_tag_t` se agregan con `alter type … add value` y en el script se comparan como texto
 (`mood::text`), igual que `promoter`, para que `schema.sql` se pueda aplicar en una sola transacción.
 
@@ -165,8 +179,9 @@ Los valores nuevos del enum `mood_tag_t` se agregan con `alter type … add valu
 
 Publicadas en `supabase_realtime`: `messages`, `map_pins`, `connections`, `squad_members`, `squads`,
 `blast_deliveries`, `user_perks_qrs`, `bar_orders`, `song_requests`, `raffles`, `event_attendees`, `brands`,
-`squad_expenses`, `squad_settlements`, `profile_personas`, `meetings`, `venue_spots`, `event_zones` y
-`zone_check_ins`. Realtime respeta
+`squad_expenses`, `squad_settlements`, `profile_personas`, `meetings`, `venue_spots`, `event_zones`,
+`zone_check_ins` y las de la agenda (`event_sessions`, `session_enrollments`, `session_questions`,
+`session_question_authors`, `session_question_votes`, `session_polls`, `session_poll_votes`). Realtime respeta
 RLS: cada usuario solo recibe lo que puede ver.
 
 ## Reglas para cambiar el esquema

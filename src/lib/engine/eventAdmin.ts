@@ -203,6 +203,11 @@ export function deleteEvent(state: RougeState, eventId: UUID, userId: UUID): R<u
       squad_members: state.squad_members.filter((m) => !squadIds.has(m.squad_id)),
       map_pins: by(state.map_pins),
       messages: state.messages.filter((m) => !(m.squad_id && squadIds.has(m.squad_id))),
+      // [v1.11] Agenda del evento (en SQL: on delete cascade).
+      event_sessions: by(state.event_sessions),
+      session_enrollments: by(state.session_enrollments),
+      session_questions: by(state.session_questions),
+      session_polls: by(state.session_polls),
       event_blasts: by(state.event_blasts),
       user_perks_qrs: by(state.user_perks_qrs),
       perk_rules: by(state.perk_rules),

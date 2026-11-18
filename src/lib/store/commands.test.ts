@@ -251,6 +251,19 @@ describe("contrato comandos ↔ schema.sql", () => {
     ["upsertZone (nueva)", () => runRemote(C.upsertZone(DEMO_IDS.proEvent, { name: "Backstage", kind: "area", allowed_tiers: ["speaker"] }), st())],
     ["upsertZone (edición)", () => runRemote(C.upsertZone(DEMO_IDS.proEvent, { id: id(20003), name: "Sala VIP", kind: "area", allowed_tiers: ["vip"], is_active: false }), st())],
     ["deleteZone", () => runRemote(C.deleteZone(DEMO_IDS.proEvent, id(20005)), st())],
+    // [v1.11] Agenda multi-track, Mi Agenda, Q&A y encuestas
+    ["upsertSession (nueva)", () => { const s = st(); const day = s.event_sessions[1].day; return runRemote(C.upsertSession(DEMO_IDS.proEvent, { title: "Ciberseguridad", track: "Tecnología & IA", room_name: "Sala 1", spot_id: id(18001), day, start_time: "00:00", end_time: "00:30", speakers: [{ name: "Ana Paz", role: "CEO", company: "Nube" }], capacity: 40 }), s); }],
+    ["upsertSession (edición)", () => runRemote(C.upsertSession(DEMO_IDS.proEvent, { ...s0().event_sessions[2], title: "Liderar equipos que crecen" }), st())],
+    ["deleteSession", () => runRemote(C.deleteSession(DEMO_IDS.proEvent, id(21003)), st())],
+    ["setSessionLive", () => runRemote(C.setSessionLive(DEMO_IDS.proEvent, id(21005), true), st(), { set_session_live: {} })],
+    ["enrollSession (reemplazar)", () => runRemote(C.enrollSession(ME, id(21004), [id(21005)]), s0(), { enroll_session: {} })],
+    ["unenrollSession", () => runRemote(C.unenrollSession(ME, id(21005)), s0(), { unenroll_session: {} })],
+    ["askQuestion", () => runRemote(C.askQuestion(ME, id(21002), "¿Cómo empiezo?", true), s0(), { ask_question: {} })],
+    ["toggleQuestionVote", () => runRemote(C.toggleQuestionVote(ME, id(21102)), s0(), { vote_question: { voted: true, upvotes: 18 } })],
+    ["moderateQuestion", () => runRemote(C.moderateQuestion(DEMO_IDS.proEvent, id(21102), "feature"), st(), { moderate_question: {} })],
+    ["launchPoll", () => runRemote(C.launchPoll(DEMO_IDS.proEvent, id(21002), "¿Te sirvió?", ["Sí", "No"]), st(), { launch_poll: {} })],
+    ["closePoll", () => runRemote(C.closePoll(DEMO_IDS.proEvent, id(21201)), st(), { close_poll: {} })],
+    ["votePoll", () => runRemote(C.votePoll(ME, id(21201), "o2"), s0(), { vote_poll: {} })],
     ["deleteEvent", () => { const r = C.duplicateEvent(EV, new Date(NOW + 7 * 86_400_000).toISOString()).local(st()); const s = (r as { state: RougeState; data: { event: { id: string } } }); return runRemote(C.deleteEvent(s.data.event.id), s.state); }],
   ];
 
@@ -284,6 +297,20 @@ describe("contrato comandos ↔ schema.sql", () => {
     expect(C.upsertZone(DEMO_IDS.proEvent, { name: "Backstage", kind: "area", allowed_tiers: [] }).local(as(DEMO_IDS.security)).ok).toBe(false);
     expect(C.setAttendeeTier(DEMO_IDS.proEvent, ME, "vip").local(as(ME)).ok).toBe(false);
     expect(C.setAttendeeTier(DEMO_IDS.proEvent, ME, "vip").local(as(DEMO_IDS.manager)).ok).toBe(true);
+  });
+
+  it("agenda: la carga y la moderación son de la organización; el contador y el en vivo nunca van por tabla", async () => {
+    const as = (u: string) => ({ ...s0(), current_user_id: u });
+    const pro = DEMO_IDS.proEvent;
+    expect(C.setSessionLive(pro, id(21005), true).local(as(ME)).ok).toBe(false);
+    expect(C.setSessionLive(pro, id(21005), true).local(as(DEMO_IDS.security)).ok).toBe(false);
+    expect(C.setSessionLive(pro, id(21005), true).local(as(DEMO_IDS.manager)).ok).toBe(true);
+    expect(C.moderateQuestion(pro, id(21102), "hide").local(as(ME)).ok).toBe(false);
+    expect(C.launchPoll(pro, id(21002), "¿Sirvió?", ["Sí", "No"]).local(as(DEMO_IDS.bartender)).ok).toBe(false);
+    const edit = await runRemote(C.upsertSession(pro, { ...s0().event_sessions[2], title: "Otro título" }), st());
+    expect(Object.keys((edit.calls[0] as { payload: object }).payload)).not.toContain("enrolled_count");
+    expect(Object.keys((edit.calls[0] as { payload: object }).payload)).not.toContain("is_live_now");
+    expect(C.askQuestion(ME, id(21002), "x?", true).optimistic).toBe(false);
   });
 
   it("gestión del evento: solo dueño/a o producción; eliminar solo quien lo creó", () => {

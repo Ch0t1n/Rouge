@@ -98,6 +98,7 @@ export function roleHome(r: Role): string {
 /** Qué sección del admin exige cada ruta. */
 export const ADMIN_ROUTE_PERMISSION: [string, Permission][] = [
   ["/admin/events", "admin.events"],
+  ["/admin/agenda", "admin.events"],
   ["/admin/brand", "admin.events"],
   ["/admin/menu", "admin.events"],
   ["/admin/crm", "admin.crm"],

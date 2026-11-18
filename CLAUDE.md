@@ -56,6 +56,7 @@ src/
     profile/              # "Así te ven" + completitud · profile/edit (editor completo) · profile/personas (Mis perfiles + editor ?id=|?kind=&next=)
     settings/privacy/     # Ajustes de privacidad (incógnito, pin solo Squad, datos pro tras reunión) + lista negra + bloqueados
     meetings/             # Mis reuniones: para responder, próximas, enviadas, historial (aceptar, reprogramar, cancelar)
+    agenda/               # [v1.11] ROUGE Pro: agenda multi-track (filtros, Mi Agenda) · agenda/[sessionId]: charla + Q&A y encuestas en vivo
     pro/                  # ROUGE PRO: landing corporativa con identidad ejecutiva propia (pública, indexable). /empresas redirige acá
     api/leads/            # POST de leads B2B (SOLO servidor): valida, honeypot + límite por IP, b2b_leads y webhook comercial
     u/[username]/         # Perfil de otro asistente (afinidad, Conectar, Rompehielos, bloquear)
@@ -63,7 +64,7 @@ src/
     lobby/                # Grilla por afinidad, Ghost Mode, filtros, Line-up, cambio de Mood
     inbox/                # Rompehielos fijados arriba, solicitudes, enviadas y matches (de todos los eventos)
     chat/[connectionId]/  # Chat 1:1 entre matches, texto + fotos (persiste tras el cierre del lobby)
-    map/                  # Plano: Pin-Drop 15 min con audiencia manual, Punto Base (?mode=base), rescate (?rescue=1), ?focus=<userId>
+    map/                  # Plano: Pin-Drop 15 min con audiencia manual, Punto Base (?mode=base), rescate (?rescue=1), ?focus=<userId>, ?spot=<salaId> (centra la sala)
     squad/                # Crear/unirse, invitar (link, @username), Rescate / Llegué a casa, Punto Base, Mesa VIP, perk grupal
     squad/chat/           # Chat grupal (texto + fotos + alertas del sistema)
     squad/cuentas/        # Cuentas de la mesa: quién pagó qué, saldos, transferencias mínimas, alias, "Ya le pagué"
@@ -74,6 +75,7 @@ src/
       page.tsx            # Resumen: ROI (ventas por app, ticket promedio, filas evitadas), embudo, top consumo
       brand/              # Marca y cobros: logo + colores con vista previa, personalización del evento, conectar Mercado Pago
       menu/               # Menú de la barra: alta, edición, precio, "Agotado", baja
+      agenda/             # [v1.11] Agenda & Charlas (solo corporativo): alta/edición de charlas, En Vivo y moderación
       events/             # Crear/editar evento, lobby (horas antes/después), plano subido, line-up, link maestro + QR, códigos 1 uso + CSV
       crm/                # Tabla completa: búsqueda, Smart Tags, orden, WhatsApp, export CSV
       blasts/             # Text Blast / Flash Promo segmentado con alcance en vivo y vista previa
@@ -100,6 +102,9 @@ src/
                           # [v1.10] Piezas ejecutivas de la APP en eventos corporativos: ExecutiveProfileCard (+ TierBadge),
                           # CorporateProfileFields (borrador de la ficha), CorporateProfileSheet (panel rápido), CorporatePassView
                           # (QR de acceso ⇄ vCard, .vcf, "Tus accesos"), fonts.ts (Inter + JetBrains Mono compartidas)
+                          # [v1.11] Agenda: OrganizerScheduleManager (panel), CorporateScheduleView (grilla + Mi Agenda),
+                          # SessionDetail, SessionLiveInteraction (Q&A + encuestas, vista de moderación), AgendaHomeCard,
+                          # scheduleUi.tsx (TrackBadge, LiveBadge, ProButton, useAgendaToggle con aviso de choque)
     perks/                # QrBlock (QR alto contraste)
     share/ShareSheet.tsx  # QR + compartir nativo + WhatsApp + copiar + PNG para CUALQUIER link (useShare, ShareButton)
     social/               # SocialLoginButtons, InstagramPhotoPicker, InstagramField (+ useInstagramReturn), InstagramCallback
@@ -118,6 +123,7 @@ src/
       verticals.ts        # Noche ⇄ corporativo (ROUGE Pro): moods, features, vocabulario, faceOf(), afinidad de negocio, perfiles
       privacy.ts          # Privacidad por contexto: profileAccess (⇔ profile_access), publicCard, ajustes, ageOf, profileHref
       meetings.ts         # Reuniones y salas: request/respond/reschedule/cancel, checkSlot, spotBusy, hasConflict, meetingSlots
+      schedule.ts         # [v1.11] Agenda: charlas (⇔ session_check), Mi Agenda con choques, Q&A, moderación y encuestas (⇔ RPCs)
       selectors.ts        # Reglas de VISIBILIDAD (bloqueos, ghost, pines, lobby)
       actions.ts          # Reglas de NEGOCIO puras (state, input, now) → Result
       affinity.ts         # Algoritmo de afinidad
@@ -387,6 +393,15 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
 - **Reuniones (v1.8):** solo por RPC (`request_meeting`, `respond_meeting`, `reschedule_meeting`, `cancel_meeting`); en la
   noche solo con matches; horario dentro del evento; cupo de sala (`spot_busy`) y agenda sin superposiciones
   (`meeting_conflict`) en motor y SQL; al aceptar se abre el chat. "Completada" se deriva (`displayStatus`).
+- **Agenda multi-track (v1.11, solo corporativo: `features.agenda`):** charlas en `event_sessions` con hora LOCAL del
+  evento (`day` + `start_time`/`end_time` "HH:MM", Argentina UTC-3: `localParts`/`localToMs` ⇔ `at time zone
+  'America/Argentina/Buenos_Aires'`); `spot_id` = pin del plano ("Ubicar sala" → `/map?spot=<id>`). Misma sala sin dos
+  charlas a la vez (`room_busy`, motor y trigger). Mi Agenda: los choques NO se bloquean, se avisan
+  (`agendaConflicts`/`conflictMessage`) y se confirman o reemplazan (`replaceIds` ⇔ `p_replace`); el cupo sí
+  (`session_full`). `enrolled_count`, `upvotes`, `results` e `is_live_now` los escribe solo el servidor (RPC). Q&A y
+  encuestas solo con la charla en vivo (`not_live`); la **autoría de una pregunta nunca va en la pregunta**
+  (`session_question_authors`, solo su autor/a, ni la organización); moderación y encuestas = dueño/a y producción
+  (`admin.events` ⇔ `is_event_manager`). Las piezas de la agenda usan solo `pro-*` (`ProSurface`/`ProButton`).
 - **Pin-Drop (SQL):** usar la RPC `drop_pin` (reemplaza el pin anterior y descarta ids que no son
   matches reales). Punto Base y su aviso: `set_squad_base_pin`, `announce_base_meetup`.
 
@@ -399,7 +414,7 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
 | `rouge` | `#FF1E56` (hover `#E01145`) | Primario: matches, rompehielos, SOS — `shadow-glow-rouge` |
 | `squad` | `#00F0FF` | Amigos, pines de Squad — `shadow-glow-squad` |
 | `vip` | `#FFB800` | Monetización: barra, perks, sorteos, Mesa VIP, Punto Base |
-| `pro-*` | navy `#0B1120` · slate `#0F172A` · alabaster `#F8FAFC` · cobalt `#1D4ED8` / sapphire `#2563EB` · gold `#D97706` · emerald `#059669` | **Solo ROUGE PRO**: `/pro` y las piezas ejecutivas de la app en eventos corporativos (ficha, pase, panel de la ficha). Nunca en la noche |
+| `pro-*` | navy `#0B1120` · slate `#0F172A` · alabaster `#F8FAFC` · cobalt `#1D4ED8` / sapphire `#2563EB` · gold `#D97706` · emerald `#059669` | **Solo ROUGE PRO**: `/pro` y las piezas ejecutivas de la app en eventos corporativos (ficha, pase, panel de la ficha, agenda y sala en vivo). Nunca en la noche |
 | `text-primary` | `#F8FAFC` | Texto principal |
 | `text-muted` | `#94A3B8` | Texto secundario |
 
@@ -429,8 +444,9 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
 - [x] **Fase 13** — Privacidad por contexto (tarjetas saneadas, columnas privadas, ajustes), reuniones con sala/pin y `/empresas`.
 - [x] **Fase 14** — ROUGE PRO (`/pro`): identidad ejecutiva, organizadores y asistentes separados, simulador, demo con modal y switch de modo.
 - [x] **Fase 15** — ROUGE PRO Fase 1: ficha ejecutiva con contacto por nivel de privacidad, pase corporativo con vCard y control multi-zona por categoría.
+- [x] **Fase 16** — ROUGE PRO Fase 2: agenda multi-track, "Mi Agenda" con choques de horario, "Ubicar sala" en el plano y Q&A / encuestas en vivo con moderación.
 - [ ] **Próximo** — ver `docs/producto/competencia.md` y `docs/producto/estrategia-corporativa.md`: facturación ARCA,
-  modo claro corporativo, preguntas al orador, SSO, lista de espera, entradas propias, Mesa VIP con seña.
+  modo claro corporativo, SSO, lista de espera, entradas propias, Mesa VIP con seña.
 
 ## Convenciones
 

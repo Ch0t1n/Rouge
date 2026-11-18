@@ -123,9 +123,9 @@ export const PRO_ATTENDEE_BENEFITS: ProModule[] = [
     icon: "agenda",
     tone: "gold",
     span: 2,
-    title: "Agenda y avisos en vivo",
-    text: "La charla actual y la siguiente, cambios de sala y anuncios del organizador, sin buscar en el mail.",
-    points: [{ text: "Notificaciones dentro de la app" }],
+    title: "Mi Agenda, preguntas y encuestas en vivo",
+    text: "Arman su itinerario entre salas en paralelo con aviso de choques, ubican cada sala en el plano y le preguntan al orador desde su asiento.",
+    points: [{ text: "Preguntas con votos, con nombre o anónimas" }, { text: "Encuestas en un toque" }],
   },
   {
     id: "privacy",
@@ -153,7 +153,7 @@ export const PRO_USE_CASES: ProUseCase[] = [
     label: "Congresos y cumbres",
     title: "Agenda, rondas de negocios y control de aforo",
     text: "Los asistentes llegan con reuniones agendadas en salas con cupo y siguen la agenda de charlas en vivo, con avisos de cambio de sala.",
-    points: [{ text: "Agenda en vivo: charla actual y la siguiente" }, { text: "Rondas de negocios con salas y horarios" }, { text: "Asistencia real acreditada en puerta" }, { text: "Preguntas al orador con votos", soon: true }],
+    points: [{ text: "Agenda en vivo: charla actual y la siguiente" }, { text: "Rondas de negocios con salas y horarios" }, { text: "Asistencia real acreditada en puerta" }, { text: "Agenda multi-sala con Q&A moderado y encuestas en vivo" }],
     metric: { value: "1 a 1", label: "reuniones con sala asignada" },
   },
   {

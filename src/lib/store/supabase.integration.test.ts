@@ -13,6 +13,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import type { RougeEvent, RougeState, UUID } from "@/lib/types";
 import { fetchRemoteState } from "@/lib/supabase/sync";
 import * as C from "./commands";
+import { localParts } from "@/lib/engine/schedule";
 import type { Command } from "./commands";
 
 const URL = process.env.SUPABASE_TEST_URL;
@@ -574,6 +575,55 @@ describe.skipIf(!URL || !ANON || !SERVICE)("Supabase real: flujo completo con RL
     const st = await snap(staff, ev.id);
     const err = await rejects(staff, C.requestMeeting(ev.id, staff.id, mateo.id, { topic: "x", startsAt: at, duration: 15, location: { kind: "spot", spotId: room.id } }), accepted, st);
     expect(err?.message).toBeTruthy();
+  });
+
+  it("agenda v1.11: charlas por tabla, Mi Agenda con reemplazo, Q&A anónima sin autoría visible y encuesta en vivo", async () => {
+    const start = new Date(Date.now() + 10 * 60_000).toISOString();
+    const ev = await act(staff, C.upsertEvent({ kind: "corporate", name: `Summit ${RUN}`, starts_at: start, ends_at: new Date(Date.now() + 8 * 3_600_000).toISOString() }));
+    for (const a of [sofi, mateo]) {
+      const persona = await act(a, C.upsertPersona(a.id, { kind: "corporate", label: "Trabajo", company: `${a.name} SA`, looking_for: ["clients"], offering: ["software"] }), ev.id);
+      await act(a, C.joinEvent(a.id, ev.master_invite_code, "pro_learning", ev.id, persona.id), ev.id);
+    }
+    const day = localParts(Date.now() + 60 * 60_000).day;
+    const t = localParts(Math.ceil((Date.now() + 60 * 60_000) / 3_600_000) * 3_600_000).time;
+    const later = (h: number) => `${String(Math.min(23, Number(t.slice(0, 2)) + h)).padStart(2, "0")}:${h === 0 ? "45" : "30"}`;
+    if (t >= "22:00") return; // la ventana cruzaría la medianoche: se saltea en esa hora
+    const a = await act(staff, C.upsertSession(ev.id, { title: "Keynote", track: "Tecnología & IA", room_name: "Auditorio", day, start_time: t, end_time: later(0) }), ev.id);
+    const b = await act(staff, C.upsertSession(ev.id, { title: "Panel", track: "Liderazgo", room_name: "Sala B", day, start_time: t, end_time: later(1), capacity: 1 }), ev.id);
+    // La misma sala en el mismo horario: rechazada por el trigger.
+    const st0 = await snap(staff, ev.id);
+    expect((await rejects(staff, C.upsertSession(ev.id, { title: "Choca", track: "Liderazgo", room_name: "auditorio", day, start_time: t, end_time: later(0) }), a, st0))?.message).toBe("room_busy");
+    // El contador no se escribe por tabla.
+    const { error: cheat } = await staff.sb.from("event_sessions").update({ enrolled_count: 99 }).eq("id", a.id);
+    expect(cheat).toBeTruthy();
+    // Mi Agenda: agendo A, después B reemplazando A; el cupo de B (1) deja afuera a Mateo.
+    await act(sofi, C.enrollSession(sofi.id, a.id), ev.id);
+    const swap = await act(sofi, C.enrollSession(sofi.id, b.id, [a.id]), ev.id);
+    expect(swap.session.enrolled_count).toBe(1);
+    const sofiState = await snap(sofi, ev.id);
+    expect(sofiState.session_enrollments.map((e) => e.session_id)).toEqual([b.id]);
+    expect(sofiState.event_sessions.find((x) => x.id === a.id)?.enrolled_count).toBe(0);
+    const mateoState = await snap(mateo, ev.id);
+    expect((await rejects(mateo, C.enrollSession(mateo.id, b.id), swap, mateoState))?.message).toBe("session_full");
+    expect(mateoState.session_enrollments).toEqual([]); // no ve las inscripciones de Sofía
+    // Q&A: cerrada hasta que la organización la pone en vivo; anónima sin autoría visible para otros.
+    expect((await rejects(sofi, C.askQuestion(sofi.id, a.id, "¿Hay grabación?", true), sofiState.session_questions[0], sofiState))?.message).toBe("not_live");
+    await act(staff, C.setSessionLive(ev.id, a.id, true), ev.id);
+    const q = await act(sofi, C.askQuestion(sofi.id, a.id, "¿Hay grabación?", true), ev.id);
+    expect(q).toMatchObject({ is_anonymous: true, author_label: null });
+    const { data: authors } = await mateo.sb.from("session_question_authors").select("*");
+    expect(authors ?? []).toEqual([]);
+    expect(await act(mateo, C.toggleQuestionVote(mateo.id, q.id), ev.id)).toEqual({ voted: true, upvotes: 1 });
+    expect((await snap(sofi, ev.id)).session_question_authors.map((x) => x.question_id)).toEqual([q.id]);
+    // Moderación: Mateo no puede ocultar; la organización sí y deja de verla el público.
+    expect((await rejects(mateo, C.moderateQuestion(ev.id, q.id, "hide"), q, mateoState))?.message).toBe("forbidden");
+    await act(staff, C.moderateQuestion(ev.id, q.id, "hide"), ev.id);
+    expect((await snap(mateo, ev.id)).session_questions).toEqual([]);
+    // Encuesta: voto cambiable y totales del servidor.
+    const poll = await act(staff, C.launchPoll(ev.id, a.id, "¿Sirvió?", ["Sí", "No"]), ev.id);
+    await act(mateo, C.votePoll(mateo.id, poll.id, "o1"), ev.id);
+    const after = await act(mateo, C.votePoll(mateo.id, poll.id, "o2"), ev.id);
+    expect(after.results).toEqual({ o1: 0, o2: 1 });
   });
 
   it("storage: subo a mi carpeta, no a la de otra persona", async () => {

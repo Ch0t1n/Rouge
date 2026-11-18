@@ -21,6 +21,7 @@ import * as RP from "@/lib/engine/promoters";
 import * as D from "@/lib/engine/door";
 import * as PV from "@/lib/engine/privacy";
 import * as MT from "@/lib/engine/meetings";
+import * as SC from "@/lib/engine/schedule";
 import { BAR_MENU, CORPORATE_MENU } from "@/lib/mock/seed";
 
 export interface Command<T> {
@@ -875,4 +876,87 @@ export const deleteZone = (eventId: UUID, zoneId: UUID): Command<undefined> => (
   remote: async (sb) => {
     must(await sb.from("event_zones").delete().eq("id", zoneId).eq("event_id", eventId));
   },
+});
+
+// ── [v1.11] Agenda multi-track, Mi Agenda, Q&A y encuestas en vivo (ROUGE Pro) ─────────────
+
+/** Alta o edición de una charla (dueño/a y producción). Tabla con RLS y el mismo id que el optimista. */
+export const upsertSession = (eventId: UUID, input: SC.SessionInput): Command<RougeState["event_sessions"][number]> => ({
+  name: "upsertSession",
+  local: guarded("admin.events", () => eventId, (s) => SC.upsertSession(s, eventId, input)),
+  remote: async (sb, x, before) => {
+    // enrolled_count e is_live_now no se escriben por tabla (column privileges): solo por RPC.
+    const fields = { title: x.title, description: x.description, track: x.track, room_name: x.room_name, spot_id: x.spot_id, day: x.day, start_time: x.start_time, end_time: x.end_time, speakers: x.speakers, capacity: x.capacity };
+    if (before.event_sessions.some((v) => v.id === x.id)) must(await sb.from("event_sessions").update(fields).eq("id", x.id).eq("event_id", eventId));
+    else must(await sb.from("event_sessions").insert({ id: x.id, event_id: eventId, ...fields }));
+  },
+});
+
+export const deleteSession = (eventId: UUID, sessionId: UUID): Command<undefined> => ({
+  name: "deleteSession",
+  local: guarded("admin.events", () => eventId, (s) => SC.deleteSession(s, sessionId)),
+  remote: async (sb) => {
+    must(await sb.from("event_sessions").delete().eq("id", sessionId).eq("event_id", eventId));
+  },
+});
+
+/** "Activar En Vivo" / "Terminar" (abre/cierra Q&A y encuestas). */
+export const setSessionLive = (eventId: UUID, sessionId: UUID, live: boolean): Command<RougeState["event_sessions"][number]> => ({
+  name: "setSessionLive",
+  local: guarded("admin.events", () => eventId, (s) => SC.setSessionLive(s, sessionId, live)),
+  remote: async (sb) => rpc<RougeState["event_sessions"][number]>(sb, "set_session_live", { p_session: sessionId, p_live: live }),
+});
+
+/** Agendar (con "Reemplazar" opcional). El cupo lo confirma el servidor. */
+export const enrollSession = (userId: UUID, sessionId: UUID, replaceIds: UUID[] = []): Command<{ session: RougeState["event_sessions"][number]; replaced: UUID[] }> => ({
+  name: "enrollSession",
+  local: (s) => SC.enrollSession(s, userId, sessionId, replaceIds),
+  remote: async (sb, local) => ({ session: await rpc<RougeState["event_sessions"][number]>(sb, "enroll_session", { p_session: sessionId, p_replace: replaceIds }), replaced: local.replaced }),
+});
+
+export const unenrollSession = (userId: UUID, sessionId: UUID): Command<RougeState["event_sessions"][number]> => ({
+  name: "unenrollSession",
+  local: (s) => SC.unenrollSession(s, userId, sessionId),
+  remote: async (sb) => rpc<RougeState["event_sessions"][number]>(sb, "unenroll_session", { p_session: sessionId }),
+});
+
+/** Preguntar al orador. El id y la firma ("Nombre · Empresa") los genera el servidor. */
+export const askQuestion = (userId: UUID, sessionId: UUID, body: string, anonymous: boolean): Command<RougeState["session_questions"][number]> => ({
+  name: "askQuestion",
+  optimistic: false,
+  local: (s) => SC.askQuestion(s, userId, sessionId, body, anonymous),
+  remote: async (sb) => rpc<RougeState["session_questions"][number]>(sb, "ask_question", { p_session: sessionId, p_body: body.trim(), p_anonymous: anonymous }),
+});
+
+export const toggleQuestionVote = (userId: UUID, questionId: UUID): Command<{ voted: boolean; upvotes: number }> => ({
+  name: "toggleQuestionVote",
+  local: (s) => SC.toggleQuestionVote(s, userId, questionId),
+  remote: async (sb) => rpc<{ voted: boolean; upvotes: number }>(sb, "vote_question", { p_question: questionId }),
+});
+
+/** Moderación (dueño/a y producción): destacar, marcar respondida, reabrir u ocultar. */
+export const moderateQuestion = (eventId: UUID, questionId: UUID, action: SC.ModerationAction): Command<RougeState["session_questions"][number]> => ({
+  name: "moderateQuestion",
+  local: guarded("admin.events", () => eventId, (s) => SC.moderateQuestion(s, questionId, action)),
+  remote: async (sb) => rpc<RougeState["session_questions"][number]>(sb, "moderate_question", { p_question: questionId, p_action: action }),
+});
+
+/** Lanzar una encuesta en vivo (cierra la anterior). El id lo genera el servidor. */
+export const launchPoll = (eventId: UUID, sessionId: UUID, question: string, options: string[]): Command<RougeState["session_polls"][number]> => ({
+  name: "launchPoll",
+  optimistic: false,
+  local: guarded("admin.events", () => eventId, (s) => SC.launchPoll(s, sessionId, question, options)),
+  remote: async (sb) => rpc<RougeState["session_polls"][number]>(sb, "launch_poll", { p_session: sessionId, p_question: question, p_options: options }),
+});
+
+export const closePoll = (eventId: UUID, pollId: UUID): Command<RougeState["session_polls"][number]> => ({
+  name: "closePoll",
+  local: guarded("admin.events", () => eventId, (s) => SC.closePoll(s, pollId)),
+  remote: async (sb) => rpc<RougeState["session_polls"][number]>(sb, "close_poll", { p_poll: pollId }),
+});
+
+export const votePoll = (userId: UUID, pollId: UUID, optionId: string): Command<RougeState["session_polls"][number]> => ({
+  name: "votePoll",
+  local: (s) => SC.votePoll(s, userId, pollId, optionId),
+  remote: async (sb) => rpc<RougeState["session_polls"][number]>(sb, "vote_poll", { p_poll: pollId, p_option: optionId }),
 });

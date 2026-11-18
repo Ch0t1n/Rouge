@@ -34,6 +34,8 @@ export interface VerticalFeatures {
   socialMedia: boolean;
   /** Se puede entrar con el Perfil principal (si no, hace falta un perfil de esta vertical). */
   mainProfile: boolean;
+  /** [v1.11] Agenda multi-track con "Mi Agenda", Q&A y encuestas en vivo por charla. */
+  agenda: boolean;
 }
 
 export interface VerticalCopy {
@@ -69,7 +71,7 @@ export interface Vertical {
 export const VERTICALS: Record<EventKind, Vertical> = {
   nightlife: {
     kind: "nightlife",
-    features: { musicTaste: true, songRequests: true, icebreakerGift: true, promoters: true, genderRaffle: true, showAge: true, socialMedia: true, mainProfile: true },
+    features: { musicTaste: true, songRequests: true, icebreakerGift: true, promoters: true, genderRaffle: true, showAge: true, socialMedia: true, mainProfile: true, agenda: false },
     copy: {
       brand: "ROUGE",
       kindLabel: "Noche",
@@ -95,7 +97,7 @@ export const VERTICALS: Record<EventKind, Vertical> = {
   },
   corporate: {
     kind: "corporate",
-    features: { musicTaste: false, songRequests: false, icebreakerGift: false, promoters: false, genderRaffle: false, showAge: false, socialMedia: false, mainProfile: false },
+    features: { musicTaste: false, songRequests: false, icebreakerGift: false, promoters: false, genderRaffle: false, showAge: false, socialMedia: false, mainProfile: false, agenda: true },
     copy: {
       brand: "ROUGE Pro",
       kindLabel: "Corporativo",

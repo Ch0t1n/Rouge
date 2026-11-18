@@ -17,7 +17,7 @@ const ITEMS = [
 ] as const;
 
 /** Rutas donde se muestra la navegación inferior. */
-export const NAV_ROUTES: readonly string[] = [...ITEMS.map((i) => i.href), "/profile", "/perks", "/meetings"];
+export const NAV_ROUTES: readonly string[] = [...ITEMS.map((i) => i.href), "/profile", "/perks", "/meetings", "/agenda"];
 
 export function BottomNav() {
   const pathname = usePathname();
