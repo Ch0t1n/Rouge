@@ -45,7 +45,7 @@ import type {
   VenueLayout,
 } from "@/lib/types";
 
-export const STATE_VERSION = 11;
+export const STATE_VERSION = 12;
 
 // IDs estables → los links de demo (/join/..., /u/...) no cambian entre re-siembras.
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -318,6 +318,7 @@ export function createSeedState(now = Date.now()): RougeState {
     id: DEMO_IDS.event,
     kind: "nightlife",
     networking_checkin_only: false,
+    dynamic_pass: false,
     slug: "bresh-sabado",
     name: "ROUGE Night × Bresh Sábado",
     description: "La noche más grande del mes. Line-up de house y techno, Mesa VIP, Barra Express y sorteos en vivo.",
@@ -667,6 +668,8 @@ export function createSeedState(now = Date.now()): RougeState {
     id: DEMO_IDS.proEvent,
     kind: "corporate",
     networking_checkin_only: false,
+    // Demo: el encuentro usa QR de acceso rotativo (las capturas de pantalla no sirven en la acreditación).
+    dynamic_pass: true,
     slug: "encuentro-pyme",
     name: "Encuentro Pyme Conecta",
     description: "Ronda de negocios, charlas y networking para pymes y emprendedores. Encontrá clientes, proveedores, socios e inversión.",

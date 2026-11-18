@@ -601,6 +601,7 @@ export const upsertEvent = (input: Parameters<typeof A.upsertEvent>[1]): Command
       theme_primary: e.theme_primary,
       theme_accent: e.theme_accent,
       networking_checkin_only: e.networking_checkin_only,
+      dynamic_pass: e.dynamic_pass,
       ...(isNew ? { master_invite_code: e.master_invite_code, created_by: e.created_by } : {}),
     };
     if (isNew) {
@@ -790,6 +791,7 @@ export const duplicateEvent = (eventId: UUID, startsAt: string): Command<{ event
         lobby_opens_at: e.lobby_opens_at, lobby_expires_at: e.lobby_expires_at, max_capacity: e.max_capacity, master_invite_code: e.master_invite_code,
         created_by: e.created_by, brand_id: e.brand_id, logo_url: e.logo_url, theme_primary: e.theme_primary, theme_accent: e.theme_accent,
         networking_checkin_only: e.networking_checkin_only,
+      dynamic_pass: e.dynamic_pass,
       }),
     );
     must(await sb.from("bar_menu_items").insert(before.bar_menu.map((i) => ({ id: i.id, event_id: e.id, name: i.name, category: i.category, price: i.price, emoji: i.emoji, is_available: i.is_available }))));

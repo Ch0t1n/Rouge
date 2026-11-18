@@ -356,6 +356,17 @@ create table if not exists public.zone_check_ins (
 );
 create index if not exists idx_zone_checkins_event on public.zone_check_ins (event_id, created_at desc);
 
+-- [v1.10] QR de acceso rotativo: con dynamic_pass el pase de la app es un token firmado (HMAC-SHA256) que cambia cada
+-- 30 s; el pase fijo deja de servir. El secreto es por evento y NINGÚN cliente lo lee (RLS sin políticas).
+alter table public.events add column if not exists dynamic_pass boolean not null default false;
+create table if not exists public.event_pass_secrets (
+  event_id    uuid primary key references public.events(id) on delete cascade,
+  secret      bytea not null default gen_random_bytes(32),
+  created_at  timestamptz not null default now()
+);
+alter table public.event_pass_secrets enable row level security;
+revoke all on public.event_pass_secrets from anon, authenticated;
+
 -- [v1.8] Privacidad: los demás solo saben SI alguien está acreditado (no a qué hora entró).
 alter table public.event_attendees add column if not exists is_checked_in boolean generated always as (checked_in_at is not null) stored;
 -- [v1.8] El organizador puede limitar el networking a quienes ya pasaron por la puerta (acreditados).
@@ -2331,7 +2342,7 @@ declare
   v_att public.event_attendees; v_user uuid; v_p public.profiles; v_pp public.profile_personas; v_parts text[];
   v_status text; v_kind text; v_at timestamptz; v_zone public.event_zones; v_zkind text := 'entrance';
   v_zname text := 'Puerta principal'; v_allowed attendee_tier_t[] := '{}'; v_tier attendee_tier_t; v_label text;
-  v_name text; v_photo text; v_age int; v_username text;
+  v_name text; v_photo text; v_age int; v_username text; v_dyn boolean;
 begin
   if not public.has_staff_role(p_event, array['owner','manager','security']::staff_role_t[]) then raise exception 'forbidden'; end if;
   select * into v_ev from public.events where id = p_event;
@@ -2341,11 +2352,16 @@ begin
     v_zkind := v_zone.kind; v_zname := v_zone.name; v_allowed := v_zone.allowed_tiers;
   end if;
 
-  if upper(v_raw) like 'ROUGE:PASS:%' then
+  if upper(v_raw) like 'ROUGE:PASS:%' or upper(v_raw) like 'ROUGE:PASS2:%' then
+    -- PASS = pase fijo; PASS2 = QR rotativo firmado (<evento>:<usuario>:<ventana>:<firma>).
     v_kind := 'pass';
-    v_parts := string_to_array(substr(v_raw, 12), ':');
-    if coalesce(array_length(v_parts, 1), 0) < 2 then v_status := 'invalid';
+    v_dyn := upper(v_raw) like 'ROUGE:PASS2:%';
+    -- Ids y firma en minúsculas: el código tipeado en la puerta llega en mayúsculas.
+    v_parts := string_to_array(lower(substr(v_raw, case when v_dyn then 13 else 12 end)), ':');
+    if coalesce(array_length(v_parts, 1), 0) < (case when v_dyn then 4 else 2 end) then v_status := 'invalid';
     elsif v_parts[1] <> p_event::text then v_status := 'other_event';
+    elsif v_dyn and not public.pass_token_valid(p_event, v_parts[2], v_parts[3], v_parts[4]) then v_status := 'expired_pass';
+    elsif not v_dyn and v_ev.dynamic_pass then v_status := 'expired_pass';
     else
       begin v_user := v_parts[2]::uuid; exception when others then v_status := 'invalid'; end;
       if v_status is null then
@@ -2413,6 +2429,48 @@ begin
     'age', v_age, 'label', v_label, 'checked_in_at', v_at,
     'zone_id', p_zone, 'zone_name', v_zname, 'zone_kind', v_zkind, 'allowed_tiers', to_jsonb(v_allowed),
     'tier', v_tier, 'company', nullif(v_pp.company, ''), 'job_title', nullif(v_pp.job_title, ''));
+end $$;
+
+-- [v1.10] Firma del QR rotativo: HMAC-SHA256(<evento>:<usuario>:<ventana>, secreto del evento), 20 hex. Internas:
+-- ningún cliente las ejecuta (si no, cualquiera podría firmar el pase de otra persona).
+create or replace function public.pass_secret(p_event uuid)
+returns bytea language plpgsql security definer set search_path = public, extensions as $$
+declare v bytea;
+begin
+  insert into public.event_pass_secrets (event_id) values (p_event) on conflict (event_id) do nothing;
+  select secret into v from public.event_pass_secrets where event_id = p_event;
+  return v;
+end $$;
+
+create or replace function public.pass_signature(p_event uuid, p_user text, p_window bigint)
+returns text language sql security definer set search_path = public, extensions as $$
+  select substr(encode(hmac(convert_to(p_event::text || ':' || p_user || ':' || p_window::text, 'UTF8'), public.pass_secret(p_event), 'sha256'), 'hex'), 1, 20);
+$$;
+
+-- ¿Firma correcta y ventana vigente? Se aceptan las 2 ventanas anteriores y la siguiente (≈ 90 s) (⇔ demoPassValid).
+create or replace function public.pass_token_valid(p_event uuid, p_user text, p_window text, p_sig text)
+returns boolean language plpgsql security definer set search_path = public, extensions as $$
+declare v_w bigint; v_now bigint := floor(extract(epoch from now()) / 30);
+begin
+  begin v_w := p_window::bigint; exception when others then return false; end;
+  if v_w < v_now - 2 or v_w > v_now + 1 then return false; end if;
+  return lower(coalesce(p_sig, '')) = public.pass_signature(p_event, p_user, v_w);
+end $$;
+
+-- (Se cierran para clientes en "Permisos de ejecución", al final: el grant general las volvería a abrir.)
+
+-- [v1.10] Mi pase rotativo (lo pide la app cada 30 s). Solo para mí y si estoy en el evento (y no expulsado/a).
+create or replace function public.my_pass_token(p_event uuid)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare v_uid uuid := auth.uid(); v_w bigint := floor(extract(epoch from now()) / 30);
+begin
+  if v_uid is null then raise exception 'not_authenticated'; end if;
+  if exists (select 1 from public.event_bans where event_id = p_event and user_id = v_uid) then raise exception 'banned'; end if;
+  if not public.is_event_attendee(p_event, v_uid) then raise exception 'not_attendee'; end if;
+  return jsonb_build_object(
+    'token', 'ROUGE:PASS2:' || p_event::text || ':' || v_uid::text || ':' || v_w::text || ':' || public.pass_signature(p_event, v_uid::text, v_w),
+    'window', v_w,
+    'expires_at', to_timestamp((v_w + 1) * 30));
 end $$;
 
 -- [v1.6] Puerta (espejo de doorCheckIn): la puerta principal del escáner por zona.
@@ -2800,6 +2858,11 @@ grant execute on all functions in schema public to authenticated;
 revoke execute on function public.purge_expired_pins() from public, anon, authenticated;
 revoke execute on function public.apply_squad_perk_rules(uuid) from public, anon, authenticated;
 revoke execute on function public.apply_order_spend(public.bar_orders) from public, anon, authenticated;
+-- [v1.10] QR rotativo: firmar o validar un pase solo desde el servidor (zone_check_in / my_pass_token). Si un cliente
+-- pudiera ejecutarlas, podría firmar el pase de otra persona.
+revoke execute on function public.pass_secret(uuid) from public, anon, authenticated;
+revoke execute on function public.pass_signature(uuid, text, bigint) from public, anon, authenticated;
+revoke execute on function public.pass_token_valid(uuid, text, text, text) from public, anon, authenticated;
 grant execute on function public.resolve_access_code(text) to anon;
 -- API v1: solo el servidor (route handlers con service role) usa estas funciones.
 do $$ declare f text; begin

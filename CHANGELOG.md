@@ -27,6 +27,10 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
   o rojo con el motivo ("Requiere VIP / SPEAKER"), y registro de cada lectura (`zone_check_ins`: persona, zona, hora,
   personal y resultado) con "Últimas lecturas". RPC `zone_check_in`; `door_check_in` es la puerta principal. Panel de
   zonas para dueño/a y producción. Sin zonas cargadas, la puerta funciona como siempre.
+- **QR de acceso rotativo** por evento (`events.dynamic_pass`, en *Eventos y accesos*): el pase de la app es un token
+  firmado por el servidor (HMAC-SHA256 con un secreto por evento que ningún cliente lee) que cambia cada 30 s
+  (`ROUGE:PASS2:…`, `my_pass_token`); el escáner acepta ≈ 90 s de margen y rechaza el pase fijo, capturas viejas y
+  firmas falsas ("Pase vencido"). En el Modo Demo se simula con una firma local; el encuentro pyme del demo lo usa.
 - `src/lib/vcard.ts`: vCard 3.0 pura (escapes, plegado a 75 octetos, CRLF).
 - Tests: `executive.test.ts` (ficha, privacidad del contacto, categorías, zonas y vCard), contrato de los comandos nuevos,
   escenario SQL en Postgres 16 y E2E `demo-pro-ficha-zonas.cjs`.
@@ -35,7 +39,9 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 - En corporativo, la puerta muestra la cara profesional (nombre, cargo, empresa y categoría, sin edad ni la cara de la
   noche). Una vCard escaneada en la puerta avisa que no es un pase.
 - Las fuentes de ROUGE PRO (Inter + JetBrains Mono) se comparten desde `components/pro/fonts.ts`.
-- Modo Demo: versión 11 del estado (zonas, categorías, fichas con contacto y lecturas sembradas).
+- Modo Demo: versión 12 del estado (zonas, categorías, fichas con contacto, lecturas sembradas y QR rotativo en el
+  encuentro pyme).
+- El pase tipeado en la puerta se acepta en mayúsculas (ids y firma se normalizan).
 
 ### Agregado (v1.9 · ROUGE PRO)
 - **`/pro`: landing corporativa de ROUGE PRO** con identidad ejecutiva propia (paleta navy/slate/alabaster, cobalto y

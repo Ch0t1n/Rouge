@@ -2,9 +2,10 @@
 
 import { useMemo, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { CheckCircle2, Contact, DoorOpen, Download, Lock, QrCode, Share2 } from "lucide-react";
+import { CheckCircle2, Contact, DoorOpen, Download, Loader2, Lock, QrCode, RefreshCw, Share2, WifiOff } from "lucide-react";
 import type { UUID } from "@/lib/types";
-import { passValue, zonesForTier, zonesOf } from "@/lib/engine/door";
+import { PASS_WINDOW_SECONDS, zonesForTier, zonesOf } from "@/lib/engine/door";
+import { usePassToken } from "@/lib/store/usePassToken";
 import { faceOf } from "@/lib/engine/verticals";
 import { getAttendee, getEvent } from "@/lib/engine/selectors";
 import { useRouge } from "@/lib/store/RougeContext";
@@ -38,10 +39,11 @@ export function CorporatePassView({ eventId }: { eventId: UUID }) {
     () => (persona ? personaVCard(persona, event?.name ?? null, { email: withEmail, phone: withPhone }) : ""),
     [persona, event?.name, withEmail, withPhone],
   );
+  const pass = usePassToken(eventId);
   if (!me || !event) return null;
   const myZones = zonesForTier(state, eventId, tier);
   const restricted = zonesOf(state, eventId).filter((z) => z.kind === "area" && !myZones.some((m) => m.id === z.id));
-  const qrValue = mode === "access" ? passValue(eventId, me.id) : vcard;
+  const qrValue = mode === "access" ? pass?.value : vcard;
 
   return (
     <div className={cn(proFontVars, "space-y-4 font-pro text-white")} data-testid="corporate-pass">
@@ -84,9 +86,33 @@ export function CorporatePassView({ eventId }: { eventId: UUID }) {
         </div>
 
         <div className="flex flex-col items-center gap-3 px-5 pb-5 pt-5">
-          <div className="rounded-2xl bg-white p-4">
-            <QRCodeSVG value={qrValue || passValue(eventId, me.id)} size={216} level="M" bgColor="#FFFFFF" fgColor="#0B1120" aria-label={mode === "access" ? "QR de acceso" : "QR de tarjeta personal"} />
+          <div className="rounded-2xl bg-white p-4" data-testid="pass-qr" data-pass-value={mode === "access" ? (qrValue ?? "") : undefined}>
+            {qrValue ? (
+              <QRCodeSVG value={qrValue} size={216} level="M" bgColor="#FFFFFF" fgColor="#0B1120" aria-label={mode === "access" ? "QR de acceso" : "QR de tarjeta personal"} />
+            ) : (
+              <div className="grid size-[216px] place-items-center text-pro-ink-soft">
+                <Loader2 className="size-8 animate-spin" aria-label="Generando tu pase" />
+              </div>
+            )}
           </div>
+          {mode === "access" && pass?.dynamic && (
+            <div className="w-full max-w-[248px]" aria-live="off">
+              <div className="h-1 overflow-hidden rounded-full bg-pro-line">
+                <div className="h-full rounded-full bg-pro-sapphire transition-[width] duration-1000 ease-linear" style={{ width: `${((pass.secondsLeft ?? 0) / PASS_WINDOW_SECONDS) * 100}%` }} />
+              </div>
+              <p className="mt-1.5 flex items-center justify-center gap-1.5 font-pro-mono text-[11px] text-pro-mist" data-testid="pass-rotating">
+                {pass.stale ? (
+                  <>
+                    <WifiOff className="size-3.5 text-pro-gold" /> Sin señal: el QR puede estar vencido
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="size-3.5" /> Cambia en {pass.secondsLeft}s · capturas no sirven
+                  </>
+                )}
+              </p>
+            </div>
+          )}
           {mode === "access" ? (
             <p className="text-center text-xs text-pro-mist">
               {att?.checked_in_at ? (

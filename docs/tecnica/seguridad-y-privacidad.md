@@ -67,6 +67,10 @@ Este documento resume qué se guarda, quién lo ve y cómo se protege.
   la noche ni la edad. La categoría la escribe solo la organización (`set_attendee_tier`) o el código de la entrada. La
   vCard se arma en el cliente con la ficha ya saneada por `persona_cards`: nunca incluye datos que quien la guarda no
   podía ver; en la propia, la persona elige si incluye email y teléfono.
+- **[v1.10] QR rotativo:** con `dynamic_pass`, el pase es un token HMAC-SHA256 por ventana de 30 s con un secreto por
+  evento (`event_pass_secrets`, sin acceso de clientes). Las funciones que firman o validan no las ejecuta ningún
+  cliente; cada persona solo obtiene su propio token (`my_pass_token`). El escáner acepta ≈ 90 s de margen y rechaza
+  el pase fijo, capturas viejas y firmas de otra persona. Limitación: sin señal el pase no se renueva.
 - **Cuentas de la mesa:** gastos y transferencias visibles solo para integrantes del Squad; el alias o CBU/CVU para
   cobrar lo ven solo quienes comparten un Squad con esa persona.
 - **Marca:** los colores pasan el mismo control de contraste en el motor y en Postgres; el rescate y el Squad no se

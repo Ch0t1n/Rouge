@@ -412,6 +412,9 @@ Un mismo ROUGE para fiestas y boliches y para eventos de empresas, pymes y netwo
   pasar. Con el switch **QR Tarjeta personal (vCard)**, otra persona te escanea con la cámara y te guarda en sus
   contactos; **Guardar contacto (.vcf)** descarga o comparte tu tarjeta. Elegís si incluye email y teléfono; la nota
   dice "NETWORKING: Conocido en <evento>".
+- **QR de acceso rotativo** (opcional por evento, en *Eventos y accesos*): el pase cambia cada 30 segundos y lo firma
+  el servidor, así que una captura de pantalla no sirve para entrar ni para pasar a una zona ("Pase vencido"). Necesita
+  señal en el celular de quien entra; las entradas de 1 uso de la ticketera siguen sirviendo.
 - **Categorías:** vienen con el código de la entrada (lotes por categoría en *Eventos y accesos*) y la organización las
   cambia desde el CRM.
 - **Zonas de control:** la organización carga puertas (acreditan el ingreso) y áreas (Sala VIP, Auditorio A,

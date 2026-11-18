@@ -138,6 +138,7 @@ src/
     store/commands.ts     # Comandos: regla local del motor + contraparte remota (RPC/tabla) de CADA acción
     store/commands.test.ts# Contrato cliente ↔ schema.sql (RPCs, parámetros, tablas, columnas, cargador)
     store/supabase.integration.test.ts # Flujo completo con usuarios reales, RLS, Realtime y Storage (se saltea sin credenciales)
+    store/usePassToken.ts # Pase de acceso: fijo o QR rotativo cada 30 s (my_pass_token / demoPassToken)
     store/hooks.ts        # useRequireProfile() → /login (Supabase sin sesión) o /onboarding (sin perfil)
     supabase/sync.ts      # fetchRemoteState() (RLS) + subscribeRealtime()
     supabase/errors.ts    # friendlyError(): excepciones de RPC/RLS → mensajes en español
@@ -353,6 +354,11 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
   (solo por RPC; la ven dueño/a, producción y seguridad). Categoría (`tier`: attendee, speaker, vip, press, sponsor): la da
   el código de 1 uso al entrar o `set_attendee_tier` (organización); el asistente nunca la escribe. En corporativo el
   escáner muestra la cara profesional y nunca la edad ni la cara de la noche.
+  **QR rotativo** (`events.dynamic_pass`): pase `ROUGE:PASS2:<evento>:<usuario>:<ventana 30 s>:<firma>`; la app lo obtiene
+  con `usePassToken` (Supabase: `my_pass_token`; demo: `demoPassToken`) y el escáner lo valida (`pass_token_valid` ⇔
+  `demoPassValid`, ventanas −2…+1). Con `dynamic_pass` el pase fijo no sirve (`expired_pass`). Las funciones de firma
+  (`pass_secret`, `pass_signature`, `pass_token_valid`) se cierran para clientes DESPUÉS del `grant execute on all
+  functions` del final de `schema.sql` (si no, el grant las vuelve a abrir).
 - **Ficha ejecutiva y vCard (v1.10):** en un evento corporativo, perfil propio, perfil ajeno y pase usan
   `ExecutiveProfileCard` / `CorporatePassView` (sin fotos de fiesta, loop, música, edad, Instagram, Squad ni Rescate).
   Email y teléfono de contacto de la ficha son campos propios de `profile_personas` (nunca el teléfono de la cuenta) y

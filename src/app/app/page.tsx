@@ -37,7 +37,7 @@ import { squadAccount } from "@/lib/engine/settle";
 import { BrandLogo } from "@/components/brand/BrandTheme";
 import { QrBlock } from "@/components/perks/QrCard";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
-import { passValue } from "@/lib/engine/door";
+import { usePassToken } from "@/lib/store/usePassToken";
 import { CorporatePassView } from "@/components/pro/CorporatePassView";
 import { verticalOf } from "@/lib/engine/verticals";
 import { awaitsMe, displayStatus, meetingPlace, meetingsOf } from "@/lib/engine/meetings";
@@ -185,10 +185,7 @@ function Home() {
           </BottomSheet>
         ) : (
           <BottomSheet open={pass} onClose={() => setPass(false)} title="Mi entrada" description="Mostralo en la puerta: el personal ve tu foto y tu nombre.">
-            <div className="space-y-3 text-center">
-              <QrBlock value={passValue(event.id, me.id)} label={`${me.full_name} · ${event.name}`} />
-              <p className="text-xs text-muted">Si tenés la entrada de la ticketera, también sirve su QR.</p>
-            </div>
+            <NightPass eventId={event.id} label={`${me.full_name} · ${event.name}`} />
           </BottomSheet>
         )}
 
@@ -371,5 +368,17 @@ function Legend({ className, label }: { className: string; label: string }) {
     <span className="flex items-center gap-1 text-muted">
       <span className={cn("size-2 rounded-full", className)} /> {label}
     </span>
+  );
+}
+
+/** Pase de la noche: el fijo de siempre o, si el evento usa QR rotativo, el token que cambia cada 30 s. */
+function NightPass({ eventId, label }: { eventId: string; label: string }) {
+  const pass = usePassToken(eventId);
+  return (
+    <div className="space-y-3 text-center">
+      {pass?.value ? <QrBlock value={pass.value} label={label} /> : <p className="py-24 text-sm text-muted">Generando tu pase…</p>}
+      {pass?.dynamic && <p className="text-xs text-muted">{pass.stale ? "Sin señal: el QR puede estar vencido." : `QR rotativo: cambia en ${pass.secondsLeft} s. Las capturas no sirven.`}</p>}
+      <p className="text-xs text-muted">Si tenés la entrada de la ticketera, también sirve su QR.</p>
+    </div>
   );
 }

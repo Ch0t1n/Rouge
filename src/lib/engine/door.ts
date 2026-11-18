@@ -21,7 +21,7 @@ import { uid } from "@/lib/utils";
 import { ageOf } from "./privacy";
 import { tierLabel, vertical } from "./verticals";
 
-export type DoorStatus = "ok" | "already" | "invalid" | "revoked" | "banned" | "other_event" | "not_attendee" | "general_link" | "zone_denied";
+export type DoorStatus = "ok" | "already" | "invalid" | "revoked" | "banned" | "other_event" | "not_attendee" | "general_link" | "zone_denied" | "expired_pass";
 
 export interface DoorResult {
   status: DoorStatus;
@@ -47,6 +47,42 @@ export interface DoorResult {
 export const PASS_PREFIX = "ROUGE:PASS:";
 export const passValue = (eventId: UUID, userId: UUID) => `${PASS_PREFIX}${eventId}:${userId}`;
 
+// ── QR de acceso rotativo (eventos con `dynamic_pass`) ───────────────
+// `ROUGE:PASS2:<evento>:<usuario>:<ventana>:<firma>`. La ventana es de 30 s; se aceptan las 2 anteriores y la siguiente
+// (≈ 90 s) por relojes desfasados y la demora del escaneo. En Supabase firma el servidor (HMAC-SHA256 con un secreto
+// por evento que ningún cliente lee: `my_pass_token` / `pass_token_valid`). En el Modo Demo se simula con una firma
+// local: misma regla (ventana + firma), sin secreto real.
+export const PASS2_PREFIX = "ROUGE:PASS2:";
+export const PASS_WINDOW_SECONDS = 30;
+export const PASS_WINDOW_SLACK = { before: 2, after: 1 } as const;
+export const passWindow = (now = Date.now()) => Math.floor(now / 1000 / PASS_WINDOW_SECONDS);
+/** Segundos hasta que el QR rotativo cambia. */
+export const passSecondsLeft = (now = Date.now()) => PASS_WINDOW_SECONDS - (Math.floor(now / 1000) % PASS_WINDOW_SECONDS);
+
+/** Firma del Modo Demo (FNV-1a de 64 bits en dos mitades): NO es criptográfica; en Supabase firma el servidor. */
+function demoSig(eventId: UUID, userId: UUID, window: number) {
+  const text = `${eventId}:${userId}:${window}:rouge-demo`;
+  let a = 0x811c9dc5;
+  let b = 0x01000193;
+  for (let i = 0; i < text.length; i++) {
+    a = Math.imul(a ^ text.charCodeAt(i), 0x01000193) >>> 0;
+    b = Math.imul(b ^ text.charCodeAt(text.length - 1 - i), 0x01000193) >>> 0;
+  }
+  return a.toString(16).padStart(8, "0") + b.toString(16).padStart(8, "0");
+}
+
+/** Pase rotativo del Modo Demo (en Supabase lo genera `my_pass_token`). */
+export const demoPassToken = (eventId: UUID, userId: UUID, now = Date.now()) => {
+  const w = passWindow(now);
+  return `${PASS2_PREFIX}${eventId}:${userId}:${w}:${demoSig(eventId, userId, w)}`;
+};
+
+/** ¿Firma válida y dentro de la ventana? (Modo Demo; ⇔ public.pass_token_valid). */
+export function demoPassValid(eventId: UUID, userId: UUID, window: number, sig: string, now = Date.now()) {
+  const w = passWindow(now);
+  return window >= w - PASS_WINDOW_SLACK.before && window <= w + PASS_WINDOW_SLACK.after && sig === demoSig(eventId, userId, window);
+}
+
 export const DOOR_MESSAGES: Record<DoorStatus, string> = {
   ok: "Adelante",
   already: "Ya entró",
@@ -57,17 +93,26 @@ export const DOOR_MESSAGES: Record<DoorStatus, string> = {
   not_attendee: "No está en este evento",
   general_link: "Es el link general, no una entrada",
   zone_denied: "Acceso denegado para esta zona",
+  expired_pass: "Pase vencido: que abra su pase en el celular",
 };
 
 /** Pasó (verde) o no (ámbar/rojo). "Ya entró" en una puerta cuenta como no: puede ser una entrada compartida. */
 export const isGranted = (s: DoorStatus) => s === "ok";
 
 /** Normaliza lo escaneado: QR de URL (/join/<código>), pase de la app, tarjeta vCard o código tipeado. */
-export function parseDoorValue(raw: string): { kind: "pass"; eventId: string; userId: string } | { kind: "code"; code: string } | { kind: "vcard" } | null {
+export function parseDoorValue(
+  raw: string,
+): { kind: "pass"; eventId: string; userId: string; window?: number; sig?: string } | { kind: "code"; code: string } | { kind: "vcard" } | null {
   const v = raw.trim();
   if (!v) return null;
+  if (v.toUpperCase().startsWith(PASS2_PREFIX)) {
+    // Ids y firma en minúsculas: el código tipeado en la puerta llega en mayúsculas.
+    const [eventId, userId, w, sig] = v.slice(PASS2_PREFIX.length).toLowerCase().split(":");
+    const window = Number(w);
+    return eventId && userId && Number.isInteger(window) && sig ? { kind: "pass", eventId, userId, window, sig } : null;
+  }
   if (v.toUpperCase().startsWith(PASS_PREFIX)) {
-    const [eventId, userId] = v.slice(PASS_PREFIX.length).split(":");
+    const [eventId, userId] = v.slice(PASS_PREFIX.length).toLowerCase().split(":");
     return eventId && userId ? { kind: "pass", eventId, userId } : null;
   }
   // La tarjeta personal (vCard) no es una entrada: se avisa en lugar de "no válida" a secas.
@@ -202,6 +247,9 @@ export function zoneCheckIn(state: RougeState, eventId: UUID, zoneId: UUID | nul
 
     if (parsed.kind === "pass") {
       if (parsed.eventId !== eventId) return empty("other_event", "pass");
+      // QR rotativo: el pase firmado debe estar vigente; con `dynamic_pass`, el pase fijo (o una captura vieja) no sirve.
+      const dynamicEvent = !!state.events.find((e) => e.id === eventId)?.dynamic_pass;
+      if (parsed.window !== undefined ? !demoPassValid(eventId, parsed.userId, parsed.window, parsed.sig ?? "", now) : dynamicEvent) return empty("expired_pass", "pass");
       const who = personFor(state, eventId, parsed.userId);
       if (banned(parsed.userId)) return { ...empty("banned", "pass"), ...who };
       const att = state.event_attendees.find((a) => a.event_id === eventId && a.user_id === parsed.userId);

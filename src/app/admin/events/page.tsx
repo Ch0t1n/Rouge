@@ -106,6 +106,8 @@ function EventEditor({ event, onSaved }: { event: RougeEvent | null; onSaved: (i
   const kindLocked = !!event && state.event_attendees.some((a) => a.event_id === event.id);
   const v = vertical(kind);
   const [checkinOnly, setCheckinOnly] = useState(event?.networking_checkin_only ?? false);
+  // QR de acceso rotativo (pase firmado que cambia cada 30 s): recomendado con lista nominal o zonas pagas.
+  const [dynamicPass, setDynamicPass] = useState(event?.dynamic_pass ?? false);
   const [name, setName] = useState(event?.name ?? "");
   const [slug, setSlug] = useState(event?.slug ?? "");
   const [venue, setVenue] = useState(event?.venue_name ?? "");
@@ -130,6 +132,7 @@ function EventEditor({ event, onSaved }: { event: RougeEvent | null; onSaved: (i
         ...(event ? { id: event.id } : { brand_id: myBrands(state)[0]?.id ?? null }),
         kind,
         networking_checkin_only: checkinOnly,
+        dynamic_pass: dynamicPass,
         name,
         slug: slug || undefined,
         venue_name: venue,
@@ -208,6 +211,14 @@ function EventEditor({ event, onSaved }: { event: RougeEvent | null; onSaved: (i
             onCheckedChange={setCheckinOnly}
             label="Networking solo para acreditados"
             description="La grilla, Conectar, Rompehielos y las reuniones son solo entre quienes ya pasaron por la puerta (escáner). Ideal para congresos y eventos con lista nominal."
+          />
+          <Switch
+            tone="squad"
+            id="dynamic-pass"
+            checked={dynamicPass}
+            onCheckedChange={setDynamicPass}
+            label="QR de acceso rotativo"
+            description="El pase de la app cambia cada 30 segundos y lo firma el servidor: una captura de pantalla no sirve para entrar ni para pasar a una zona. Necesita señal en el celular de quien entra. Las entradas de 1 uso (ticketera) siguen sirviendo."
           />
         </div>
         <div className="mt-4">

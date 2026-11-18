@@ -8,6 +8,13 @@ const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const PRO = id(1100);
 const open = (role, path) => `${B}/demo/abrir?rol=${role}&a=${encodeURIComponent(path)}`;
 const read = async (dl) => fs.readFileSync(await dl.path(), "utf8");
+/** El QR de acceso rotativo vigente de una persona (lo que muestra su celular en "Mi pase"). */
+async function liveToken(page) {
+  await page.goto(`${B}/app`, { waitUntil: "networkidle" });
+  await page.click('[data-testid="my-pass"]');
+  await page.waitForSelector('[data-testid="pass-qr"][data-pass-value^="ROUGE:PASS2:"]');
+  return page.getAttribute('[data-testid="pass-qr"]', "data-pass-value");
+}
 
 (async () => {
   const browser = await chromium.launch();
@@ -61,6 +68,7 @@ const read = async (dl) => fs.readFileSync(await dl.path(), "utf8");
   const pass = await ph.textContent('[data-testid="corporate-pass"]');
   assert(pass.includes("ASISTENTE") && pass.includes("QR de Acceso"), "pase con categoría (ASISTENTE) y QR de acceso");
   assert(pass.includes("Tus accesos") && pass.includes("Auditorio A"), "muestra a qué zonas puede pasar");
+  assert(/Cambia en \d+s · capturas no sirven/.test(pass), "el QR de acceso es rotativo (cambia cada 30 s)");
   await ph.click('[data-testid="pass-mode-vcard"]');
   await ph.waitForSelector("text=se guarda en sus contactos");
   await ph.screenshot({ path: `${SP}/pro-pase-vcard.png` });
@@ -95,13 +103,20 @@ const read = async (dl) => fs.readFileSync(await dl.path(), "utf8");
   assert(await door.isVisible("text=Elegí en qué zona estás controlando"), "sin zona elegida no se puede escanear");
   assert(!(await door.isVisible('input[placeholder="Código de la entrada"]')), "el campo de código aparece recién con una zona");
   await door.click('[data-testid="zone-option"]:has-text("Sala VIP")');
-  await door.fill('input[placeholder="Código de la entrada"]', `ROUGE:PASS:${PRO}:${id(1)}`);
+  // Una captura del pase fijo no sirve: el evento usa QR rotativo.
+  await door.fill('input[placeholder="Código de la entrada"]', `ROUGE:PASS:${PRO}:${id(10)}`);
+  await door.click("text=Validar");
+  await door.waitForSelector('[data-testid="door-result"][data-status="expired_pass"]');
+  assert((await door.textContent('[data-testid="door-result"]')).includes("Pase vencido"), "QR rotativo: el pase fijo (o una captura vieja) se rechaza");
+  await door.fill('input[placeholder="Código de la entrada"]', await liveToken(ph));
   await door.click("text=Validar");
   await door.waitForSelector('[data-testid="door-result"][data-status="zone_denied"]');
   const denied = await door.textContent('[data-testid="door-result"]');
   assert(denied.includes("Acceso denegado para esta zona") && denied.includes("Requiere VIP / SPEAKER / SPONSOR") && denied.includes("Sofía Benítez"), "rojo: denegado en Sala VIP, con el requisito y el nombre");
   await door.screenshot({ path: `${SP}/pro-zona-denegada.png` });
-  await door.fill('input[placeholder="Código de la entrada"]', `ROUGE:PASS:${PRO}:${id(10)}`);
+  const tomas = await ctx.newPage(); watch(tomas, "tomas");
+  await tomas.addInitScript(() => { window.name = "rouge-persona:00000000-0000-4000-8000-000000000010"; });
+  await door.fill('input[placeholder="Código de la entrada"]', await liveToken(tomas));
   await door.click("text=Validar");
   await door.waitForSelector('[data-testid="door-result"][data-status="ok"]');
   const ok = await door.textContent('[data-testid="door-result"]');
@@ -119,7 +134,7 @@ const read = async (dl) => fs.readFileSync(await dl.path(), "utf8");
   await crm.selectOption('select[aria-label="Categoría de Sofía Benítez"]', "speaker");
   await crm.waitForSelector("text=ahora es SPEAKER");
   await door.reload({ waitUntil: "networkidle" });
-  await door.fill('input[placeholder="Código de la entrada"]', `ROUGE:PASS:${PRO}:${id(1)}`);
+  await door.fill('input[placeholder="Código de la entrada"]', await liveToken(ph));
   await door.click("text=Validar");
   await door.waitForSelector('[data-testid="door-result"][data-status="ok"]');
   assert((await door.textContent('[data-testid="door-result"]')).includes("SPEAKER"), "con categoría SPEAKER, Sofía pasa a la Sala VIP");

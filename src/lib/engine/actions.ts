@@ -1471,6 +1471,7 @@ export function upsertEvent(state: RougeState, input: Partial<RougeEvent> & Pick
     id: uid(),
     kind: "nightlife",
     networking_checkin_only: false,
+    dynamic_pass: false,
     slug,
     name: input.name,
     description: "",

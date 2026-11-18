@@ -261,6 +261,11 @@ export interface RougeEvent {
   kind: EventKind;
   /** Networking (grilla, conectar, reuniones) solo entre quienes ya pasaron por la puerta. */
   networking_checkin_only: boolean;
+  /**
+   * QR de acceso rotativo (v1.10): el pase de la app es un token firmado por el servidor que cambia cada 30 s
+   * (`ROUGE:PASS2:…`). Una captura de pantalla vence enseguida y el pase fijo (`ROUGE:PASS:…`) deja de servir.
+   */
+  dynamic_pass: boolean;
   slug: string;
   name: string;
   description: string;

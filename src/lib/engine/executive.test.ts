@@ -104,14 +104,14 @@ describe("zonas de control (multi-zona)", () => {
 
   it("un área valida la categoría: rechaza a una asistente, deja pasar a VIP con nombre, empresa y categoría", () => {
     const s = asUser(seed(), DEMO_IDS.security);
-    const denied = D.zoneCheckIn(s, PRO, ZONE.vip, D.passValue(PRO, ME), NOW);
+    const denied = D.zoneCheckIn(s, PRO, ZONE.vip, D.demoPassToken(PRO, ME, NOW), NOW);
     expect(denied.ok).toBe(true);
     if (!denied.ok) return;
     expect(denied.data).toMatchObject({ status: "zone_denied", tier: "attendee", zone_name: "Sala VIP", allowed_tiers: ["vip", "speaker", "sponsor"], name: "Sofía Benítez", company: "Estudio Benítez", age: null, username: null });
     expect(denied.state.zone_check_ins[0]).toMatchObject({ zone_id: ZONE.vip, user_id: ME, staff_id: DEMO_IDS.security, status: "denied", reason: "zone_denied" });
     expect(D.requiredTiersLabel(denied.data.allowed_tiers ?? [])).toBe("Requiere VIP / SPEAKER / SPONSOR");
 
-    const ok = D.zoneCheckIn(s, PRO, ZONE.vip, D.passValue(PRO, id(10)), NOW);
+    const ok = D.zoneCheckIn(s, PRO, ZONE.vip, D.demoPassToken(PRO, id(10), NOW), NOW);
     expect(ok.ok && ok.data).toMatchObject({ status: "ok", tier: "vip", company: "Aguirre Capital" });
     // Un área no toca la acreditación.
     const before = s.event_attendees.find((a) => a.event_id === PRO && a.user_id === id(10))!.checked_in_at;
@@ -121,10 +121,10 @@ describe("zonas de control (multi-zona)", () => {
   it("una puerta acredita; 'ya entró' en la segunda lectura; la vCard no es un pase; cada lectura queda registrada", () => {
     const base = asUser(seed(), DEMO_IDS.security);
     const s = { ...base, event_attendees: base.event_attendees.map((a) => (a.event_id === PRO && a.user_id === id(22) ? { ...a, checked_in_at: null } : a)) };
-    const first = D.zoneCheckIn(s, PRO, ZONE.entrance, D.passValue(PRO, id(22)), NOW);
+    const first = D.zoneCheckIn(s, PRO, ZONE.entrance, D.demoPassToken(PRO, id(22), NOW), NOW);
     expect(first.ok && first.data.status).toBe("ok");
     if (!first.ok) return;
-    const again = D.zoneCheckIn(first.state, PRO, ZONE.entrance, D.passValue(PRO, id(22)), NOW);
+    const again = D.zoneCheckIn(first.state, PRO, ZONE.entrance, D.demoPassToken(PRO, id(22), NOW), NOW);
     expect(again.ok && again.data.status).toBe("already");
     if (!again.ok) return;
     const card = D.zoneCheckIn(again.state, PRO, ZONE.auditorio, buildVCard({ fullName: "X" }), NOW);
@@ -134,6 +134,24 @@ describe("zonas de control (multi-zona)", () => {
     expect(logs.map((l) => l.status)).toEqual(expect.arrayContaining(["granted", "denied", "denied"]));
     expect(card.state.zone_check_ins.length).toBe(s.zone_check_ins.length + 3);
     expect(D.zoneCheckIn(s, PRO, id(20999), "x", NOW)).toMatchObject({ ok: false });
+  });
+
+  it("QR rotativo: vence a los ~90 s, no acepta firmas falsas ni el pase fijo; en la noche el pase fijo sigue igual", () => {
+    const s = asUser(seed(), DEMO_IDS.security);
+    const token = D.demoPassToken(PRO, id(10), NOW);
+    expect(D.zoneCheckIn(s, PRO, ZONE.vip, token, NOW + 50_000)).toMatchObject({ ok: true, data: { status: "ok" } }); // dentro del margen
+    expect(D.zoneCheckIn(s, PRO, ZONE.vip, token, NOW + 120_000)).toMatchObject({ ok: true, data: { status: "expired_pass", name: null } }); // captura vieja
+    const forged = token.replace(/:[0-9a-f]{16}$/, ":0123456789abcdef");
+    expect(D.zoneCheckIn(s, PRO, ZONE.vip, forged, NOW)).toMatchObject({ ok: true, data: { status: "expired_pass" } });
+    const otherUser = token.replace(id(10), id(1)); // firma de otra persona
+    expect(D.zoneCheckIn(s, PRO, ZONE.vip, otherUser, NOW)).toMatchObject({ ok: true, data: { status: "expired_pass" } });
+    expect(D.zoneCheckIn(s, PRO, ZONE.vip, D.passValue(PRO, id(10)), NOW)).toMatchObject({ ok: true, data: { status: "expired_pass" } }); // pase fijo
+    expect(D.zoneCheckIn(s, PRO, ZONE.vip, token.toUpperCase(), NOW)).toMatchObject({ ok: true, data: { status: "ok" } }); // tipeado en mayúsculas
+    expect(D.parseDoorValue(token)).toMatchObject({ kind: "pass", userId: id(10), window: D.passWindow(NOW) });
+    expect(D.passSecondsLeft(NOW)).toBeGreaterThan(0);
+    expect(D.passSecondsLeft(NOW)).toBeLessThanOrEqual(D.PASS_WINDOW_SECONDS);
+    // La noche no usa QR rotativo: el pase fijo sirve como siempre (y uno rotativo vigente también).
+    expect(D.doorCheckIn(s, NIGHT, D.demoPassToken(NIGHT, id(8), NOW), NOW).data.status).toBe("ok");
   });
 
   it("noche: la puerta principal sigue mostrando @ y edad para el control +18", () => {

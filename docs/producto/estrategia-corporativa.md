@@ -144,7 +144,7 @@ de barra pesa poco, porque el catering suele estar incluido. Los ingresos extra 
 | 3 | **Facturación ARCA (factura A)** | Las empresas la exigen para pagar. | M |
 | ~~4~~ | ✅ **v1.9 — ROUGE PRO en `/pro`** (reemplaza a `/empresas`): identidad ejecutiva, ventajas separadas para organizadores y asistentes, simulador del panel y demo ejecutiva con leads (`/api/leads` → `b2b_leads` + webhook). | — |
 | ~~4b~~ | ✅ **v1.10 — Ficha ejecutiva, pase con vCard y control multi-zona**: contacto por nivel de privacidad, categorías (SPEAKER, VIP, PRENSA, SPONSOR) y zonas con registro de lecturas. | — |
-| 4c | **QR de acceso rotativo** (firmado por el servidor cada 30 s) | Evita capturas de pantalla compartidas en eventos con zonas pagas. | S–M |
+| ~~4c~~ | ✅ **v1.10 — QR de acceso rotativo** (firmado por el servidor cada 30 s, opcional por evento). | — |
 | 5 | **Modo claro** para eventos corporativos | Más sobrio y mejor para salones con luz de día. | S–M |
 | 6 | **Preguntas al orador** con votos (reusar los pedidos de temas) | Reemplaza "Pedir tema" en la Agenda. | S |
 | 7 | **Login con Google Workspace / Microsoft** | SSO para empresas grandes. | M |

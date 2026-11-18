@@ -125,6 +125,9 @@ describe("contrato comandos ↔ schema.sql", () => {
     expect(TABLES.get("meetings")?.has("proposed_by")).toBe(true);
     expect(TABLES.get("b2b_leads")?.has("attendees")).toBe(true);
     expect(FUNCS.get("zone_check_in")).toEqual(["p_event", "p_zone", "p_value"]);
+    // QR rotativo: la app pide su pase a my_pass_token (usePassToken) y el escáner lo valida en zone_check_in.
+    expect(FUNCS.get("my_pass_token")).toEqual(["p_event"]);
+    expect(TABLES.get("events")?.has("dynamic_pass")).toBe(true);
     expect(FUNCS.get("generate_invite_codes")).toContain("p_tier");
     expect(TABLES.get("event_zones")?.has("allowed_tiers")).toBe(true);
     expect(TABLES.get("profile_personas")?.has("privacy_level")).toBe(true);
