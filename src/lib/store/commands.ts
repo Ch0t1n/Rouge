@@ -632,7 +632,9 @@ export const upsertEvent = (input: Parameters<typeof A.upsertEvent>[1]): Command
       const menu = sameKind && before.bar_menu.length ? before.bar_menu : e.kind === "corporate" ? CORPORATE_MENU : BAR_MENU;
       must(await sb.from("bar_menu_items").insert(menu.map((i) => ({ id: i.id, event_id: e.id, name: i.name, category: i.category, price: i.price, emoji: i.emoji }))));
     } else {
-      must(await sb.from("events").update(row).eq("id", e.id));
+      // Sin `id`: el UPDATE solo puede llevar columnas con privilegio de update (si no, Postgres rechaza todo el cambio).
+      const { id: _id, ...fields } = row;
+      must(await sb.from("events").update(fields).eq("id", e.id));
     }
   },
 });

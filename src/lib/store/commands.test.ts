@@ -370,6 +370,17 @@ describe("contrato comandos ↔ schema.sql", () => {
     expect(C.connectPaymentsDemo(DEMO_IDS.brand).remote).toBeUndefined();
   });
 
+  it("editar un evento no manda columnas sin privilegio de update (id, creador, código maestro)", async () => {
+    const st = { ...s0(), current_user_id: DEMO_IDS.organizer };
+    const upd = await runRemote(C.upsertEvent({ ...st.events[0], name: "Otro nombre" }), st);
+    expect(upd.calls[0]).toMatchObject({ kind: "table", table: "events", op: "update" });
+    const cols = Object.keys((upd.calls[0] as { payload: object }).payload);
+    // Espejo de `grant update (...) on public.events` en schema.sql.
+    const grant = SQL.match(/grant update \(([^)]*)\) on public\.events to authenticated/)![1].split(",").map((c) => c.trim());
+    for (const c of cols) expect(grant, `events.${c} no tiene privilegio de update`).toContain(c);
+    expect(cols).not.toContain("id");
+  });
+
   it("el perfil nuevo se inserta y el existente se actualiza sin tocar el id", async () => {
     const ins = await runRemote(C.upsertProfile("nuevo", { username: "nuevo.user", full_name: "Nuevo", birth_date: "2000-01-01" }), s0());
     expect(ins.calls[0]).toMatchObject({ kind: "table", table: "profiles", op: "insert" });
