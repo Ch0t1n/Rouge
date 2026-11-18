@@ -4,6 +4,21 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 
 ## [Sin publicar]
 
+### Agregado (v1.9 · ROUGE PRO)
+- **`/pro`: landing corporativa de ROUGE PRO** con identidad ejecutiva propia (paleta navy/slate/alabaster, cobalto y
+  dorado; Inter + JetBrains Mono solo en esa ruta) y metadata propia ("ROUGE PRO | Plataforma Integral para Eventos
+  Corporativos y Networking"). Secciones: navbar ejecutivo, hero con maqueta 3D en capas animada con GSAP (pase con QR,
+  reunión confirmada, check-in en vivo), **ventajas separadas para quien organiza y para quien asiste**, control de
+  acceso con escáner simulado, tablero de salas sin doble reserva, privacidad (qué ve otro asistente / permisos por
+  rol), casos de uso en pestañas accesibles, **simulador del centro de comando** (embudo de acreditación, reuniones y
+  ocupación de salas, export CSV) y pedido de **demo ejecutiva** en línea o en modal. Lo que todavía no existe se marca
+  "Próximamente".
+- **Switch Nightlife ⇄ PRO** en el header de la landing principal y en el de `/pro`.
+- Leads: campo **Cargo** (`b2b_leads.job_title`) y tipo de evento **Feria o exposición** (`expo`).
+
+### Cambiado (v1.9)
+- `/empresas` redirige (308) a `/pro`; se quitó la página anterior. El footer de `/organizadores` enlaza a `/pro`.
+
 ### Agregado (v1.8 · privacidad, reuniones y /empresas)
 - **Privacidad por contexto del Perfil principal:** `profiles` solo es legible por su dueño/a; los demás perfiles se
   leen como tarjetas saneadas (`profile_cards`: edad y no fecha de nacimiento, sin teléfono; @ y fotos solo si esa

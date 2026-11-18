@@ -26,7 +26,7 @@ Cada función existe en los dos modos de la app:
 [24. RRPP](#24-rrpp) · [25. Puerta](#25-puerta) · [26. Sitio público y de organizadores](#26-sitio-público-y-de-organizadores) ·
 [27. Noche y corporativo (ROUGE Pro) · perfiles múltiples](#27-noche-y-corporativo-rouge-pro--perfiles-múltiples) ·
 [28. Privacidad por contexto](#28-privacidad-por-contexto) · [29. Reuniones y puntos de encuentro](#29-reuniones-y-puntos-de-encuentro) ·
-[30. Página para empresas](#30-página-para-empresas)
+[30. ROUGE PRO (/pro)](#30-rouge-pro-pro)
 
 ---
 
@@ -397,13 +397,22 @@ Un mismo ROUGE para fiestas y boliches y para eventos de empresas, pymes y netwo
   agenda de nadie. Un lugar con reuniones se desactiva en vez de borrarse.
 - Avisos en vivo: pedido nuevo, propuesta de cambio, confirmación, rechazo y cancelación. Máx. 10 pedidos sin respuesta.
 
-## 30. Página para empresas
+## 30. ROUGE PRO (/pro)
 
-- **`/empresas`** (pública e indexable; `/` no la enlaza, `/organizadores` sí): propuesta de valor, problemas que
-  resuelve, diferenciales (acreditación con QR, networking y reuniones con sala, privacidad, CRM y analítica), casos de
-  uso en pestañas (congresos y expos, eventos internos, coworks, lanzamientos), **estimador** de plan según asistentes y
-  eventos por año (Starter Event, Corporate Pro, Enterprise; precio a medida), preguntas frecuentes y **formulario**.
-- El formulario valida en vivo y envía a **`POST /api/leads`**: misma validación en el servidor, honeypot y límite por
-  IP, guarda en `b2b_leads` y avisa al instante al equipo comercial por `LEADS_WEBHOOK_URL` (Slack, Make, Zapier…).
-  "Ver Modo Corporativo en vivo" abre la demo como asistente del encuentro pyme.
-
+- **`/pro`** es la página de la vertical corporativa (congresos, ferias, eventos internos, coworks), con identidad
+  ejecutiva propia (navy, alabaster, cobalto y dorado; Inter y JetBrains Mono) y sin los colores de la noche. Pública e
+  indexable; `/empresas` redirige acá. Se llega desde el **switch Nightlife ⇄ PRO** del header de `/`.
+- **Organizadores y asistentes, separados:** después del hero, "Dos experiencias, una sola plataforma" divide las dos
+  audiencias y cada bloque va rotulado:
+  - **Para quien organiza:** acreditación y control de acceso, centro de comando y analítica, leads para sponsors,
+    comunicaciones segmentadas, equipo con permisos por rol; escáner de la puerta y **simulador** del panel (embudo
+    invitados → confirmados → acreditados, reuniones y ocupación de salas por momento del evento, export CSV).
+  - **Para quien asiste:** saben con quién hablar, reuniones 1 a 1 con sala o pin (tablero de salas sin doble reserva),
+    mapa del predio, perfil profesional en 1 minuto, agenda en vivo y control de sus datos.
+  - **Seguridad y privacidad:** qué ve otro asistente antes y después de una reunión (asistentes) y permisos por rol (equipo).
+- **Casos de uso** en pestañas (congresos y cumbres, ferias, eventos internos y offsites, coworks), navegables con flechas.
+- **Demo ejecutiva:** "Solicitar Demo" abre un modal (Escape para cerrar) y la sección final tiene el formulario: nombre,
+  empresa, cargo, tipo de evento, asistentes, email y WhatsApp → `POST /api/leads` (validación, honeypot, límite por IP,
+  `b2b_leads` y aviso al equipo comercial por `LEADS_WEBHOOK_URL`).
+- Lo que todavía no existe (SMS/WhatsApp masivos, Q&A de oradores, auditoría, reporte PDF, mapa de calor por stand, pases
+  recurrentes) se muestra como **Próximamente**; los números de la maqueta y del simulador dicen "datos de ejemplo".

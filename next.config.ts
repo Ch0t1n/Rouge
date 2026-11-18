@@ -9,6 +9,10 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "*.supabase.co" },
     ],
   },
+  // /empresas fue la primera página corporativa: hoy es ROUGE PRO en /pro.
+  async redirects() {
+    return [{ source: "/empresas", destination: "/pro", permanent: true }];
+  },
   async headers() {
     return [
       {

@@ -56,7 +56,7 @@ src/
     profile/              # "Así te ven" + completitud · profile/edit (editor completo) · profile/personas (Mis perfiles + editor ?id=|?kind=&next=)
     settings/privacy/     # Ajustes de privacidad (incógnito, pin solo Squad, datos pro tras reunión) + lista negra + bloqueados
     meetings/             # Mis reuniones: para responder, próximas, enviadas, historial (aceptar, reprogramar, cancelar)
-    empresas/             # Página de ventas ROUGE Pro (pública, indexable, sin link desde "/"): estimador + formulario de leads
+    pro/                  # ROUGE PRO: landing corporativa con identidad ejecutiva propia (pública, indexable). /empresas redirige acá
     api/leads/            # POST de leads B2B (SOLO servidor): valida, honeypot + límite por IP, b2b_leads y webhook comercial
     u/[username]/         # Perfil de otro asistente (afinidad, Conectar, Rompehielos, bloquear)
     join/                 # Ingreso manual por código · join/[code]: link maestro, código único o link de Squad + Mood
@@ -94,7 +94,9 @@ src/
     chat/                 # MessageList (texto, fotos, system_alert), Composer (foto comprimida)
     squad/                # InviteToSquadButton ("Invitar a mi Squad" desde cualquier perfil)
     meetings/             # MeetingRequestSheet (pedir / reprogramar), LocationPicker (sala, pin o a definir), MeetingButton
-    corporate/            # CorporateLanding (/empresas)
+    pro/                  # ROUGE PRO (/pro): ProLanding, ProNavbar + ModeSwitch (Nightlife ⇄ PRO), ProHero (mock 3D con GSAP),
+                          # ProBentoGrid (ProAudienceSplit, ProOrganizerGrid, ProAttendeeGrid), ProSpotlights (Networking, Acceso, Privacidad),
+                          # ProUseCases, ProTelemetry (simulador), ProDemoForm (+ modal), ProFooter, content.ts (textos; "Próximamente" = soon)
     perks/                # QrBlock (QR alto contraste)
     share/ShareSheet.tsx  # QR + compartir nativo + WhatsApp + copiar + PNG para CUALQUIER link (useShare, ShareButton)
     social/               # SocialLoginButtons, InstagramPhotoPicker, InstagramField (+ useInstagramReturn), InstagramCallback
@@ -341,8 +343,15 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
   (`referred_by`). Ve solo conteos (`promoter_stats`). Comisión por ingreso; con escáner se liquida por ingreso en puerta.
 - **Puerta:** `door_check_in` (dueño/a, producción, seguridad) valida códigos de 1 uso (`checked_in_at`, distinto de
   `is_used`) y pases `ROUGE:PASS:<evento>:<usuario>`; rechaza anulados, expulsados, otro evento y el link general.
-- **Sitio:** la landing pública (`/`) nunca muestra CRM, ventas, planes ni links a `/organizadores` (noindex) ni a `/empresas`.
-  `/empresas` (ROUGE Pro, indexable) se enlaza desde `/organizadores`; sus leads entran solo por `/api/leads` (service role).
+- **Sitio:** la landing pública (`/`) nunca muestra CRM, ventas, planes ni links a `/organizadores` (noindex). Su header lleva
+  el switch **Nightlife ⇄ PRO** (`ModeSwitch`) hacia `/pro`, la vertical corporativa (pública, indexable; `/empresas` redirige).
+  Los leads de `/pro` entran solo por `/api/leads` (service role).
+- **ROUGE PRO (`/pro`) — no negociable:** (1) identidad ejecutiva propia: solo colores `pro-*` y fuentes `font-pro` /
+  `font-pro-mono` (Inter + JetBrains Mono, cargadas en `app/pro/layout.tsx`); nunca `rouge`/`squad`/`vip` ni el tema del evento.
+  (2) Las ventajas **para quien organiza** y **para quien asiste** van SIEMPRE en bloques separados y rotulados
+  (`AudienceTag`; `PRO_ORGANIZER_MODULES` vs `PRO_ATTENDEE_BENEFITS` en `components/pro/content.ts`), igual que en la noche
+  `/` (asistentes) y `/organizadores` (organizadores). (3) Solo se promete lo que existe: lo demás lleva `soon: true`
+  ("Próximamente"). Los números de mocks y simulador dicen "datos de ejemplo".
 - **Verticales (ROUGE / ROUGE Pro):** `events.kind` = `nightlife` | `corporate`; todo lo que cambia vive en
   `engine/verticals.ts` (`vertical(kind)`, `verticalOf`, `hasFeature`, `copy`). Nada de `if (kind === …)` sueltos con textos:
   usar `v.copy.*` y `v.features.*`. Moods `pro_*` solo en corporativo (`checkMoodForEvent` ⇔ `mood_kind` + trigger
@@ -374,6 +383,7 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
 | `rouge` | `#FF1E56` (hover `#E01145`) | Primario: matches, rompehielos, SOS — `shadow-glow-rouge` |
 | `squad` | `#00F0FF` | Amigos, pines de Squad — `shadow-glow-squad` |
 | `vip` | `#FFB800` | Monetización: barra, perks, sorteos, Mesa VIP, Punto Base |
+| `pro-*` | navy `#0B1120` · slate `#0F172A` · alabaster `#F8FAFC` · cobalt `#1D4ED8` / sapphire `#2563EB` · gold `#D97706` · emerald `#059669` | **Solo ROUGE PRO (`/pro`)**: paleta ejecutiva, no se usa en la app ni en la noche |
 | `text-primary` | `#F8FAFC` | Texto principal |
 | `text-muted` | `#94A3B8` | Texto secundario |
 
@@ -401,6 +411,7 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
 - [x] **Fase 11** — RRPP con link y comisión, escáner de puerta y sitio público / organizadores separados.
 - [x] **Fase 12** — ROUGE Pro: eventos corporativos (`events.kind`) y perfiles múltiples por cuenta (`profile_personas`).
 - [x] **Fase 13** — Privacidad por contexto (tarjetas saneadas, columnas privadas, ajustes), reuniones con sala/pin y `/empresas`.
+- [x] **Fase 14** — ROUGE PRO (`/pro`): identidad ejecutiva, organizadores y asistentes separados, simulador, demo con modal y switch de modo.
 - [ ] **Próximo** — ver `docs/producto/competencia.md` y `docs/producto/estrategia-corporativa.md`: facturación ARCA,
   modo claro corporativo, preguntas al orador, SSO, lista de espera, entradas propias, Mesa VIP con seña.
 

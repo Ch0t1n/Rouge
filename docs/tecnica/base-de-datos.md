@@ -34,7 +34,7 @@ TypeScript (`src/lib/types.ts`) son su espejo 1:1.
 | `privacy_settings` | **[v1.8]** Ajustes de la cuenta: `incognito_default`, `pin_share_matches`, `pro_details_after_meeting`. RLS: cada uno los suyos. |
 | `venue_spots` | **[v1.8]** Salas, mesas y puntos de encuentro del evento (tipo, cupo de reuniones a la vez, posición en el plano, activo). Los ven asistentes y equipo; los gestiona dueño/a o producción. |
 | `meetings` | **[v1.8]** Reuniones 1 a 1: motivo, horario, 15/30 min, lugar (`spot` / `pin` / `tbd`), estado (`pending`, `accepted`, `rescheduled`, `declined`, `cancelled`; "completada" se deriva), quién propuso por última vez y chat. Solo las ven las dos personas; todo cambio por RPC. |
-| `b2b_leads` | **[v1.8]** Leads de `/empresas`. **Solo servidor** (RLS sin políticas). |
+| `b2b_leads` | **[v1.8]** Leads de `/pro` (nombre, empresa, cargo, email, WhatsApp, tipo de evento, asistentes). **Solo servidor** (RLS sin políticas). |
 | `profile_personas` | **[v1.7]** Perfiles adicionales de una cuenta (`kind` noche / corporativo): nombre visible, fotos, géneros y Spotify, o cargo, empresa, rubro, `looking_for` / `offering` y LinkedIn. Máx. 5 por cuenta (`personas_limit`). Legible solo por quien comparte con su dueño/a un evento donde se usó. |
 
 `events` suma `brand_id` (de quien creó el evento: trigger `events_brand_owner`), `logo_url`, `theme_primary` y `theme_accent`.

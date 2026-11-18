@@ -357,13 +357,20 @@ create table if not exists public.b2b_leads (
   company      text not null check (char_length(company) between 2 and 120),
   email        text not null check (char_length(email) <= 160 and email ~* '^[^@\s]+@[^@\s]+\.[^@\s]+$'),
   whatsapp     text check (whatsapp is null or whatsapp ~ '^\+[1-9][0-9]{7,14}$'),
-  event_type   text not null check (event_type in ('congress','internal','cowork','launch','other')),
+  event_type   text not null,
   attendees    integer not null check (attendees between 10 and 100000),
   message      text not null default '' check (char_length(message) <= 1000),
-  source       text not null default 'empresas' check (char_length(source) <= 60),
+  source       text not null default 'pro' check (char_length(source) <= 60),
   notified_at  timestamptz,
   created_at   timestamptz not null default now()
 );
+
+-- [v1.9] Cargo de quien pide la demo en /pro (opcional).
+alter table public.b2b_leads add column if not exists job_title text check (job_title is null or char_length(job_title) <= 80);
+-- Tipos de evento (⇔ LEAD_EVENT_TYPES en lib/leads.ts). Se recrea para sumar valores sin perder filas.
+alter table public.b2b_leads drop constraint if exists b2b_leads_event_type_check;
+alter table public.b2b_leads add constraint b2b_leads_event_type_check
+  check (event_type in ('congress','expo','internal','cowork','launch','other'));
 
 -- [v1.8] Reuniones 1 a 1 dentro de un evento (espejo: Meeting). "Completada" se deriva (aceptada y ya terminó).
 create table if not exists public.meetings (

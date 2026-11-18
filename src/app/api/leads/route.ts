@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * POST /api/leads — formulario de /empresas.
+ * POST /api/leads — formularios de /pro (demo ejecutiva).
  *  1. Valida (mismas reglas que los checks de b2b_leads) y descarta spam (honeypot + límite por IP).
  *  2. Guarda en `b2b_leads` con service role (RLS sin políticas: ningún cliente lee leads).
  *  3. Avisa al equipo comercial al instante por LEADS_WEBHOOK_URL (Slack, Make, Zapier…) con `{ text }`.

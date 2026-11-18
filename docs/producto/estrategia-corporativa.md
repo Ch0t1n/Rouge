@@ -142,7 +142,7 @@ de barra pesa poco, porque el catering suele estar incluido. Los ingresos extra 
 | ~~1~~ | ✅ **v1.8 — Perfil principal privado por contexto.** `profiles` solo legible por su dueño/a; los demás ven tarjetas saneadas (`profile_cards`) y perfiles profesionales saneados (`persona_cards`). | — |
 | ~~2~~ | ✅ **v1.8 — Reuniones 1 a 1 con sala, mesa o pin**, agenda "Mis reuniones", salas con cupo y chat al aceptar. | — |
 | 3 | **Facturación ARCA (factura A)** | Las empresas la exigen para pagar. | M |
-| ~~4~~ | ✅ **v1.8 — Página `/empresas`** con estimador de planes y formulario de leads (`/api/leads` → `b2b_leads` + webhook al equipo comercial). | — |
+| ~~4~~ | ✅ **v1.9 — ROUGE PRO en `/pro`** (reemplaza a `/empresas`): identidad ejecutiva, ventajas separadas para organizadores y asistentes, simulador del panel y demo ejecutiva con leads (`/api/leads` → `b2b_leads` + webhook). | — |
 | 5 | **Modo claro** para eventos corporativos | Más sobrio y mejor para salones con luz de día. | S–M |
 | 6 | **Preguntas al orador** con votos (reusar los pedidos de temas) | Reemplaza "Pedir tema" en la Agenda. | S |
 | 7 | **Login con Google Workspace / Microsoft** | SSO para empresas grandes. | M |

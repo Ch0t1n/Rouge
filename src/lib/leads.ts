@@ -1,12 +1,13 @@
 /**
- * Leads B2B de la página /empresas — reglas PURAS (validación y mensaje para el equipo comercial).
+ * Leads B2B de ROUGE PRO (/pro) — reglas PURAS (validación y mensaje para el equipo comercial).
  * Espejo de los checks de `public.b2b_leads` en schema.sql. Lo usan el formulario (validación en vivo) y
  * POST /api/leads (validación real en el servidor).
  */
 import { normalizePhone } from "@/lib/utils";
 
 export const LEAD_EVENT_TYPES = [
-  { id: "congress", label: "Congreso o expo" },
+  { id: "congress", label: "Congreso o cumbre" },
+  { id: "expo", label: "Feria o exposición" },
   { id: "internal", label: "Evento interno / fiesta de fin de año" },
   { id: "cowork", label: "Cowork o comunidad" },
   { id: "launch", label: "Lanzamiento de marca" },
@@ -21,6 +22,8 @@ export const LEAD_MESSAGE_MAX = 1000;
 export interface LeadInput {
   name: string;
   company: string;
+  /** Cargo de quien consulta (opcional). */
+  job_title?: string | null;
   email: string;
   whatsapp?: string | null;
   event_type: string;
@@ -34,6 +37,7 @@ export interface LeadInput {
 export interface Lead {
   name: string;
   company: string;
+  job_title: string | null;
   email: string;
   whatsapp: string | null;
   event_type: LeadEventType;
@@ -42,7 +46,7 @@ export interface Lead {
   source: string;
 }
 
-export type LeadField = "name" | "company" | "email" | "whatsapp" | "event_type" | "attendees" | "message";
+export type LeadField = "name" | "company" | "job_title" | "email" | "whatsapp" | "event_type" | "attendees" | "message";
 export type LeadResult = { ok: true; lead: Lead } | { ok: false; errors: Partial<Record<LeadField, string>>; spam?: boolean };
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -56,12 +60,14 @@ export function validateLead(input: LeadInput): LeadResult {
   const errors: Partial<Record<LeadField, string>> = {};
   const name = clean(input.name, 80);
   const company = clean(input.company, 120);
+  const jobTitle = clean(input.job_title ?? "", 80);
   const email = clean(input.email, 160).toLowerCase();
   const message = typeof input.message === "string" ? input.message.trim().slice(0, LEAD_MESSAGE_MAX + 1) : "";
   const attendees = typeof input.attendees === "number" ? input.attendees : Number(String(input.attendees).replace(/\D/g, ""));
 
   if (name.length < 2 || name.length > 80) errors.name = "Contanos tu nombre.";
   if (company.length < 2 || company.length > 120) errors.company = "¿Para qué empresa u organización es?";
+  if (jobTitle.length > 80) errors.job_title = "Hasta 80 caracteres.";
   if (!EMAIL_RE.test(email) || email.length > 160) errors.email = "Ingresá un email válido.";
   let whatsapp: string | null = null;
   if (input.whatsapp && String(input.whatsapp).trim()) {
@@ -74,7 +80,7 @@ export function validateLead(input: LeadInput): LeadResult {
   if (Object.keys(errors).length) return { ok: false, errors };
   return {
     ok: true,
-    lead: { name, company, email, whatsapp, event_type: input.event_type as LeadEventType, attendees, message, source: clean(input.source ?? "empresas", 60) || "empresas" },
+    lead: { name, company, job_title: jobTitle || null, email, whatsapp, event_type: input.event_type as LeadEventType, attendees, message, source: clean(input.source ?? "pro", 60) || "pro" },
   };
 }
 
@@ -85,7 +91,7 @@ export function leadNotification(lead: Lead): string {
   const type = LEAD_EVENT_TYPES.find((t) => t.id === lead.event_type)?.label ?? lead.event_type;
   return [
     `🆕 Lead ROUGE Pro · ${lead.company}`,
-    `👤 ${lead.name} · ${lead.email}${isFreeMail(lead.email) ? " (mail personal)" : ""}`,
+    `👤 ${lead.name}${lead.job_title ? ` (${lead.job_title})` : ""} · ${lead.email}${isFreeMail(lead.email) ? " (mail personal)" : ""}`,
     lead.whatsapp ? `📱 ${lead.whatsapp} · https://wa.me/${lead.whatsapp.replace("+", "")}` : null,
     `🎟️ ${type} · ${lead.attendees.toLocaleString("es-AR")} asistentes`,
     lead.message ? `💬 ${lead.message}` : null,

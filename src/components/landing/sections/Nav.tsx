@@ -8,6 +8,7 @@ import { scrollToId } from "../core/scrollStore";
 import { useEntry } from "../core/entry";
 import { DEMO_HREF, useAudience } from "../core/audience";
 import { cn } from "@/lib/utils";
+import { ModeSwitch } from "@/components/pro/ModeSwitch";
 
 export const NAV_LINKS = {
   public: [
@@ -69,6 +70,8 @@ export function Nav() {
           ))}
         </div>
         <div className="ml-auto flex items-center gap-2">
+          {/* Nightlife ⇄ PRO (eventos corporativos) */}
+          <ModeSwitch active="nightlife" variant="nightlife" className="hidden md:inline-flex" />
           {org ? (
             <>
               <a href={DEMO_HREF} className="hidden min-h-[40px] items-center rounded-xl border border-vip/40 px-3 font-display text-sm font-semibold text-vip transition hover:bg-vip/10 sm:inline-flex">
@@ -107,6 +110,9 @@ export function Nav() {
                 Ver la demo
               </a>
             )}
+            <div className="px-3 pb-2 pt-1">
+              <ModeSwitch active="nightlife" variant="nightlife" />
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
