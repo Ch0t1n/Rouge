@@ -254,6 +254,11 @@ describe("contrato comandos ↔ schema.sql", () => {
     ["upsertZone (nueva)", () => runRemote(C.upsertZone(DEMO_IDS.proEvent, { name: "Backstage", kind: "area", allowed_tiers: ["speaker"] }), st())],
     ["upsertZone (edición)", () => runRemote(C.upsertZone(DEMO_IDS.proEvent, { id: id(20003), name: "Sala VIP", kind: "area", allowed_tiers: ["vip"], is_active: false }), st())],
     ["deleteZone", () => runRemote(C.deleteZone(DEMO_IDS.proEvent, id(20005)), st())],
+    // [v1.10] Equipos que arma la organización (corporativo)
+    ["organizerCreateTeam", () => runRemote(C.organizerCreateTeam(DEMO_IDS.proEvent, "Logística"), st(), { create_team: { id: id(9), invite_code: "EQ-ABC123" } })],
+    ["organizerSetTeamMember (sumar)", () => runRemote(C.organizerSetTeamMember(DEMO_IDS.proEvent, DEMO_IDS.proTeam, id(25), true), st())],
+    ["organizerSetTeamMember (quitar)", () => runRemote(C.organizerSetTeamMember(DEMO_IDS.proEvent, DEMO_IDS.proTeam, ME, false), st())],
+    ["organizerDeleteTeam", () => runRemote(C.organizerDeleteTeam(DEMO_IDS.proEvent, DEMO_IDS.proTeam), st())],
     ["deleteEvent", () => { const r = C.duplicateEvent(EV, new Date(NOW + 7 * 86_400_000).toISOString()).local(st()); const s = (r as { state: RougeState; data: { event: { id: string } } }); return runRemote(C.deleteEvent(s.data.event.id), s.state); }],
   ];
 
@@ -287,6 +292,8 @@ describe("contrato comandos ↔ schema.sql", () => {
     expect(C.upsertZone(DEMO_IDS.proEvent, { name: "Backstage", kind: "area", allowed_tiers: [] }).local(as(DEMO_IDS.security)).ok).toBe(false);
     expect(C.setAttendeeTier(DEMO_IDS.proEvent, ME, "vip").local(as(ME)).ok).toBe(false);
     expect(C.setAttendeeTier(DEMO_IDS.proEvent, ME, "vip").local(as(DEMO_IDS.manager)).ok).toBe(true);
+    expect(C.organizerCreateTeam(DEMO_IDS.proEvent, "Logística").local(as(ME)).ok).toBe(false);
+    expect(C.organizerCreateTeam(DEMO_IDS.proEvent, "Logística").local(as(DEMO_IDS.manager)).ok).toBe(true);
   });
 
   it("gestión del evento: solo dueño/a o producción; eliminar solo quien lo creó", () => {

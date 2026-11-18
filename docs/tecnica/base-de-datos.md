@@ -149,6 +149,7 @@ visitado; pedidos → `updated_at`; perfil → Instagram verificado (`profile_in
 | `event_zones` | lectura: quien está en el evento · gestión: dueño/a y producción | Puertas (`entrance`) y áreas (`area`) con `allowed_tiers` (vacío = todas). Hasta 20 por evento (`zones_limit`), nombre único. |
 | `zone_check_ins` | lectura: dueño/a, producción y seguridad · escritura: solo RPC | Registro de lecturas: zona, persona, código, personal, `granted`/`denied`, motivo y categoría. |
 | `events.dynamic_pass` · `event_pass_secrets` · `my_pass_token(event)` | asistente (su pase) | QR rotativo: `ROUGE:PASS2:<evento>:<usuario>:<ventana 30 s>:<firma>` con HMAC-SHA256 y secreto por evento (tabla sin acceso de clientes). `pass_secret` / `pass_signature` / `pass_token_valid` son internas: cerradas para clientes en "Permisos de ejecución" (después del grant general). |
+| `create_team` · `set_team_member` · `delete_team` | dueño/a y producción | Equipos de la organización (corporativo): nombre único por evento, código `EQ-` del servidor, sumar/mover/quitar (máx. 12). En corporativo `create_squad`, `invite_to_squad`, `trigger_rescue` y `set_safety_status` responden `not_in_vertical`. |
 | `zone_check_in(event, zone, value)` | dueño/a, producción, seguridad | Escáner por zona (⇔ `zoneCheckIn`): valida la categoría; en puertas acredita. `door_check_in` = puerta principal. En corporativo devuelve la cara profesional (sin edad). |
 
 Los valores nuevos del enum `mood_tag_t` se agregan con `alter type … add value` y en el script se comparan como texto

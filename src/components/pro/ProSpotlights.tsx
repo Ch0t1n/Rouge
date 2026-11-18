@@ -220,7 +220,7 @@ const VISIBILITY = [
 
 const ROLES = [
   { role: "Dirección / Producción", data: "Asistentes, CRM y métricas" },
-  { role: "Seguridad", data: "Acreditación y alertas de rescate" },
+  { role: "Seguridad", data: "Acreditación y control por zonas" },
   { role: "Barra y catering", data: "Solo pedidos" },
   { role: "Asistentes", data: "Solo perfiles profesionales" },
 ];

@@ -49,9 +49,10 @@ Todo lo que cambia entre las dos verticales vive en un solo archivo, `src/lib/en
 | Afinidad de la grilla | Musical (géneros en común) | **De negocio**: cruza lo que cada uno busca con lo que el otro ofrece, más el rubro |
 | Filtros de la grilla | Géneros | Qué ofrecen |
 | Vocabulario | Lobby, Match, Rompehielos, Squad, Line-up, Barra Express, Modo Solo Amigos | Networking, Contacto, Presentación, Equipo, Agenda, Barra y catering, Modo Solo Contactos |
-| Se apagan | — | Trago de regalo, pedidos al DJ, sorteo por género, RRPP, edad, Instagram y loop en la cara pública |
+| Se apagan | — | Trago de regalo, pedidos al DJ, sorteo por género, RRPP, edad, Instagram y loop en la cara pública; **Rescate y "Llegué a casa"** (v1.10) |
+| Equipos | Cada asistente arma su Squad e invita | **Los arma la organización** (v1.10): crea equipos, suma o mueve personas y comparte el link de cada uno |
 | Menú y plano base | Tragos y botellas; pista, cabina, VIP | Café y catering; auditorio, stands, salas de reunión, coffee |
-| Se mantienen | Todo | Plano y pines, Equipo con Rescate y Llegué a casa, barra con cobro, perks, sorteos, avisos, LED, CRM, puerta, API |
+| Se mantienen | Todo | Plano y pines, Equipo (chat y punto de encuentro), barra con cobro, perks, sorteos, avisos, LED, CRM, puerta, API |
 
 - El tipo se elige al crear el evento (*Eventos y accesos → Tipo de evento*). **No cambia una vez que entró alguien**:
   la regla está en el motor y en el trigger `events_kind_locked`.

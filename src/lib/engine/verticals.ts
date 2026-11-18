@@ -34,6 +34,13 @@ export interface VerticalFeatures {
   socialMedia: boolean;
   /** Se puede entrar con el Perfil principal (si no, hace falta un perfil de esta vertical). */
   mainProfile: boolean;
+  /** Botón de Rescate, "Ya estoy bien" y "Llegué a casa" (⇔ `not_in_vertical` en trigger_rescue / set_safety_status). */
+  rescue: boolean;
+  /**
+   * Los asistentes arman su Squad e invitan gente. Si es false (corporativo), los equipos los arma la organización
+   * (organizerCreateTeam / organizerSetTeamMember ⇔ create_team / set_team_member) y se suman por su link o asignación.
+   */
+  selfServeTeams: boolean;
 }
 
 export interface VerticalCopy {
@@ -69,7 +76,7 @@ export interface Vertical {
 export const VERTICALS: Record<EventKind, Vertical> = {
   nightlife: {
     kind: "nightlife",
-    features: { musicTaste: true, songRequests: true, icebreakerGift: true, promoters: true, genderRaffle: true, showAge: true, socialMedia: true, mainProfile: true },
+    features: { musicTaste: true, songRequests: true, icebreakerGift: true, promoters: true, genderRaffle: true, showAge: true, socialMedia: true, mainProfile: true, rescue: true, selfServeTeams: true },
     copy: {
       brand: "ROUGE",
       kindLabel: "Noche",
@@ -95,7 +102,7 @@ export const VERTICALS: Record<EventKind, Vertical> = {
   },
   corporate: {
     kind: "corporate",
-    features: { musicTaste: false, songRequests: false, icebreakerGift: false, promoters: false, genderRaffle: false, showAge: false, socialMedia: false, mainProfile: false },
+    features: { musicTaste: false, songRequests: false, icebreakerGift: false, promoters: false, genderRaffle: false, showAge: false, socialMedia: false, mainProfile: false, rescue: false, selfServeTeams: false },
     copy: {
       brand: "ROUGE Pro",
       kindLabel: "Corporativo",

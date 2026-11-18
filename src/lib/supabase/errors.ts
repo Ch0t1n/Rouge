@@ -7,6 +7,9 @@ const MESSAGES: Record<string, string> = {
   not_authenticated: "Tu sesión expiró. Volvé a ingresar.",
   // [v1.10] Ficha ejecutiva, categorías y zonas
   zone_not_found: "Esa zona no existe o está desactivada.",
+  team_name_taken: "Ya hay un equipo con ese nombre.",
+  invalid_team_name: "Poné un nombre para el equipo (hasta 32 caracteres).",
+  squad_full: "El equipo está completo (máximo 12).",
   too_many_zones: "Hasta 20 zonas por evento.",
   event_zones_name_uq: "Ya hay una zona con ese nombre.",
   personas_bio_len_chk: "La bio profesional tiene un máximo de 240 caracteres.",

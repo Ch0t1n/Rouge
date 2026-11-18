@@ -108,7 +108,7 @@ src/
     landing/              # Landing 3D: Landing.tsx (composición por audiencia "public" | "organizers"), core/ (Lenis+ScrollTrigger, scrollStore, entry, audience),
                           # fx/ (Cursor, Magnetic, SplitReveal, TiltCard), three/ (Scene R3F + choreography), sections/ (8 secciones)
     scan/QrScanner.tsx    # Cámara → QR (BarcodeDetector nativo o jsQR); lo usan Puerta y la ventanilla de la barra
-    admin/                # AdminChrome (nav por permisos, NoAccess, badge de rol), BrandStudio, MenuEditor, PrintTicket, EventLifecyclePanel, RrppPanel, DoorScanner (zona de control obligatoria + registro), ZonesPanel, TeamPanel, SecurityPanel, ApiKeysPanel, PrintCodes, AdminHeader, Panel, downloadCSV
+    admin/                # AdminChrome (nav por permisos, NoAccess, badge de rol), BrandStudio, MenuEditor, PrintTicket, EventLifecyclePanel, RrppPanel, DoorScanner (zona de control obligatoria + registro), ZonesPanel, OrganizerTeamsPanel (equipos corporativos), TeamPanel, SecurityPanel, ApiKeysPanel, PrintCodes, AdminHeader, Panel, downloadCSV
     venue/VenueMap.tsx    # Plano interactivo (zoom/paneo, sectores, pines)
     event/                # LineupBanner, MoodPicker
   lib/
@@ -376,7 +376,10 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
   ("Próximamente"). Los números de mocks y simulador dicen "datos de ejemplo".
 - **Verticales (ROUGE / ROUGE Pro):** `events.kind` = `nightlife` | `corporate`; todo lo que cambia vive en
   `engine/verticals.ts` (`vertical(kind)`, `verticalOf`, `hasFeature`, `copy`). Nada de `if (kind === …)` sueltos con textos:
-  usar `v.copy.*` y `v.features.*`. Moods `pro_*` solo en corporativo (`checkMoodForEvent` ⇔ `mood_kind` + trigger
+  usar `v.copy.*` y `v.features.*`. **Corporativo (v1.10): sin Rescate / "Llegué a casa" (`features.rescue`) y equipos que
+  arma la organización (`features.selfServeTeams` = false: `organizerCreateTeam`/`organizerSetTeamMember`/`organizerDeleteTeam`
+  ⇔ `create_team`/`set_team_member`/`delete_team`; `create_squad`, `invite_to_squad`, `trigger_rescue` y `set_safety_status`
+  → `not_in_vertical`).** Moods `pro_*` solo en corporativo (`checkMoodForEvent` ⇔ `mood_kind` + trigger
   `attendee_vertical`). Funciones apagadas en corporativo ⇒ `NOT_IN_VERTICAL` ⇔ `not_in_vertical`. El tipo no cambia con
   asistentes (`events_kind_locked`). Estrategia: `docs/producto/estrategia-corporativa.md`.
 - **Perfiles múltiples (no negociable):** una cuenta = Perfil principal (`profiles`, noche) + hasta 5 `profile_personas`.

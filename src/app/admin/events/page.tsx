@@ -26,6 +26,8 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Segmented, TextAreaField, TextField } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
 import { VenueSpotsPanel } from "@/components/admin/VenueSpotsPanel";
+import { OrganizerTeamsPanel } from "@/components/admin/OrganizerTeamsPanel";
+import { hasFeature } from "@/lib/engine/verticals";
 
 const H = 3_600_000;
 /** ISO → valor de <input type="datetime-local"> en hora local */
@@ -72,6 +74,8 @@ export default function AdminEventsPage() {
       <EventEditor key={editing} event={event} onSaved={(id) => { setEditing(id); setActiveEvent(id); }} />
       {event && <AccessPanel event={event} />}
       {event && <VenueSpotsPanel event={event} />}
+      {/* Corporativo: los equipos los arma la organización (los asistentes no crean). */}
+      {event && !hasFeature(state, event.id, "selfServeTeams") && <OrganizerTeamsPanel event={event} />}
       {event && (
         <div className="grid gap-6 xl:grid-cols-3">
           <ApiKeysPanel event={event} />

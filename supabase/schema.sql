@@ -1499,6 +1499,8 @@ create or replace function public.create_squad(p_event uuid, p_name text)
 returns public.squads language plpgsql security definer set search_path = public, extensions as $$
 declare v_row public.squads;
 begin
+  -- [v1.10] Corporativo: los equipos los arma la organización (create_team) (⇔ feature selfServeTeams).
+  if (select kind::text from public.events where id = p_event) = 'corporate' then raise exception 'not_in_vertical'; end if;
   if not public.lobby_is_open(p_event) or not public.is_event_attendee(p_event) then raise exception 'not_allowed'; end if;
   if public.user_squad(p_event, auth.uid()) is not null then raise exception 'already_in_squad'; end if;
   insert into public.squads (event_id, name, created_by) values (p_event, coalesce(nullif(trim(p_name), ''), 'Mi Squad'), auth.uid()) returning * into v_row;
@@ -1511,6 +1513,7 @@ returns void language plpgsql security definer set search_path = public, extensi
 declare v_event uuid;
 begin
   select event_id into v_event from public.squads where id = p_squad;
+  if (select kind::text from public.events where id = v_event) = 'corporate' then raise exception 'not_in_vertical'; end if;
   if not public.is_squad_member(p_squad) then raise exception 'not_member'; end if;
   if not public.is_event_attendee(v_event, p_invitee) then raise exception 'not_attendee'; end if;
   if exists (select 1 from public.squad_members m where m.squad_id = p_squad and public.is_blocked(m.user_id, p_invitee)) then raise exception 'unavailable'; end if;
@@ -1532,6 +1535,51 @@ begin
   select split_part(full_name, ' ', 1) into v_name from public.profiles where id = auth.uid();
   insert into public.messages (event_id, conversation_type, squad_id, sender_id, message_type, content)
   values (v_event, 'squad', p_squad, auth.uid(), 'system_alert', '👋 ' || v_name || ' se sumó al Squad');
+end $$;
+
+-- [v1.10] Equipos que arma la organización (corporativo; ⇔ organizerCreateTeam / organizerSetTeamMember / organizerDeleteTeam).
+create or replace function public.create_team(p_event uuid, p_name text)
+returns public.squads language plpgsql security definer set search_path = public, extensions as $$
+declare v_row public.squads; v_name text := regexp_replace(trim(coalesce(p_name, '')), '\s+', ' ', 'g');
+begin
+  if not public.is_event_manager(p_event) then raise exception 'forbidden'; end if;
+  if v_name = '' or char_length(v_name) > 32 then raise exception 'invalid_team_name'; end if;
+  if exists (select 1 from public.squads where event_id = p_event and lower(name) = lower(v_name)) then raise exception 'team_name_taken'; end if;
+  insert into public.squads (event_id, name, invite_code, created_by)
+  values (p_event, v_name, 'EQ-' || upper(encode(gen_random_bytes(3), 'hex')), auth.uid()) returning * into v_row;
+  return v_row;
+end $$;
+
+create or replace function public.set_team_member(p_squad uuid, p_user uuid, p_add boolean default true)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+declare v_event uuid; v_name text;
+begin
+  select event_id into v_event from public.squads where id = p_squad;
+  if v_event is null or not public.is_event_manager(v_event) then raise exception 'forbidden'; end if;
+  if not p_add then
+    delete from public.squad_members where squad_id = p_squad and user_id = p_user;
+    return;
+  end if;
+  if not public.is_event_attendee(v_event, p_user) then raise exception 'not_attendee'; end if;
+  if exists (select 1 from public.squad_members where squad_id = p_squad and user_id = p_user and status = 'joined') then return; end if;
+  if exists (select 1 from public.squad_members m where m.squad_id = p_squad and m.status = 'joined' and public.is_blocked(m.user_id, p_user)) then raise exception 'unavailable'; end if;
+  if (select count(*) from public.squad_members where squad_id = p_squad and status = 'joined') >= 12 then raise exception 'squad_full'; end if;
+  -- Si estaba en otro equipo del evento, se mueve.
+  delete from public.squad_members where user_id = p_user and squad_id in (select id from public.squads where event_id = v_event);
+  insert into public.squad_members (squad_id, user_id, invited_by, status, joined_at) values (p_squad, p_user, auth.uid(), 'joined', now());
+  select split_part(full_name, ' ', 1) into v_name from public.profiles where id = p_user;
+  insert into public.messages (event_id, conversation_type, squad_id, sender_id, message_type, content)
+  values (v_event, 'squad', p_squad, p_user, 'system_alert', '👋 La organización sumó a ' || coalesce(v_name, 'alguien') || ' al equipo');
+end $$;
+
+create or replace function public.delete_team(p_squad uuid)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+declare v_event uuid;
+begin
+  select event_id into v_event from public.squads where id = p_squad;
+  if v_event is null or not public.is_event_manager(v_event) then raise exception 'forbidden'; end if;
+  delete from public.messages where squad_id = p_squad;
+  delete from public.squads where id = p_squad;
 end $$;
 
 -- QR Drops automáticos: "Squad de N miembros antes de HH:MM" → 1 QR por integrante (idempotente).
@@ -1587,6 +1635,8 @@ create or replace function public.trigger_rescue(p_event uuid, p_x double precis
 returns public.map_pins language plpgsql security definer set search_path = public, extensions as $$
 declare v_squad uuid; v_pin public.map_pins; v_name text;
 begin
+  -- [v1.10] Sin Botón de Rescate en eventos corporativos (⇔ feature rescue).
+  if (select kind::text from public.events where id = p_event) = 'corporate' then raise exception 'not_in_vertical'; end if;
   v_squad := public.user_squad(p_event, auth.uid());
   if v_squad is null then raise exception 'no_squad'; end if;
   delete from public.map_pins where event_id = p_event and user_id = auth.uid();
@@ -1651,6 +1701,7 @@ create or replace function public.set_safety_status(p_event uuid, p_status safet
 returns void language plpgsql security definer set search_path = public, extensions as $$
 declare v_squad uuid; v_name text;
 begin
+  if (select kind::text from public.events where id = p_event) = 'corporate' then raise exception 'not_in_vertical'; end if;
   v_squad := public.user_squad(p_event, auth.uid());
   if v_squad is null then raise exception 'no_squad'; end if;
   update public.squad_members set safety_status = p_status where squad_id = v_squad and user_id = auth.uid();

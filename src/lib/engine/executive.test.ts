@@ -202,3 +202,43 @@ describe("vCard 3.0", () => {
     expect(personaVCard(sofi, "X", { phone: false })).not.toContain("TEL");
   });
 });
+
+describe("corporativo: sin Rescate y equipos armados por la organización", () => {
+  it("Rescate, 'Ya estoy bien' y 'Llegué a casa' no existen en corporativo; en la noche siguen igual", () => {
+    const s = seed();
+    expect(A.triggerRescue(s, PRO, ME)).toMatchObject({ ok: false });
+    expect(A.markHomeSafe(s, PRO, ME)).toMatchObject({ ok: false });
+    expect(A.resolveRescue(s, PRO, ME)).toMatchObject({ ok: false });
+    expect(A.triggerRescue(s, NIGHT, ME).ok).toBe(true);
+  });
+
+  it("los asistentes no crean equipos ni invitan; la organización crea, suma, mueve, quita y borra", () => {
+    const s = asUser(seed(), DEMO_IDS.organizer);
+    expect(A.createSquad(asUser(s, id(25)), PRO, id(25), "Mi equipo")).toMatchObject({ ok: false });
+    expect(A.inviteToSquad(s, DEMO_IDS.proTeam, ME, id(25))).toMatchObject({ ok: false });
+    expect(A.organizerCreateTeam(s, PRO, "Mesa 12 · Ronda de negocios")).toMatchObject({ ok: false }); // nombre repetido
+    const created = A.organizerCreateTeam(s, PRO, "  Logística  ");
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    const team = created.data;
+    expect(team).toMatchObject({ name: "Logística", created_by: DEMO_IDS.organizer });
+    // Héctor (sin equipo) se suma; Sofía se MUEVE desde la Mesa 12.
+    const add = A.organizerSetTeamMember(created.state, team.id, id(25), true);
+    expect(add.ok && add.data.moved).toBe(false);
+    if (!add.ok) return;
+    const move = A.organizerSetTeamMember(add.state, team.id, ME, true);
+    expect(move.ok && move.data.moved).toBe(true);
+    if (!move.ok) return;
+    const inTeam = (st: RougeState, sq: string) => st.squad_members.filter((m) => m.squad_id === sq && m.status === "joined").map((m) => m.user_id);
+    expect(inTeam(move.state, team.id).sort()).toEqual([ME, id(25)].sort());
+    expect(inTeam(move.state, DEMO_IDS.proTeam)).not.toContain(ME);
+    expect(A.organizerSetTeamMember(move.state, team.id, id(2), true)).toMatchObject({ ok: false }); // no está en el evento
+    const out = A.organizerSetTeamMember(move.state, team.id, id(25), false);
+    expect(out.ok && inTeam(out.state, team.id)).toEqual([ME]);
+    if (!out.ok) return;
+    const del = A.organizerDeleteTeam(out.state, team.id);
+    expect(del.ok && del.state.squads.some((x) => x.id === team.id)).toBe(false);
+    // Unirse con el link del equipo sigue funcionando para el asistente.
+    expect(A.joinSquad(asUser(s, id(25)), id(25), DEMO_IDS.proTeam).ok).toBe(true);
+  });
+});

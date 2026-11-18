@@ -364,7 +364,8 @@ Un mismo ROUGE para fiestas y boliches y para eventos de empresas, pymes y netwo
 - **Vocabulario corporativo:** Networking, Contacto, Presentación (1 por evento), Equipo, Agenda, Barra y catering,
   Modo Solo Contactos.
 - **Se apaga en corporativo:** trago de regalo, pedir temas, sorteo por género, RRPP, y edad, Instagram y loop en la
-  cara pública. Lo demás (plano, Equipo con Rescate, barra, perks, sorteos, avisos, LED, puerta, API) funciona igual.
+  cara pública. **[v1.10]** Tampoco hay Rescate ni "Llegué a casa", y los equipos los arma la organización (ver §31). Lo
+  demás (plano, Equipo con chat y punto de encuentro, barra, perks, sorteos, avisos, LED, puerta, API) funciona igual.
 - **CRM corporativo:** empresa, cargo, rubro, busca / ofrece y LinkedIn, también en el CSV.
 - **Demo:** el *Encuentro Pyme Conecta* (`/join/PYME26`) está en vivo junto a la fiesta, con 10 perfiles profesionales.
 
@@ -417,6 +418,12 @@ Un mismo ROUGE para fiestas y boliches y para eventos de empresas, pymes y netwo
   señal en el celular de quien entra; las entradas de 1 uso de la ticketera siguen sirviendo.
 - **Categorías:** vienen con el código de la entrada (lotes por categoría en *Eventos y accesos*) y la organización las
   cambia desde el CRM.
+- **Sin Rescate en corporativo:** el Botón de Rescate, "Ya estoy bien" y "Llegué a casa" no aparecen (ni en el Equipo
+  ni en el plano) y el servidor los rechaza. En la noche siguen igual.
+- **Equipos que arma la organización:** en un evento corporativo los asistentes no crean equipos ni invitan. La
+  organización los arma en *Eventos y accesos → Equipos del evento*: crea el equipo, suma personas (si estaban en otro,
+  se mueven), las quita, lo borra o comparte su link con QR para que se sumen solas. Cada equipo tiene su chat y su
+  punto de encuentro en el plano.
 - **Zonas de control:** la organización carga puertas (acreditan el ingreso) y áreas (Sala VIP, Auditorio A,
   Almuerzo ejecutivo) con sus categorías habilitadas, en *Puerta → Zonas de control*. Quien controla elige primero la
   **Zona de control activa**; al escanear ve **verde** (permitido, con nombre, empresa y categoría) o **rojo** (motivo,

@@ -31,6 +31,12 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
   firmado por el servidor (HMAC-SHA256 con un secreto por evento que ningún cliente lee) que cambia cada 30 s
   (`ROUGE:PASS2:…`, `my_pass_token`); el escáner acepta ≈ 90 s de margen y rechaza el pase fijo, capturas viejas y
   firmas falsas ("Pase vencido"). En el Modo Demo se simula con una firma local; el encuentro pyme del demo lo usa.
+- **Corporativo sin Rescate:** nuevas funciones de la vertical `rescue` y `selfServeTeams`. En corporativo el Botón de
+  Rescate, "Ya estoy bien" y "Llegué a casa" se ocultan y el servidor los rechaza (`trigger_rescue`, `set_safety_status`
+  → `not_in_vertical`); sin panel de alertas de rescate.
+- **Equipos que arma la organización** (corporativo): los asistentes no crean equipos ni invitan (`create_squad`,
+  `invite_to_squad` → `not_in_vertical`); dueño/a y producción los arman en *Equipos del evento* (`create_team`,
+  `set_team_member` con movimiento entre equipos, `delete_team`) y comparten el link de cada uno.
 - `src/lib/vcard.ts`: vCard 3.0 pura (escapes, plegado a 75 octetos, CRLF).
 - Tests: `executive.test.ts` (ficha, privacidad del contacto, categorías, zonas y vCard), contrato de los comandos nuevos,
   escenario SQL en Postgres 16 y E2E `demo-pro-ficha-zonas.cjs`.
@@ -39,8 +45,9 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y 
 - En corporativo, la puerta muestra la cara profesional (nombre, cargo, empresa y categoría, sin edad ni la cara de la
   noche). Una vCard escaneada en la puerta avisa que no es un pase.
 - Las fuentes de ROUGE PRO (Inter + JetBrains Mono) se comparten desde `components/pro/fonts.ts`.
-- Modo Demo: versión 12 del estado (zonas, categorías, fichas con contacto, lecturas sembradas y QR rotativo en el
-  encuentro pyme).
+- `/pro`: el caso de uso de eventos internos ya no promete Rescate (ahora: equipos armados por la organización y zonas).
+- Modo Demo: versión 13 del estado (zonas, categorías, fichas con contacto, lecturas sembradas, QR rotativo y el equipo
+  del encuentro pyme creado por la organización).
 - El pase tipeado en la puerta se acepta en mayúsculas (ids y firma se normalizan).
 
 ### Agregado (v1.9 · ROUGE PRO)

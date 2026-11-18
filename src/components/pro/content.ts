@@ -168,8 +168,8 @@ export const PRO_USE_CASES: ProUseCase[] = [
     id: "offsites",
     label: "Eventos internos y offsites",
     title: "Toda la empresa conectada, y cuidada",
-    text: "Equipos en el plano, barra y catering sin fila, sorteos y avisos internos. Con botón de rescate y \"Llegué a casa\" para la fiesta de cierre.",
-    points: [{ text: "Equipos y mesas con punto de encuentro" }, { text: "Barra y catering con pedidos desde el celular" }, { text: "Sorteos y anuncios en vivo" }, { text: "Rescate y aviso de llegada a casa" }],
+    text: "Equipos que arma la organización, cada uno con su chat y su punto de encuentro en el plano; barra y catering sin fila, sorteos y avisos internos.",
+    points: [{ text: "Equipos armados por la organización" }, { text: "Barra y catering con pedidos desde el celular" }, { text: "Sorteos y anuncios en vivo" }, { text: "Zonas con acceso por categoría" }],
     metric: { value: "0", label: "filas en la barra del cóctel" },
   },
   {

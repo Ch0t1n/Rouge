@@ -788,6 +788,8 @@ export function sendIcebreaker(
 // ═════════════════════════════════════════════════════════════════════
 
 export function createSquad(state: RougeState, eventId: UUID, userId: UUID, name: string, now = Date.now()): Result<Squad> {
+  // Corporativo: los equipos los arma la organización (organizerCreateTeam).
+  if (!hasFeature(state, eventId, "selfServeTeams")) return fail(NOT_IN_VERTICAL);
   const gate = requireInteractive(state, eventId, now);
   if (gate) return gate;
   if (!getAttendee(state, eventId, userId)) return fail("No estás en este evento.");
@@ -820,6 +822,7 @@ export function createSquad(state: RougeState, eventId: UUID, userId: UUID, name
 export function inviteToSquad(state: RougeState, squadId: UUID, inviterId: UUID, inviteeId: UUID, now = Date.now()): Result<SquadMember> {
   const squad = state.squads.find((s) => s.id === squadId);
   if (!squad) return fail("Squad inexistente.");
+  if (!hasFeature(state, squad.event_id, "selfServeTeams")) return fail(NOT_IN_VERTICAL);
   const gate = requireInteractive(state, squad.event_id, now);
   if (gate) return gate;
   const members = squadMembers(state, squadId, "any");
@@ -890,6 +893,75 @@ export function declineSquadInvite(state: RougeState, userId: UUID, memberId: UU
   return ok({ ...state, squad_members: state.squad_members.filter((m) => !(m.id === memberId && m.user_id === userId && m.status === "invited")) }, undefined);
 }
 
+// ── Equipos armados por la organización (corporativo) ────────────────
+// Permiso: dueño/a y producción (guarded "admin.events" en commands ⇔ is_event_manager en SQL).
+
+/** Crea un equipo vacío del evento (⇔ RPC create_team). El código de invitación lo genera el servidor. */
+export function organizerCreateTeam(state: RougeState, eventId: UUID, name: string, now = Date.now()): Result<Squad> {
+  if (!getEvent(state, eventId)) return fail("Evento inexistente.");
+  const clean = name.trim().replace(/\s+/g, " ");
+  if (!clean) return fail("Poné un nombre para el equipo.");
+  if (clean.length > 32) return fail("El nombre del equipo tiene un máximo de 32 caracteres.");
+  if (state.squads.some((s) => s.event_id === eventId && s.name.toLowerCase() === clean.toLowerCase())) return fail("Ya hay un equipo con ese nombre.");
+  const squad: Squad = {
+    id: uid(),
+    event_id: eventId,
+    name: clean,
+    invite_code: shortCode(6, "EQ"),
+    has_vip_table_to_share: false,
+    base_pin_x: null,
+    base_pin_y: null,
+    base_pin_label: null,
+    created_by: state.current_user_id,
+    created_at: iso(now),
+  };
+  return ok({ ...state, squads: [...state.squads, squad] }, squad);
+}
+
+/**
+ * Suma (o quita) a un asistente de un equipo (⇔ RPC set_team_member). Si estaba en otro equipo del evento, se mueve.
+ * El equipo de la organización no tiene que estar con el lobby abierto (se arma antes del evento).
+ */
+export function organizerSetTeamMember(state: RougeState, squadId: UUID, userId: UUID, add: boolean, now = Date.now()): Result<{ moved: boolean; grantedPerks: UserPerkQR[] }> {
+  const squad = state.squads.find((s) => s.id === squadId);
+  if (!squad) return fail("Ese equipo no existe.");
+  if (!add) {
+    return ok({ ...state, squad_members: state.squad_members.filter((m) => !(m.squad_id === squadId && m.user_id === userId)) }, { moved: false, grantedPerks: [] });
+  }
+  if (!getAttendee(state, squad.event_id, userId)) return fail("Esa persona no está en el evento.");
+  const current = squadOf(state, squad.event_id, userId);
+  if (current?.squad.id === squadId) return ok(state, { moved: false, grantedPerks: [] });
+  const joined = squadMembers(state, squadId);
+  if (joined.some((m) => isBlockedBetween(state, m.user_id, userId))) return fail(UNAVAILABLE);
+  if (joined.length >= MAX_SQUAD_SIZE) return fail(`El equipo está completo (máximo ${MAX_SQUAD_SIZE}).`);
+  const otherSquads = new Set(state.squads.filter((s) => s.event_id === squad.event_id && s.id !== squadId).map((s) => s.id));
+  let next: RougeState = {
+    ...state,
+    squad_members: [
+      ...state.squad_members.filter((m) => !(m.user_id === userId && (otherSquads.has(m.squad_id) || m.squad_id === squadId))),
+      { id: uid(), squad_id: squadId, user_id: userId, invited_by: state.current_user_id || null, status: "joined", safety_status: "ok", joined_at: iso(now) },
+    ],
+  };
+  const name = getProfile(state, userId)?.full_name.split(" ")[0] ?? "Alguien";
+  next = { ...next, messages: [...next.messages, systemMessage(squad.event_id, squadId, userId, `👋 La organización sumó a ${name} al equipo`, now)] };
+  const r = applySquadPerkRules(next, squadId, now);
+  return ok(r.state, { moved: !!current, grantedPerks: r.granted });
+}
+
+/** Borra un equipo de la organización con sus integrantes y su chat (⇔ RPC delete_team). */
+export function organizerDeleteTeam(state: RougeState, squadId: UUID): Result {
+  if (!state.squads.some((s) => s.id === squadId)) return fail("Ese equipo no existe.");
+  return ok(
+    {
+      ...state,
+      squads: state.squads.filter((s) => s.id !== squadId),
+      squad_members: state.squad_members.filter((m) => m.squad_id !== squadId),
+      messages: state.messages.filter((m) => m.squad_id !== squadId),
+    },
+    undefined,
+  );
+}
+
 export function updateSquad(
   state: RougeState,
   squadId: UUID,
@@ -934,6 +1006,7 @@ export function triggerRescue(
   coords?: { x: number; y: number },
   now = Date.now(),
 ): Result<MapPin> {
+  if (!hasFeature(state, eventId, "rescue")) return fail(NOT_IN_VERTICAL);
   const sq = squadOf(state, eventId, userId);
   if (!sq) return fail("Necesitás un Squad para usar el Botón de Rescate.");
   const last = activePinOf(state, eventId, userId, now);
@@ -969,6 +1042,7 @@ export function triggerRescue(
 }
 
 export function resolveRescue(state: RougeState, eventId: UUID, userId: UUID, now = Date.now()): Result {
+  if (!hasFeature(state, eventId, "rescue")) return fail(NOT_IN_VERTICAL);
   const sq = squadOf(state, eventId, userId);
   if (!sq) return fail("No estás en un Squad.");
   const name = getProfile(state, userId)?.full_name.split(" ")[0] ?? "Alguien";
@@ -986,6 +1060,7 @@ export function resolveRescue(state: RougeState, eventId: UUID, userId: UUID, no
 }
 
 export function markHomeSafe(state: RougeState, eventId: UUID, userId: UUID, now = Date.now()): Result {
+  if (!hasFeature(state, eventId, "rescue")) return fail(NOT_IN_VERTICAL);
   const sq = squadOf(state, eventId, userId);
   if (!sq) return fail("No estás en un Squad.");
   const name = getProfile(state, userId)?.full_name.split(" ")[0] ?? "Alguien";

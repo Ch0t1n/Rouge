@@ -139,6 +139,28 @@ async function liveToken(page) {
   await door.waitForSelector('[data-testid="door-result"][data-status="ok"]');
   assert((await door.textContent('[data-testid="door-result"]')).includes("SPEAKER"), "con categoría SPEAKER, Sofía pasa a la Sala VIP");
 
+  // ── Corporativo: sin Rescate; los equipos los arma la organización ──
+  await ph.goto(`${B}/squad`, { waitUntil: "networkidle" });
+  const team = await ph.textContent("main");
+  assert(team.includes("Mesa 12") && !/Rescate|Llegué a casa|Invitar a mi/.test(team), "equipo sin Rescate, sin 'Llegué a casa' y sin invitar (lo arma la organización)");
+  await ph.goto(`${B}/map`, { waitUntil: "networkidle" });
+  assert(!(await ph.isVisible('button:has-text("Rescate")')), "el plano corporativo no tiene Botón de Rescate");
+  await crm.goto(open("duena", "/admin/events"), { waitUntil: "networkidle" });
+  await crm.locator("select:visible").first().selectOption(PRO);
+  await crm.waitForSelector('[data-testid="organizer-teams"]');
+  await crm.fill('input[placeholder="Mesa 3 · Ronda de negocios"]', "Mesa 3 · Logística");
+  await crm.click('[data-testid="create-team"]');
+  await crm.waitForSelector('[data-testid="organizer-teams"] >> text=Mesa 3 · Logística');
+  const add = crm.locator('[data-testid="organizer-teams"] li:has-text("Mesa 3 · Logística") select');
+  await add.selectOption({ label: "Héctor Giménez" });
+  await crm.waitForSelector("text=Héctor se sumó a Mesa 3 · Logística");
+  assert(true, "la organización crea un equipo y suma gente desde el panel");
+  await crm.screenshot({ path: `${SP}/pro-equipos-organizacion.png`, fullPage: true });
+  const hector = await ctx.newPage(); watch(hector, "hector");
+  await hector.addInitScript(() => { window.name = "rouge-persona:00000000-0000-4000-8000-000000000025"; });
+  await hector.goto(`${B}/squad`, { waitUntil: "networkidle" });
+  assert((await hector.textContent("main")).includes("Mesa 3 · Logística"), "la persona sumada ve su equipo en la app");
+
   await browser.close();
   assert(errors.length === 0, `sin errores de consola${errors.length ? ": " + errors.join(" | ") : ""}`);
 })().catch((e) => { console.error("FAIL", e.message.split("\n").slice(0, 6).join(" / ")); process.exit(1); });
