@@ -4,6 +4,8 @@
  * Todas las fechas son RELATIVAS a `now`: cada vez que se siembra, la fiesta
  * está "en vivo" (empezó hace 2 h, el DJ invitado está en cabina), así se
  * puede probar el 100% de los flujos en cualquier momento.
+ *
+ * Escenario "corporate": el mismo evento en vivo convertido en un kickoff de empresa (seedCorporate.ts).
  */
 import type {
   Brand,
@@ -38,24 +40,15 @@ import type {
   VenueLayout,
 } from "@/lib/types";
 
-export const STATE_VERSION = 8;
+import { DEMO_IDS, demoId as id } from "./ids";
+import { toCorporate } from "./seedCorporate";
 
-// IDs estables → los links de demo (/join/..., /u/...) no cambian entre re-siembras.
-const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+export { DEMO_IDS };
 
-export const DEMO_IDS = {
-  event: id(1000),
-  organizer: id(999),
-  manager: id(990),
-  bartender: id(991),
-  waiter: id(992),
-  security: id(993),
-  me: id(1),
-  squadMain: id(2001),
-  squadVip: id(2002),
-  brand: id(3001),
-  promoter: id(994),
-} as const;
+export const STATE_VERSION = 9;
+
+/** Escenario del Modo Demo: la fiesta en un boliche o un evento corporativo (kickoff + after office). */
+export type DemoScenario = "nightlife" | "corporate";
 
 export const VENUE_LAYOUT: VenueLayout = {
   aspect: 3 / 4,
@@ -104,11 +97,14 @@ interface Persona {
   verified?: boolean;
 }
 
-/** Equipo del evento (además de la dueña, que es quien creó el evento). */
+/** Perfil profesional vacío (las personas de la fiesta no lo cargaron). */
+const NO_WORK = { company: null, job_title: null, interests: [], linkedin_username: null } satisfies Partial<Profile>;
+
 /** Personas del demo con Instagram conectado (verificado) y la que lo cargó a mano. */
 const IG_LINKED = new Set([1, 2, 3, 5]);
 const IG_MANUAL = 4;
 
+/** Equipo del evento (además de la dueña, que es quien creó el evento). */
 const STAFF: { id: string; role: StaffRole; username: string; full_name: string; phone: string; bio: string }[] = [
   { id: id(990), role: "manager", username: "lucho.produccion", full_name: "Luciano Paz", phone: "+5491150000990", bio: "Producción de la noche." },
   { id: id(991), role: "bartender", username: "dani.barra", full_name: "Daniela Ortiz", phone: "+5491150000991", bio: "Jefa de barra." },
@@ -156,7 +152,7 @@ const LINEUP = [
   { id: "set-4", artist: "Closing: Marea", genre: "House" as MusicGenre, from: 270, to: 360 },
 ];
 
-export function createSeedState(now = Date.now()): RougeState {
+export function createSeedState(now = Date.now(), scenario: DemoScenario = "nightlife"): RougeState {
   const t = (minFromNow: number) => new Date(now + minFromNow * 60_000).toISOString();
   const START = -120; // la fiesta arrancó hace 2 h
   const END = START + 360; // dura 6 h
@@ -181,6 +177,7 @@ export function createSeedState(now = Date.now()): RougeState {
       spotify_embed_url: null,
       instagram_username: null,
       instagram_verified: false,
+      ...NO_WORK,
       is_verified: true,
       created_at: t(-60 * 24 * 30),
     },
@@ -198,6 +195,7 @@ export function createSeedState(now = Date.now()): RougeState {
       spotify_embed_url: null,
       instagram_username: null,
       instagram_verified: false,
+      ...NO_WORK,
       is_verified: true,
       created_at: t(-60 * 24 * 20),
     })),
@@ -216,6 +214,7 @@ export function createSeedState(now = Date.now()): RougeState {
       // Algunas personas conectaron Instagram (verificado) y una lo escribió a mano (sin verificar).
       instagram_username: IG_LINKED.has(p.n) || p.n === IG_MANUAL ? p.username.replace(/\.+$/, "") : null,
       instagram_verified: IG_LINKED.has(p.n),
+      ...NO_WORK,
       is_verified: !!p.verified,
       created_at: t(-60 * 24 * (40 - p.n)),
     })),
@@ -233,6 +232,7 @@ export function createSeedState(now = Date.now()): RougeState {
     id: DEMO_IDS.event,
     slug: "bresh-sabado",
     name: "ROUGE Night × Bresh Sábado",
+    event_type: "nightlife",
     description: "La noche más grande del mes. Line-up de house y techno, Mesa VIP, Barra Express y sorteos en vivo.",
     venue_name: "Club Crobar · Palermo",
     venue_map_url: null,
@@ -570,7 +570,7 @@ export function createSeedState(now = Date.now()): RougeState {
   connections[2].attached_drink_qr_id = user_perks_qrs[5].id;
   user_perks_qrs[5] = { ...user_perks_qrs[5], user_id: DEMO_IDS.me, source_ref_id: bar_orders[5].id };
 
-  return {
+  const state: RougeState = {
     version: STATE_VERSION,
     seeded_at: new Date(now).toISOString(),
     current_user_id: DEMO_IDS.me,
@@ -603,4 +603,5 @@ export function createSeedState(now = Date.now()): RougeState {
     squad_settlements: [],
     payout_aliases,
   };
+  return scenario === "corporate" ? toCorporate(state) : state;
 }

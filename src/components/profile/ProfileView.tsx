@@ -1,16 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { BadgeCheck, Music2 } from "lucide-react";
-import { MOOD_TAGS, type MoodTag, type Profile } from "@/lib/types";
+import { BadgeCheck, Briefcase, Handshake, Music2 } from "lucide-react";
+import type { EventType, MoodTag, Profile } from "@/lib/types";
+import { moodMeta } from "@/lib/engine/eventType";
+import { useEventType } from "@/lib/store/hooks";
 import type { AffinityResult } from "@/lib/engine/affinity";
 import { ageFrom, cn } from "@/lib/utils";
 import { MediaImage } from "@/components/media/MediaImage";
 import { LoopVideo } from "@/components/media/LoopVideo";
 import { SpotifyEmbed } from "@/components/media/SpotifyEmbed";
 import { GenreChips } from "./GenrePicker";
-import { InstagramIcon } from "@/components/ui/brand-icons";
-import { instagramUrl } from "@/lib/engine/profile";
+import { TagChips } from "./ProfessionalFields";
+import { InstagramIcon, LinkedinIcon } from "@/components/ui/brand-icons";
+import { instagramUrl, linkedinUrl } from "@/lib/engine/profile";
 
 interface ProfileViewProps {
   profile: Profile;
@@ -19,24 +22,29 @@ interface ProfileViewProps {
   /** Botones de acción bajo la media (conectar, rompehielos, squad…) */
   actions?: ReactNode;
   className?: string;
+  /** Tipo del evento (si no, el del evento activo): en uno corporativo se destaca el perfil profesional. */
+  type?: EventType;
 }
 
 type Slide = { kind: "video"; url: string } | { kind: "photo"; index: number };
 
-/** Perfil completo: carrusel tipo stories (loop + fotos), bio, música y Spotify. */
-export function ProfileView({ profile, mood, affinity, actions, className }: ProfileViewProps) {
+/** Perfil completo: carrusel tipo stories (loop + fotos), perfil profesional, bio, música y Spotify. */
+export function ProfileView({ profile, mood, affinity, actions, className, type: typeProp }: ProfileViewProps) {
+  const active = useEventType();
+  const corporate = (typeProp ?? active.type) === "corporate";
+  const work = [profile.job_title, profile.company].filter(Boolean).join(" · ");
   const slides: Slide[] = [
     ...(profile.loop_video_url ? [{ kind: "video" as const, url: profile.loop_video_url }] : []),
     ...profile.photos.map((_, index) => ({ kind: "photo" as const, index })),
   ];
-  const [active, setActive] = useState(0);
+  const [slide, setSlide] = useState(0);
   const track = useRef<HTMLDivElement>(null);
-  const moodMeta = MOOD_TAGS.find((m) => m.id === mood);
+  const moodInfo = moodMeta(mood);
 
   useEffect(() => {
     const el = track.current;
     if (!el) return;
-    const onScroll = () => setActive(Math.round(el.scrollLeft / el.clientWidth));
+    const onScroll = () => setSlide(Math.round(el.scrollLeft / el.clientWidth));
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
   }, []);
@@ -72,28 +80,28 @@ export function ProfileView({ profile, mood, affinity, actions, className }: Pro
         {slides.length > 1 && (
           <div className="pointer-events-none absolute inset-x-3 top-3 flex gap-1">
             {slides.map((_, i) => (
-              <span key={i} className={cn("h-1 flex-1 rounded-full transition", i === active ? "bg-white" : "bg-white/30")} />
+              <span key={i} className={cn("h-1 flex-1 rounded-full transition", i === slide ? "bg-white" : "bg-white/30")} />
             ))}
           </div>
         )}
         {/* Zonas táctiles anterior/siguiente */}
         {slides.length > 1 && (
           <>
-            <button type="button" aria-label="Foto anterior" onClick={() => go(active - 1)} className="absolute inset-y-0 left-0 w-1/4" />
-            <button type="button" aria-label="Foto siguiente" onClick={() => go(active + 1)} className="absolute inset-y-0 right-0 w-1/4" />
+            <button type="button" aria-label="Foto anterior" onClick={() => go(slide - 1)} className="absolute inset-y-0 left-0 w-1/4" />
+            <button type="button" aria-label="Foto siguiente" onClick={() => go(slide + 1)} className="absolute inset-y-0 right-0 w-1/4" />
           </>
         )}
 
         {affinity && (
           <span className="absolute right-3 top-6 inline-flex items-center gap-1 rounded-full bg-rouge px-2.5 py-1 font-display text-xs font-bold text-white shadow-glow-rouge">
-            <Music2 className="size-3.5" /> {affinity.musicPercent}% afinidad
+            {corporate ? <Handshake className="size-3.5" /> : <Music2 className="size-3.5" />} {affinity.percent}% {corporate ? "en común" : "afinidad"}
           </span>
         )}
 
         <div className="card-fade pointer-events-none absolute inset-x-0 bottom-0 p-5 pt-24">
-          {moodMeta && (
+          {moodInfo && (
             <span className="glass-pill mb-2 inline-flex items-center gap-1">
-              {moodMeta.emoji} {moodMeta.label}
+              {moodInfo.emoji} {moodInfo.label}
             </span>
           )}
           <h2 className="flex items-center gap-2 text-[28px] leading-none">
@@ -102,10 +110,31 @@ export function ProfileView({ profile, mood, affinity, actions, className }: Pro
             {profile.is_verified && <BadgeCheck className="size-6 text-squad" aria-label="Verificado" />}
           </h2>
           <p className="mt-1 text-sm text-muted">@{profile.username}</p>
+          {work && (
+            <p className="mt-1.5 flex items-center gap-1.5 text-sm text-primary/90">
+              <Briefcase className="size-3.5 shrink-0 text-muted" aria-hidden /> <span className="truncate">{work}</span>
+            </p>
+          )}
         </div>
       </div>
 
       {actions}
+
+      {profile.linkedin_username && (
+        <a
+          href={linkedinUrl(profile.linkedin_username)}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="glass flex min-h-touch items-center gap-3 rounded-2xl px-4 py-2.5 transition hover:bg-white/10"
+          aria-label={`LinkedIn de ${profile.full_name.split(" ")[0]}`}
+        >
+          <LinkedinIcon className="size-5 shrink-0 text-squad" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate font-display font-semibold">linkedin.com/in/{profile.linkedin_username}</span>
+            <span className="block text-xs text-muted">Perfil profesional</span>
+          </span>
+        </a>
+      )}
 
       {profile.instagram_username && (
         <a
@@ -126,12 +155,21 @@ export function ProfileView({ profile, mood, affinity, actions, className }: Pro
 
       {profile.bio && <p className="text-[15px] leading-relaxed text-primary/90">{profile.bio}</p>}
 
+      {profile.interests.length > 0 && (corporate || profile.music_genres.length === 0) && (
+        <section>
+          <h3 className="mb-2 text-sm text-muted">
+            Áreas e intereses {corporate && affinity && affinity.shared.length > 0 && <span className="text-rouge">· {affinity.shared.length} en común</span>}
+          </h3>
+          <TagChips tags={profile.interests} shared={corporate ? affinity?.shared : undefined} />
+        </section>
+      )}
+
       {profile.music_genres.length > 0 && (
         <section>
           <h3 className="mb-2 text-sm text-muted">
-            Música {affinity && affinity.sharedGenres.length > 0 && <span className="text-rouge">· {affinity.sharedGenres.length} en común</span>}
+            Música {!corporate && affinity && affinity.shared.length > 0 && <span className="text-rouge">· {affinity.shared.length} en común</span>}
           </h3>
-          <GenreChips genres={profile.music_genres} shared={affinity?.sharedGenres} />
+          <GenreChips genres={profile.music_genres} shared={corporate ? undefined : affinity?.shared} />
         </section>
       )}
 

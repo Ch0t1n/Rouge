@@ -4,19 +4,24 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ChevronLeft, ChevronRight, RotateCcw, Tv } from "lucide-react";
 import { FRAME_PERSONA_PREFIX, useRouge } from "@/lib/store/RougeContext";
-import { DEMO_ROLES, DEMO_SCRIPT, type DemoRole } from "@/lib/demo/script";
+import { demoRoles, demoScript, panelRolesFor, type DemoRole } from "@/lib/demo/script";
+import { activeEvent } from "@/lib/engine/selectors";
+import { eventTypeOf } from "@/lib/engine/eventType";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const PHONE = { w: 390, h: 844 };
-const PANEL_ROLES: DemoRole[] = ["duena", "produccion", "barra", "mozo", "seguridad", "rrpp"];
 
 /**
  * Modo presentador: el teléfono del asistente y el panel del equipo lado a lado, sincronizados en vivo
  * (mismo navegador). Cada lado es un iframe con su propia persona (window.name, ver RougeContext).
  */
 export function Presenter() {
-  const { mode, resetDemo, notify } = useRouge();
+  const { mode, state, resetDemo, notify } = useRouge();
+  const scenario = eventTypeOf(activeEvent(state));
+  const DEMO_SCRIPT = demoScript(scenario);
+  const DEMO_ROLES = demoRoles(scenario);
+  const PANEL_ROLES = panelRolesFor(scenario);
   const [step, setStep] = useState(0);
   const [phoneRole, setPhoneRole] = useState<DemoRole>("asistente");
   const [phonePath, setPhonePath] = useState(DEMO_SCRIPT[0].phone);

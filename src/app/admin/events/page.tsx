@@ -4,7 +4,8 @@ import * as C from "@/lib/store/commands";
 import { useMemo, useRef, useState } from "react";
 import { Ban, Copy, Download, ImagePlus, Link2, Plus, Printer, QrCode, Save, Trash2 } from "lucide-react";
 import Link from "next/link";
-import type { LineupSlot, RougeEvent } from "@/lib/types";
+import type { EventType, LineupSlot, RougeEvent } from "@/lib/types";
+import { EVENT_TYPE_OPTIONS, copyFor, eventTypeOf } from "@/lib/engine/eventType";
 import { generateInviteCodes, upsertEvent } from "@/lib/engine/actions";
 import { lobbyPhase } from "@/lib/engine/selectors";
 import { myBrands } from "@/lib/engine/branding";
@@ -22,7 +23,7 @@ import { VenueMap } from "@/components/venue/VenueMap";
 import { VENUE_LAYOUT } from "@/lib/mock/seed";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { TextAreaField, TextField } from "@/components/ui/field";
+import { Segmented, TextAreaField, TextField } from "@/components/ui/field";
 
 const H = 3_600_000;
 /** ISO → valor de <input type="datetime-local"> en hora local */
@@ -108,6 +109,8 @@ function EventEditor({ event, onSaved }: { event: RougeEvent | null; onSaved: (i
   const [capacity, setCapacity] = useState(event?.max_capacity ?? 1500);
   const [mapUrl, setMapUrl] = useState<string | null>(event?.venue_map_url ?? null);
   const [lineup, setLineup] = useState<LineupSlot[]>(event?.lineup_json ?? []);
+  const [type, setType] = useState<EventType>(eventTypeOf(event));
+  const copy = copyFor(type);
   const [uploading, setUploading] = useState(false);
   const file = useRef<HTMLInputElement>(null);
   const layout = event?.venue_layout_json ?? state.events[0]?.venue_layout_json ?? VENUE_LAYOUT;
@@ -120,6 +123,7 @@ function EventEditor({ event, onSaved }: { event: RougeEvent | null; onSaved: (i
         // Un evento nuevo arranca con mi marca (logo, colores y cobro); se cambia en Marca y cobros.
         ...(event ? { id: event.id } : { brand_id: myBrands(state)[0]?.id ?? null }),
         name,
+        event_type: type,
         slug: slug || undefined,
         venue_name: venue,
         description,
@@ -161,15 +165,28 @@ function EventEditor({ event, onSaved }: { event: RougeEvent | null; onSaved: (i
   return (
     <div className="grid gap-6 xl:grid-cols-3">
       <Panel title={event ? "Datos del evento" : "Nuevo evento"} className="xl:col-span-2">
+        <div className="mb-4">
+          <Segmented
+            label="Tipo de evento"
+            options={EVENT_TYPE_OPTIONS.map((o) => ({ value: o.value, label: `${o.emoji} ${o.label}` }))}
+            value={type}
+            onChange={setType}
+          />
+          <p className="mt-1.5 text-xs text-muted">
+            {type === "corporate"
+              ? "Moods de networking, afinidad por áreas e intereses, agenda con salas y “contactos” en vez de “matches”."
+              : "Moods de la noche, afinidad musical, line-up con DJs y pedidos de temas."}
+          </p>
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
-          <TextField label="Nombre" value={name} onChange={(e) => setName(e.target.value)} placeholder="ROUGE Night × Bresh" />
+          <TextField label="Nombre" value={name} onChange={(e) => setName(e.target.value)} placeholder={type === "corporate" ? "Kickoff 2027 · Tu empresa" : "ROUGE Night × Bresh"} />
           <TextField label="Link del evento" prefix="/join/" className="pl-[4.2rem]" value={slug} onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))} placeholder="se genera del nombre" />
-          <TextField label="Lugar" value={venue} onChange={(e) => setVenue(e.target.value)} placeholder="Club · Barrio" />
+          <TextField label="Lugar" value={venue} onChange={(e) => setVenue(e.target.value)} placeholder={type === "corporate" ? "Salón · Hotel o centro de convenciones" : "Club · Barrio"} />
           <TextField label="Cupo máximo en la app" type="number" min={1} value={capacity} onChange={(e) => setCapacity(Number(e.target.value))} />
           <TextField label="Empieza" type="datetime-local" value={starts} onChange={(e) => setStarts(e.target.value)} />
           <TextField label="Termina" type="datetime-local" value={ends} onChange={(e) => setEnds(e.target.value)} />
-          <TextField label="El lobby abre (horas antes)" type="number" min={0} value={opensBefore} onChange={(e) => setOpensBefore(Number(e.target.value))} hint="Para armar Squads y conectar antes de la fiesta." />
-          <TextField label="El lobby cierra (horas después)" type="number" min={0} value={closesAfter} onChange={(e) => setClosesAfter(Number(e.target.value))} hint="Efecto Cenicienta: los matches y chats quedan." />
+          <TextField label="El lobby abre (horas antes)" type="number" min={0} value={opensBefore} onChange={(e) => setOpensBefore(Number(e.target.value))} hint={type === "corporate" ? "Para conectar y armar equipos antes del evento." : "Para armar Squads y conectar antes de la fiesta."} />
+          <TextField label="El lobby cierra (horas después)" type="number" min={0} value={closesAfter} onChange={(e) => setClosesAfter(Number(e.target.value))} hint={`Efecto Cenicienta: los ${copy.matches.toLowerCase()} y chats quedan.`} />
         </div>
         <div className="mt-4">
           <TextAreaField label="Descripción" value={description} maxLength={300} onChange={(e) => setDescription(e.target.value)} />
@@ -177,24 +194,25 @@ function EventEditor({ event, onSaved }: { event: RougeEvent | null; onSaved: (i
 
         <div className="mt-6">
           <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-base">Line-up</h3>
+            <h3 className="text-base">{copy.lineup}</h3>
             <Button size="sm" variant="glass" onClick={addSlot}>
-              <Plus /> Agregar set
+              <Plus /> {copy.addSlot}
             </Button>
           </div>
-          {lineup.length === 0 && <p className="rounded-2xl border border-dashed border-white/10 p-4 text-center text-sm text-muted">Sin sets todavía.</p>}
+          {lineup.length === 0 && <p className="rounded-2xl border border-dashed border-white/10 p-4 text-center text-sm text-muted">{copy.slotsEmpty}</p>}
           <ul className="space-y-2">
             {lineup.map((sl) => (
               <li key={sl.id} className="grid grid-cols-1 items-end gap-2 rounded-2xl border border-white/10 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] 2xl:grid-cols-[minmax(10rem,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_auto_auto]">
-                <div className="min-w-0 sm:col-span-4 2xl:col-span-1">
-                  <TextField label="Artista" value={sl.artist} onChange={(e) => patchSlot(sl.id, { artist: e.target.value })} />
+                <div className={cn("grid min-w-0 gap-2 sm:col-span-4 2xl:col-span-1", type === "corporate" && "sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]")}>
+                  <TextField label={copy.slotLabel} value={sl.artist} onChange={(e) => patchSlot(sl.id, { artist: e.target.value })} />
+                  {type === "corporate" && <TextField label="Sala" placeholder="Plenario" maxLength={40} value={sl.room ?? ""} onChange={(e) => patchSlot(sl.id, { room: e.target.value || undefined })} />}
                 </div>
                 <TextField label="Desde" type="datetime-local" value={toLocal(sl.starts_at)} onChange={(e) => patchSlot(sl.id, { starts_at: fromLocal(e.target.value) })} />
                 <TextField label="Hasta" type="datetime-local" value={toLocal(sl.ends_at)} onChange={(e) => patchSlot(sl.id, { ends_at: fromLocal(e.target.value) })} />
                 <label className="flex min-h-[52px] items-center gap-2 text-sm">
-                  <input type="checkbox" checked={!!sl.is_headliner} onChange={(e) => patchSlot(sl.id, { is_headliner: e.target.checked })} className="size-5 accent-rouge" /> Headliner
+                  <input type="checkbox" checked={!!sl.is_headliner} onChange={(e) => patchSlot(sl.id, { is_headliner: e.target.checked })} className="size-5 accent-rouge" /> {copy.headliner}
                 </label>
-                <Button size="icon" variant="ghost" aria-label={`Quitar ${sl.artist || "set"}`} onClick={() => setLineup(lineup.filter((x) => x.id !== sl.id))}>
+                <Button size="icon" variant="ghost" aria-label={`Quitar ${sl.artist || (type === "corporate" ? "actividad" : "set")}`} onClick={() => setLineup(lineup.filter((x) => x.id !== sl.id))}>
                   <Trash2 />
                 </Button>
               </li>

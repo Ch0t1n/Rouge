@@ -3,7 +3,7 @@
  * Las usan el motor (upsertProfile), el onboarding y los tests.
  * Contraparte SQL: checks de la tabla `profiles` en supabase/schema.sql.
  */
-import { MUSIC_GENRES, type Gender, type MusicGenre, type Profile, type RougeState, type UUID } from "@/lib/types";
+import { MUSIC_GENRES, PRO_INTERESTS, type Gender, type MusicGenre, type ProInterest, type Profile, type RougeState, type UUID } from "@/lib/types";
 import { ageFrom } from "@/lib/utils";
 
 export const MIN_AGE = 18;
@@ -11,6 +11,9 @@ export const MAX_PHOTOS = 4;
 export const MAX_GENRES = 5;
 export const BIO_MAX = 160;
 export const NAME_MAX = 60;
+export const MAX_INTERESTS = 5;
+/** Largo máximo de empresa y cargo (espejo de los checks de `profiles`). */
+export const WORK_FIELD_MAX = 60;
 export const USERNAME_RE = /^[a-z0-9._]{3,20}$/;
 
 export const GENDER_OPTIONS: { value: Gender; label: string }[] = [
@@ -56,6 +59,45 @@ export function checkGenres(genres: MusicGenre[]): string | null {
   if (genres.length > MAX_GENRES) return `Elegí hasta ${MAX_GENRES} géneros.`;
   return null;
 }
+
+export function checkInterests(interests: ProInterest[]): string | null {
+  if (interests.some((i) => !PRO_INTERESTS.includes(i))) return "Área o interés inválido.";
+  if (interests.length > MAX_INTERESTS) return `Elegí hasta ${MAX_INTERESTS} áreas o intereses.`;
+  return null;
+}
+
+/** Empresa o cargo: sin espacios de más; vacío = null. Error si supera el largo máximo. */
+export function cleanWorkField(raw: string | null | undefined, label: string): { ok: true; value: string | null } | { ok: false; error: string } {
+  const value = (raw ?? "").trim().replace(/\s+/g, " ");
+  if (value.length > WORK_FIELD_MAX) return { ok: false, error: `${label}: máximo ${WORK_FIELD_MAX} caracteres.` };
+  return { ok: true, value: value || null };
+}
+
+// ── LinkedIn ─────────────────────────────────────────────────────────
+
+export const LINKEDIN_RE = /^[a-z0-9-]{3,100}$/;
+
+/**
+ * Slug público de LinkedIn desde lo que pegue el usuario: "linkedin.com/in/sofia-benitez",
+ * "https://www.linkedin.com/in/sofia-benitez/?locale=es_ES", "@sofia-benitez" o "sofia-benitez".
+ * Devuelve el slug en minúsculas (3-100 letras, números y guiones) o null.
+ */
+export function parseLinkedin(raw: string | null | undefined): string | null {
+  let v = (raw ?? "").trim();
+  if (!v) return null;
+  const url = v.match(/^(?:https?:\/\/)?(?:[a-z]{2,3}\.|www\.)?linkedin\.com\/(?:in|pub)\/([^/?#]+)/i);
+  if (url) {
+    try {
+      v = decodeURIComponent(url[1]);
+    } catch {
+      return null;
+    }
+  } else if (/[/.]/.test(v)) return null;
+  v = v.replace(/^@/, "").toLowerCase();
+  return LINKEDIN_RE.test(v) && !v.startsWith("-") && !v.endsWith("-") ? v : null;
+}
+
+export const linkedinUrl = (slug: string) => `https://www.linkedin.com/in/${slug}/`;
 
 // ── Spotify ──────────────────────────────────────────────────────────
 
@@ -183,7 +225,7 @@ export interface CompletenessItem {
 export function profileCompleteness(p: Profile): { percent: number; items: CompletenessItem[] } {
   const items: CompletenessItem[] = [
     { key: "photos", label: "Subí al menos 2 fotos", done: p.photos.length >= 2, weight: 30 },
-    { key: "genres", label: "Elegí 2+ géneros musicales", done: p.music_genres.length >= 2, weight: 20 },
+    { key: "genres", label: "Elegí 2+ géneros musicales o intereses", done: p.music_genres.length >= 2 || p.interests.length >= 2, weight: 20 },
     { key: "bio", label: "Escribí una bio corta", done: p.bio.trim().length >= 10, weight: 15 },
     { key: "phone", label: "Verificá tu teléfono (privado)", done: !!p.phone_normalized, weight: 15 },
     { key: "spotify", label: "Sumá tu tema de Spotify", done: !!p.spotify_embed_url, weight: 10 },

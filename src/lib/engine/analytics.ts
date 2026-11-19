@@ -24,6 +24,10 @@ export interface CrmRow {
   age: number;
   gender: Gender;
   music_genres: string[];
+  /** Perfil profesional (eventos corporativos: leads con empresa y cargo). */
+  company: string | null;
+  job_title: string | null;
+  interests: string[];
   mood: string | null;
   squad_size: number;
   matches: number;
@@ -59,6 +63,9 @@ export function crmRows(s: RougeState, eventId: UUID): CrmRow[] {
         age: ageFrom(p.birth_date),
         gender: p.gender,
         music_genres: p.music_genres,
+        company: p.company,
+        job_title: p.job_title,
+        interests: p.interests,
         mood: a.mood_tag,
         squad_size: size,
         matches,

@@ -2,6 +2,39 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y [SemVer](https://semver.org/lang/es/).
 
+## [Sin publicar]
+
+### Agregado
+- **Eventos corporativos:** cada evento tiene un tipo (*Fiesta / boliche* o *Corporativo*, en *Eventos y accesos*).
+  En uno corporativo cambian los moods (Busco contactos, Vengo con mi equipo, Quiero conocer otras áreas, Busco
+  clientes o proveedores, Estoy sumando gente, Abierto a charlar), la afinidad se calcula con **áreas e intereses**
+  en vez de música, "Match" pasa a ser **Contacto** y el line-up pasa a ser **Agenda** con sala por actividad
+  (banner "Ahora / Sigue" y agenda completa). La Pantalla LED, el Resumen, el CRM y los Text Blasts usan ese
+  vocabulario y muestran la agenda.
+- **Perfil profesional (opcional):** empresa, cargo, LinkedIn y hasta 5 áreas e intereses, en *Editar perfil* y en el
+  onboarding (si la invitación es de un evento corporativo, el paso 3 es *A qué te dedicás*). Se ve en el perfil y en
+  las tarjetas de la grilla, y el CRM los suma a la búsqueda y al CSV.
+- **Demo corporativa:** en `/demo`, "¿A quién se la mostrás?" → *Evento corporativo*: *Kickoff 2027 · Grupo Vértice*
+  (empresa ficticia) en vivo, con agenda, perfiles profesionales, catering, marca propia, guion de 7 minutos y modo
+  presentador. Cambiar de escenario re-siembra la demo; *Reiniciar* conserva el escenario.
+- SQL: `events.event_type`, columnas `company`, `job_title`, `interests`, `linkedin_username` en `profiles` (con checks
+  y privilegios por columna), 6 valores nuevos en `mood_tag_t`, `resolve_access_code` devuelve el tipo y `event_grid`
+  calcula la afinidad por intereses en eventos corporativos. Probado en Postgres 16: instalación nueva, re-ejecución y
+  actualización desde la v1.6 en una sola transacción.
+
+### Cambiado
+- Modo Demo: nueva versión del estado (se vuelve a sembrar).
+- `GridFilters.genres` pasa a `tags` (géneros o intereses según el tipo de evento) y `AffinityResult` expone
+  `percent` / `shared` en vez de `musicPercent` / `sharedGenres`.
+
+### Pendientes conocidos (eventos corporativos)
+- Lista de invitados nominal por CSV con un código por persona (hoy: códigos de 1 uso o API).
+- Acreditación con credencial imprimible (nombre, empresa, QR).
+- Barra libre / vouchers de consumo pagados por la empresa (hoy se puede aproximar con QR Drops).
+- Encuestas en vivo, preguntas al orador y NPS post-evento.
+- Sponsors con logo en la LED y leads por stand; reporte final exportable; factura A (ARCA).
+- La regla +18 es fija para todos los eventos.
+
 ## [1.6.0] — 2026-11-16
 
 ### Agregado

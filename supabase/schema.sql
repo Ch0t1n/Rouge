@@ -43,6 +43,13 @@ exception when duplicate_object then null; end $$;
 -- [v1.6] RRPP. En el resto del script NO se usa 'promoter'::staff_role_t (Postgres no deja usar un valor nuevo de un
 -- enum en la misma transacción en que se agrega): se compara como texto (role::text = 'promoter').
 alter type staff_role_t add value if not exists 'promoter';
+-- [v1.7] Moods de eventos corporativos (mismo cuidado: no se usan como literal en este script).
+alter type mood_tag_t add value if not exists 'networking';
+alter type mood_tag_t add value if not exists 'with_team';
+alter type mood_tag_t add value if not exists 'other_areas';
+alter type mood_tag_t add value if not exists 'business';
+alter type mood_tag_t add value if not exists 'hiring';
+alter type mood_tag_t add value if not exists 'open_to_chat';
 
 -- ════════════════════════════════════════════════════════════════════════
 -- TABLAS
@@ -69,6 +76,15 @@ create table if not exists public.profiles (
 alter table public.profiles add column if not exists instagram_username text
   check (instagram_username is null or instagram_username ~ '^[a-z0-9._]{1,30}$');
 alter table public.profiles add column if not exists instagram_verified boolean not null default false;
+
+-- [v1.7] Perfil profesional (opcional): empresa, cargo, áreas e intereses y LinkedIn. En eventos corporativos la
+-- afinidad se calcula con `interests` en vez de `music_genres` (espejo de checkInterests / parseLinkedin en el motor).
+alter table public.profiles add column if not exists company text check (company is null or char_length(company) between 1 and 60);
+alter table public.profiles add column if not exists job_title text check (job_title is null or char_length(job_title) between 1 and 60);
+alter table public.profiles add column if not exists interests text[] not null default '{}'
+  check (cardinality(interests) <= 5 and interests <@ array['Tecnología','Producto','Diseño','Marketing','Ventas','Finanzas','RR. HH.','Operaciones','Data e IA','Legal','Sustentabilidad','Emprendimiento']);
+alter table public.profiles add column if not exists linkedin_username text
+  check (linkedin_username is null or (linkedin_username ~ '^[a-z0-9-]{3,100}$' and linkedin_username !~ '^-|-$'));
 
 -- Cuenta de Instagram conectada (Instagram API with Instagram Login). Tokens SOLO para el servidor:
 -- RLS sin políticas + sin privilegios para anon/authenticated. La lee/escribe la API de Next con service role.
@@ -190,6 +206,8 @@ alter table public.events add column if not exists brand_id uuid references publ
 alter table public.events add column if not exists logo_url text;
 alter table public.events add column if not exists theme_primary text check (public.brand_color_error(theme_primary, 'primary') is null);
 alter table public.events add column if not exists theme_accent text check (public.brand_color_error(theme_accent, 'accent') is null);
+-- [v1.7] Tipo de evento: cambia moods, vocabulario (agenda, contactos) y la base de la afinidad (eventType.ts).
+alter table public.events add column if not exists event_type text not null default 'nightlife' check (event_type in ('nightlife', 'corporate'));
 
 -- [ext] Staff del organizador (dueño, encargados, barra, camareros, seguridad).
 create table if not exists public.event_staff (
@@ -697,12 +715,15 @@ drop policy if exists profiles_update on public.profiles;
 create policy profiles_update on public.profiles for update to authenticated using (id = auth.uid()) with check (id = auth.uid());
 
 revoke all on public.profiles from anon, authenticated;
-grant select (id, username, full_name, birth_date, gender, bio, photos, loop_video_url, music_genres, spotify_embed_url, instagram_username, instagram_verified, is_verified, created_at)
+grant select (id, username, full_name, birth_date, gender, bio, photos, loop_video_url, music_genres, spotify_embed_url, instagram_username, instagram_verified,
+              company, job_title, interests, linkedin_username, is_verified, created_at)
   on public.profiles to authenticated;
 -- is_verified solo lo modifica el staff de ROUGE (service role); instagram_verified lo calcula el trigger
-grant insert (id, username, full_name, birth_date, gender, phone_normalized, bio, photos, loop_video_url, music_genres, spotify_embed_url, instagram_username)
+grant insert (id, username, full_name, birth_date, gender, phone_normalized, bio, photos, loop_video_url, music_genres, spotify_embed_url, instagram_username,
+              company, job_title, interests, linkedin_username)
   on public.profiles to authenticated;
-grant update (username, full_name, birth_date, gender, phone_normalized, bio, photos, loop_video_url, music_genres, spotify_embed_url, instagram_username)
+grant update (username, full_name, birth_date, gender, phone_normalized, bio, photos, loop_video_url, music_genres, spotify_embed_url, instagram_username,
+              company, job_title, interests, linkedin_username)
   on public.profiles to authenticated;
 
 -- Instagram verificado ⇔ el @ del perfil es el de la cuenta conectada (espejo de upsertProfile en el motor).
@@ -751,7 +772,7 @@ create policy events_update on public.events for update to authenticated using (
 -- El código maestro no se expone a anónimos (la landing /join solo necesita datos públicos)
 revoke all on public.events from anon;
 grant select (id, slug, name, description, venue_name, cover_url, starts_at, ends_at, lobby_opens_at, lobby_expires_at, max_capacity,
-              brand_id, logo_url, theme_primary, theme_accent)
+              brand_id, logo_url, theme_primary, theme_accent, event_type)
   on public.events to anon;
 
 -- [v1.5] Eliminar un evento: solo quien lo creó (y nunca con cobros registrados: trigger events_keep_payments).
@@ -955,7 +976,8 @@ create policy payout_squad on public.payout_aliases for select to authenticated 
 -- RPCs DE NEGOCIO (atómicas; replican src/lib/engine/actions.ts)
 -- ════════════════════════════════════════════════════════════════════════
 
--- Grilla: asistentes visibles + afinidad musical (Dice) + rank + zonas en común.
+-- Grilla: asistentes visibles + afinidad (Dice sobre géneros en una fiesta, sobre áreas e intereses en un evento
+-- corporativo) + rank + zonas en común. La app calcula lo mismo en el cliente (lobbyGrid / computeAffinity).
 drop function if exists public.event_grid(uuid);
 create or replace function public.event_grid(p_event uuid)
 returns table (
@@ -964,29 +986,41 @@ returns table (
   mood_tag mood_tag_t, last_active_at timestamptz, music_affinity int, rank numeric, shared_zones text[]
 ) language sql stable security definer set search_path = public, extensions as $$
   with me as (
-    select p.music_genres, a.mood_tag, a.visited_sectors from public.profiles p
+    select case when e.event_type = 'corporate' then p.interests else p.music_genres end as tags,
+           a.mood_tag, a.visited_sectors, e.event_type
+    from public.profiles p
     join public.event_attendees a on a.user_id = p.id and a.event_id = p_event
+    join public.events e on e.id = p_event
     where p.id = auth.uid()
+  ), scored as (
+    select a.*, p.username, p.full_name, p.birth_date, p.gender, p.bio, p.photos, p.loop_video_url, p.music_genres,
+           p.spotify_embed_url, p.is_verified,
+           coalesce(2.0 * cardinality(array(select unnest(case when me.event_type = 'corporate' then p.interests else p.music_genres end)
+                                            intersect select unnest(me.tags)))
+             / nullif(cardinality(case when me.event_type = 'corporate' then p.interests else p.music_genres end) + cardinality(me.tags), 0), 0) as tags_dice,
+           me.mood_tag as my_mood, me.visited_sectors as my_sectors
+    from public.event_attendees a
+    join public.profiles p on p.id = a.user_id
+    cross join me
+    where a.event_id = p_event and a.user_id <> auth.uid() and not a.ghost_mode
+      and not public.is_blocked(auth.uid(), a.user_id)
+      and public.lobby_is_open(p_event)
+      and not exists (select 1 from public.connections c where c.event_id = p_event and c.status = 'rejected'
+                      and ((c.sender_id = auth.uid() and c.receiver_id = a.user_id) or (c.sender_id = a.user_id and c.receiver_id = auth.uid())))
   )
-  select p.id, p.username, p.full_name, p.birth_date, p.gender, p.bio, p.photos, p.loop_video_url, p.music_genres,
-         p.spotify_embed_url, p.is_verified, a.mood_tag, a.last_active_at,
-         round(100 * coalesce(2.0 * cardinality(array(select unnest(p.music_genres) intersect select unnest(me.music_genres)))
-           / nullif(cardinality(p.music_genres) + cardinality(me.music_genres), 0), 0))::int as music_affinity,
+  select x.user_id, x.username, x.full_name, x.birth_date, x.gender, x.bio, x.photos, x.loop_video_url, x.music_genres,
+         x.spotify_embed_url, x.is_verified, x.mood_tag, x.last_active_at,
+         round(100 * x.tags_dice)::int as music_affinity,
          round((
-           0.60 * coalesce(2.0 * cardinality(array(select unnest(p.music_genres) intersect select unnest(me.music_genres)))
-             / nullif(cardinality(p.music_genres) + cardinality(me.music_genres), 0), 0)
-         + 0.25 * case when a.mood_tag = me.mood_tag then 0.8 when a.mood_tag in ('open_to_meet','at_bar','after_hunt') and me.mood_tag in ('open_to_meet','at_bar','after_hunt') then 0.7 else 0.4 end
-         + 0.15 * greatest(0, 1 - extract(epoch from now() - a.last_active_at) / 5400)
+           0.60 * x.tags_dice
+         + 0.25 * case when x.mood_tag = x.my_mood then 0.8
+                       when x.mood_tag::text in ('open_to_meet','at_bar','after_hunt') and x.my_mood::text in ('open_to_meet','at_bar','after_hunt') then 0.7
+                       when x.mood_tag::text in ('networking','open_to_chat','business','other_areas') and x.my_mood::text in ('networking','open_to_chat','business','other_areas') then 0.8
+                       else 0.4 end
+         + 0.15 * greatest(0, 1 - extract(epoch from now() - x.last_active_at) / 5400)
          )::numeric, 4) as rank,
-         array(select unnest(a.visited_sectors) intersect select unnest(me.visited_sectors)) as shared_zones
-  from public.event_attendees a
-  join public.profiles p on p.id = a.user_id
-  cross join me
-  where a.event_id = p_event and a.user_id <> auth.uid() and not a.ghost_mode
-    and not public.is_blocked(auth.uid(), a.user_id)
-    and public.lobby_is_open(p_event)
-    and not exists (select 1 from public.connections c where c.event_id = p_event and c.status = 'rejected'
-                    and ((c.sender_id = auth.uid() and c.receiver_id = a.user_id) or (c.sender_id = a.user_id and c.receiver_id = auth.uid())))
+         array(select unnest(x.visited_sectors) intersect select unnest(x.my_sectors)) as shared_zones
+  from scored x
   order by rank desc;
 $$;
 
@@ -1081,7 +1115,8 @@ begin
       'venue_name', v_event.venue_name, 'cover_url', v_event.cover_url, 'lineup_json', v_event.lineup_json,
       'venue_layout_json', v_event.venue_layout_json, 'starts_at', v_event.starts_at, 'ends_at', v_event.ends_at,
       'lobby_opens_at', v_event.lobby_opens_at, 'lobby_expires_at', v_event.lobby_expires_at, 'max_capacity', v_event.max_capacity,
-      'brand_id', v_event.brand_id, 'logo_url', v_event.logo_url, 'theme_primary', v_event.theme_primary, 'theme_accent', v_event.theme_accent),
+      'brand_id', v_event.brand_id, 'logo_url', v_event.logo_url, 'theme_primary', v_event.theme_primary, 'theme_accent', v_event.theme_accent,
+      'event_type', v_event.event_type),
     'brand', (select jsonb_build_object('id', b.id, 'name', b.name, 'logo_url', b.logo_url, 'primary_color', b.primary_color, 'accent_color', b.accent_color)
               from public.brands b where b.id = v_event.brand_id),
     'attendees', (select count(*) from public.event_attendees where event_id = v_event.id),

@@ -1,6 +1,7 @@
 # Demo comercial y Modo Demo
 
-Cómo mostrarle ROUGE a dueños de boliches y productoras, y cómo usar el Modo Demo para redes.
+Cómo mostrarle ROUGE a dueños de boliches y productoras, a empresas y agencias de eventos corporativos, y cómo usar
+el Modo Demo para redes.
 
 ## Qué es el Modo Demo
 
@@ -52,6 +53,43 @@ Todo está en **`/demo`** del sitio de demostración (no en la pantalla principa
    en la Pantalla LED. CRM exportable con Smart Tags.
 7. **Cierre (1 min).** Propuesta de **primer evento gratis** a cambio de datos y un testimonio. Después: fee por
    evento, por asistente activo o comisión de barra/VIP.
+
+## Demo para eventos corporativos
+
+En `/demo` elegí **💼 Evento corporativo** ("¿A quién se la mostrás?"). La demo pasa a ser *Kickoff 2027 · Grupo
+Vértice* (empresa ficticia), en vivo ahora, con la marca de la empresa (logo y azul) y las mismas personas con
+perfil profesional:
+
+| Persona | Rol en el kickoff |
+|---|---|
+| Sofía Benítez | Diseñadora UX Senior (la asistente del guion) |
+| Camila Ríos | Product Manager, de su mismo equipo (segunda asistente) |
+| Mateo Sosa | Data Scientist: ya es contacto de Sofía y tienen chat |
+| Bruno Méndez | Founder de Kuarzo (startup invitada): le mandó un Rompehielos a Sofía |
+| Lucas Ferreyra | Gerente Comercial de Nimbo Cloud (sponsor) |
+| Francisca Luna | Talent Acquisition: "Estoy sumando gente" |
+| 💼 Paula Ferrari | Organizadora (Personas y Cultura) |
+| ☕ Daniela Ortiz | Catering / barra |
+| 🛡️ Marta Gómez | Seguridad |
+
+Agenda: acreditación, apertura, panel de IA, **networking guiado (en curso)**, premios y after office con DJ. Plano de
+centro de convenciones (Plenario, Coffee & Bar, Zona Networking, Lounge Sponsors, Terraza). Menú de catering (café,
+flat white, vino, empanadas…). Sin RRPP.
+
+### Guion corporativo (7 minutos)
+
+1. **El problema (30 s).** Cada uno se queda con su equipo, la agenda se pierde en WhatsApp y nadie mide qué funcionó.
+2. **Acreditación (45 s).** El invitado entra con el link del mail y elige qué viene a buscar; en el panel, *Puerta*.
+3. **Networking con criterio (1 min 15 s).** Grilla por áreas e intereses en común, cargo y empresa en cada tarjeta.
+   Conectar → contacto. Aceptar el Rompehielos del founder invitado.
+4. **La agenda y los avisos (1 min).** *Ver agenda* en el teléfono; Text Blast "arrancan los premios".
+5. **Catering sin filas (1 min).** Pedir un café, retirarlo con QR; el panel (Catering) lo prepara.
+6. **Cuidado en el after office (45 s).** Rescate → Seguridad lo ve en el plano.
+7. **Datos y cierre (1 min 15 s).** CRM con empresa, cargo e intereses + CSV; sorteo del sponsor en la LED. Propuesta:
+   primer evento sin costo a cambio de un caso de éxito.
+
+**Lo que todavía no hay** (decirlo si lo preguntan): lista de invitados por CSV, credencial impresa, barra libre con
+vouchers pagados por la empresa, encuestas y NPS, leads por sponsor, reporte final en PDF y factura A.
 
 ## Material para redes
 

@@ -6,10 +6,11 @@ import { useRouter } from "next/navigation";
 import { Save } from "lucide-react";
 import type { Gender, MusicGenre, ProfilePhoto } from "@/lib/types";
 import { upsertProfile } from "@/lib/engine/actions";
-import { BIO_MAX, GENDER_OPTIONS, checkBirthDate, checkUsername, cleanUsername, formatPhone, parseInstagram } from "@/lib/engine/profile";
+import { BIO_MAX, GENDER_OPTIONS, checkBirthDate, checkUsername, cleanUsername, formatPhone, parseInstagram, parseLinkedin } from "@/lib/engine/profile";
 import { discardMedia } from "@/lib/media/upload";
 import { useRouge } from "@/lib/store/RougeContext";
-import { useRequireProfile } from "@/lib/store/hooks";
+import { useEventType, useRequireProfile } from "@/lib/store/hooks";
+import { ProfessionalFields, linkedinValid, type ProfessionalValue } from "@/components/profile/ProfessionalFields";
 import { normalizePhone } from "@/lib/utils";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -47,6 +48,13 @@ function EditForm() {
   // @ manual: solo cuenta si no hay Instagram conectado (si está conectado, manda la conexión).
   const [instagram, setInstagram] = useState(igLinked ? "" : (me.instagram_username ?? ""));
   const igManual = parseInstagram(instagram);
+  const { type } = useEventType();
+  const [work, setWork] = useState<ProfessionalValue>({ company: me.company ?? "", jobTitle: me.job_title ?? "", linkedin: me.linkedin_username ?? "", interests: me.interests });
+  const workDirty =
+    (work.company.trim() || null) !== me.company ||
+    (work.jobTitle.trim() || null) !== me.job_title ||
+    (parseLinkedin(work.linkedin) ?? null) !== me.linkedin_username ||
+    JSON.stringify(work.interests) !== JSON.stringify(me.interests);
 
   const usernameCheck = checkUsername(state, username, me.id);
   const birthError = checkBirthDate(birthDate);
@@ -64,11 +72,12 @@ function EditForm() {
       bio !== me.bio ||
       JSON.stringify(genres) !== JSON.stringify(me.music_genres) ||
       (spotify.trim() || null) !== me.spotify_embed_url ||
-      (!igLinked && (igManual ?? null) !== me.instagram_username),
-    [fullName, username, birthDate, gender, phoneNorm, photos, loop, bio, genres, spotify, me, igLinked, igManual],
+      (!igLinked && (igManual ?? null) !== me.instagram_username) ||
+      workDirty,
+    [fullName, username, birthDate, gender, phoneNorm, photos, loop, bio, genres, spotify, me, igLinked, igManual, workDirty],
   );
 
-  const valid = (!instagram.trim() || !!igManual) && fullName.trim() && usernameCheck.ok && !birthError && !!phoneNorm && photos.length >= 1 && genres.length >= 1 && bio.length <= BIO_MAX;
+  const valid = (!instagram.trim() || !!igManual) && fullName.trim() && usernameCheck.ok && !birthError && !!phoneNorm && photos.length >= 1 && (genres.length >= 1 || work.interests.length >= 1) && linkedinValid(work.linkedin) && bio.length <= BIO_MAX;
 
   const save = async () => {
     const r = await exec(
@@ -84,6 +93,10 @@ function EditForm() {
         music_genres: genres,
         spotify_embed_url: spotify.trim() || null,
         ...(igLinked ? {} : { instagram_username: igManual }),
+        company: work.company,
+        job_title: work.jobTitle,
+        linkedin_username: work.linkedin.trim() || null,
+        interests: work.interests,
       }),
     );
     if (!r.ok) return;
@@ -94,9 +107,17 @@ function EditForm() {
     router.push("/profile");
   };
 
+  const workSection = (
+    <section className="space-y-3">
+      <h2 className="text-base">Perfil profesional</h2>
+      <p className="-mt-1 text-sm text-muted">Para eventos de empresa: tu cargo y tus intereses ordenan a quién te conviene conocer.</p>
+      <ProfessionalFields value={work} onChange={setWork} />
+    </section>
+  );
+
   return (
     <main className="pb-32">
-      <PageHeader title="Editar perfil" subtitle="Se guarda para todas tus fiestas" backHref="/profile" />
+      <PageHeader title="Editar perfil" subtitle="Se guarda para todos tus eventos" backHref="/profile" />
       <div className="space-y-8 px-5 pt-2">
         <section className="space-y-3">
           <h2 className="text-base">Fotos</h2>
@@ -128,11 +149,16 @@ function EditForm() {
           <PhoneField value={phone} onChange={setPhone} />
         </section>
 
+        {type === "corporate" && workSection}
+
         <section className="space-y-4">
           <h2 className="text-base">Música</h2>
           <GenrePicker value={genres} onChange={setGenres} />
           <SpotifyField value={spotify} onChange={setSpotify} />
+          {genres.length === 0 && work.interests.length === 0 && <p className="text-xs text-rouge">Elegí al menos 1 género o 1 área de interés.</p>}
         </section>
+
+        {type !== "corporate" && workSection}
 
         <section className="space-y-3">
           <h2 className="text-base">Instagram</h2>

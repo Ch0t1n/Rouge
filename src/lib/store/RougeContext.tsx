@@ -20,7 +20,8 @@ import type { RougeState, UUID } from "@/lib/types";
 import type { Result } from "@/lib/engine/actions";
 import * as A from "@/lib/engine/actions";
 import { lobbyPhase } from "@/lib/engine/selectors";
-import { BAR_MENU, createSeedState, STATE_VERSION } from "@/lib/mock/seed";
+import { BAR_MENU, createSeedState, STATE_VERSION, type DemoScenario } from "@/lib/mock/seed";
+import { eventTypeOf } from "@/lib/engine/eventType";
 import { getSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import { friendlyError } from "@/lib/supabase/errors";
 import { can as canDo, isStaffRole, roleOf, type Permission, type Role } from "@/lib/engine/roles";
@@ -90,7 +91,8 @@ interface RougeContextValue {
   setActiveEvent: (id: UUID) => void;
   /** Modo Demo: arranca una persona sin perfil para probar el onboarding desde cero. */
   startNewPersona: () => UUID;
-  resetDemo: () => void;
+  /** Modo Demo: vuelve a sembrar (por defecto, el mismo escenario: fiesta o corporativo). */
+  resetDemo: (scenario?: DemoScenario) => void;
   signOut: () => Promise<void>;
   toasts: Toast[];
   notify: (t: Omit<Toast, "id">) => void;
@@ -103,18 +105,20 @@ const Ctx = createContext<RougeContextValue | null>(null);
 
 function loadDemoState(now: number): RougeState {
   let s: RougeState | null = null;
+  let scenario: DemoScenario = "nightlife";
   const raw = safe(() => localStorage.getItem(STORAGE_KEY), null);
   if (raw) {
     try {
       const parsed = JSON.parse(raw) as RougeState;
       const ev = parsed.events?.find((e) => e.id === parsed.active_event_id);
+      scenario = eventTypeOf(ev); // al re-sembrar se mantiene el escenario (fiesta o corporativo)
       // Re-siembra si cambió el formato o si el evento demo ya expiró (Efecto Cenicienta).
       if (parsed.version === STATE_VERSION && ev && lobbyPhase(ev, now) !== "expired") s = A.purgeExpiredPins(parsed, now);
     } catch {
       /* JSON corrupto → semilla nueva */
     }
   }
-  s ??= createSeedState(now);
+  s ??= createSeedState(now, scenario);
   const persona = tabPersona();
   return persona ? { ...s, current_user_id: persona } : s;
 }
@@ -396,8 +400,9 @@ export function RougeProvider({ children }: { children: ReactNode }) {
     return id;
   }, [commit]);
 
-  const resetDemo = useCallback(() => {
-    const fresh = createSeedState(Date.now());
+  const resetDemo = useCallback((scenario?: DemoScenario) => {
+    const cur = stateRef.current;
+    const fresh = createSeedState(Date.now(), scenario ?? eventTypeOf(cur?.events.find((e) => e.id === cur.active_event_id)));
     rememberPersona(fresh.current_user_id);
     commit(fresh);
     saveDemoState(fresh, true);

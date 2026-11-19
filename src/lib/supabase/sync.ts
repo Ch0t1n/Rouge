@@ -11,7 +11,7 @@ import { lobbyPhase } from "@/lib/engine/selectors";
 import { BAR_MENU, STATE_VERSION } from "@/lib/mock/seed";
 
 /** Columnas legibles de `profiles` (el teléfono NO: column privileges). */
-const PROFILE_COLUMNS = "id,username,full_name,birth_date,gender,bio,photos,loop_video_url,music_genres,spotify_embed_url,instagram_username,instagram_verified,is_verified,created_at";
+const PROFILE_COLUMNS = "id,username,full_name,birth_date,gender,bio,photos,loop_video_url,music_genres,spotify_embed_url,instagram_username,instagram_verified,company,job_title,interests,linkedin_username,is_verified,created_at";
 
 type Row = Record<string, unknown>;
 
@@ -142,10 +142,10 @@ export async function fetchRemoteState(sb: SupabaseClient, userId: UUID, preferr
     seeded_at: new Date(now).toISOString(),
     current_user_id: userId,
     active_event_id: eventId,
-    profiles: profiles.map((p) => ({ ...p, phone_normalized: phones.get(p.id) ?? null, photos: p.photos ?? [], music_genres: p.music_genres ?? [] })),
+    profiles: profiles.map((p) => ({ ...p, phone_normalized: phones.get(p.id) ?? null, photos: p.photos ?? [], music_genres: p.music_genres ?? [], interests: p.interests ?? [], company: p.company ?? null, job_title: p.job_title ?? null, linkedin_username: p.linkedin_username ?? null })),
     instagram_links: igRows.map((r) => ({ user_id: userId, username: r.username, account_type: r.account_type, connected_at: r.connected_at })),
     user_blocks: blocks,
-    events: events.map((e) => ({ ...e, brand_id: e.brand_id ?? null, logo_url: e.logo_url ?? null, theme_primary: e.theme_primary ?? null, theme_accent: e.theme_accent ?? null })),
+    events: events.map((e) => ({ ...e, event_type: e.event_type ?? "nightlife", brand_id: e.brand_id ?? null, logo_url: e.logo_url ?? null, theme_primary: e.theme_primary ?? null, theme_accent: e.theme_accent ?? null })),
     brands,
     brand_payment_accounts: payAccounts,
     event_staff: eventStaff,

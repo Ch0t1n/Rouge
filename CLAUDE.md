@@ -84,7 +84,7 @@ src/
   components/
     ui/                   # Primitivas: Button, Badge, Switch, BottomSheet, Avatar, Toaster, field (TextField, Segmented)
     media/                # MediaImage (placeholder color), LoopVideo (GIF-like), SpotifyEmbed (lazy)
-    profile/              # ProfileView, PhotoSlots, LoopVideoField, GenrePicker, SpotifyField, PhoneField, BlacklistManager
+    profile/              # ProfileView, PhotoSlots, LoopVideoField, GenrePicker, SpotifyField, PhoneField, BlacklistManager, ProfessionalFields
     layout/               # AppShell, BottomNav (5 tabs), PageHeader, PersonaSwitcher, LiveNotifications, SW register
     lobby/                # GridCard, ConnectActions, IcebreakerComposer, MatchCelebration, useConnect
     chat/                 # MessageList (texto, fotos, system_alert), Composer (foto comprimida)
@@ -92,21 +92,22 @@ src/
     perks/                # QrBlock (QR alto contraste)
     share/ShareSheet.tsx  # QR + compartir nativo + WhatsApp + copiar + PNG para CUALQUIER link (useShare, ShareButton)
     social/               # SocialLoginButtons, InstagramPhotoPicker, InstagramField (+ useInstagramReturn), InstagramCallback
-    demo/                 # DemoHub (guion + vistas por rol), DemoOpen, Presenter (teléfono + panel sincronizados)
+    demo/                 # DemoHub (escenario fiesta/corporativo, guion + vistas por rol), DemoOpen, Presenter (teléfono + panel sincronizados)
     brand/BrandTheme.tsx  # useBrandTheme() (variables CSS del tema en <html>) y BrandLogo
     landing/              # Landing 3D: Landing.tsx (composición por audiencia "public" | "organizers"), core/ (Lenis+ScrollTrigger, scrollStore, entry, audience),
                           # fx/ (Cursor, Magnetic, SplitReveal, TiltCard), three/ (Scene R3F + choreography), sections/ (8 secciones)
     scan/QrScanner.tsx    # Cámara → QR (BarcodeDetector nativo o jsQR); lo usan Puerta y la ventanilla de la barra
     admin/                # AdminChrome (nav por permisos, NoAccess, badge de rol), BrandStudio, MenuEditor, PrintTicket, EventLifecyclePanel, RrppPanel, DoorScanner, TeamPanel, SecurityPanel, ApiKeysPanel, PrintCodes, AdminHeader, Panel, downloadCSV
     venue/VenueMap.tsx    # Plano interactivo (zoom/paneo, sectores, pines)
-    event/                # LineupBanner, MoodPicker
+    event/                # LineupBanner (line-up con DJ o agenda corporativa), MoodPicker
   lib/
     types.ts              # Tipos de dominio — ESPEJO 1:1 de supabase/schema.sql
     engine/
       roles.ts            # Tipos de usuario, permisos por rol, roleHome(), destinationFor() (espejo de has_staff_role)
       selectors.ts        # Reglas de VISIBILIDAD (bloqueos, ghost, pines, lobby)
       actions.ts          # Reglas de NEGOCIO puras (state, input, now) → Result
-      affinity.ts         # Algoritmo de afinidad
+      affinity.ts         # Algoritmo de afinidad (géneros en fiestas, áreas e intereses en corporativos)
+      eventType.ts        # Tipo de evento (nightlife | corporate): moodsFor, copyFor (vocabulario), eventTypeOf
       grid.ts             # lobbyGrid(): visibles + afinidad + estado de conexión + filtros
       bar.ts              # Metadatos de presentación de Barra Express (labels, QR de retiro)
       branding.ts         # Marca: contraste WCAG (checkBrandColor ⇔ brand_color_error), resolveTheme, themeVars, upsertBrand
@@ -118,8 +119,10 @@ src/
       profile.ts          # Validaciones de perfil, parser de Spotify, máscara de teléfono, completitud
       analytics.ts        # Métricas B2B, CRM, Smart Tags, liveWallData()
       engine.test.ts      # Tests de invariantes de negocio
-    demo/script.ts        # Guion de la demo (7 pasos), roles demo y openAs(rol, ruta)
-    mock/seed.ts          # Motor de Mock Data (fechas relativas a "ahora")
+    demo/script.ts        # Guion de la demo (7 pasos por escenario), roles demo y openAs(rol, ruta)
+    mock/seed.ts          # Motor de Mock Data (fechas relativas a "ahora"); createSeedState(now, "nightlife" | "corporate")
+    mock/seedCorporate.ts # Escenario corporativo: el mismo estado convertido en un kickoff (mismos ids)
+    mock/ids.ts           # Ids estables del Modo Demo (DEMO_IDS)
     store/RougeContext.tsx# Estado global: Modo Demo (localStorage) o Supabase (sesión + carga + Realtime); exec()
     store/commands.ts     # Comandos: regla local del motor + contraparte remota (RPC/tabla) de CADA acción
     store/commands.test.ts# Contrato cliente ↔ schema.sql (RPCs, parámetros, tablas, columnas, cargador)
@@ -247,6 +250,11 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
    Importar gsap desde `landing/core/gsap.ts`. Todo efecto se limpia al desmontar (useGSAP revierte, Lenis se destruye,
    el ticker vuelve a su lagSmoothing): /app y /admin no cargan ni heredan nada de esto. Ojo con `cn()` (tailwind-merge)
    y clases `text-glow-*`: las confunde con colores de texto; en SplitReveal se concatenan sin `cn`.
+22. **Tipo de evento.** `events.event_type` = `nightlife` | `corporate`. La mecánica es una sola; cambian moods
+   (`moodsFor`), afinidad (`affinityTags`: `music_genres` ↔ `interests`) y textos (`copyFor` / `useEventType()` en
+   `store/hooks.ts`). Nunca escribir "Match", "Line-up", "noche" o "fiesta" fijos en una pantalla que vea un evento
+   corporativo: usar `copy.*`. Moods nuevos ⇒ `MOOD_TAGS` (con `for`) + `alter type mood_tag_t add value` (sin usar el
+   literal en el mismo script) + `MOOD_MATRIX`. `corporate.test.ts` verifica el espejo con `schema.sql`.
 20. **Marca y tema.** `rouge` y `vip` son variables CSS (`rgb(var(--c-rouge) / <alpha>)`); el tema del evento
    (`eventTheme`: evento → marca → ROUGE) lo aplica `AppShell` con `useBrandTheme` en la app del asistente y la LED
    (no en landing, demo, login ni panel); `/join` aplica el del link. **Rescate = token `sos` fijo**, Squad = cian: nunca
@@ -265,7 +273,7 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
   Usar siempre `isBlockedBetween()` / `public.is_blocked()`. Los errores no revelan el bloqueo
   (mensaje genérico "Este perfil no está disponible").
 - **Perfil:** +18 (`checkBirthDate`), `@username` único `[a-z0-9._]{3,20}`, máx 4 fotos, bio ≤160,
-  ≤5 géneros, teléfono único normalizado E.164, Spotify guardado como URL de embed limpia
+  ≤5 géneros, perfil profesional opcional (empresa y cargo ≤60, ≤5 `PRO_INTERESTS`, LinkedIn con `parseLinkedin`), teléfono único normalizado E.164, Spotify guardado como URL de embed limpia
   (`parseSpotify`). Loop ≤5 s, re-codificado sin audio vía canvas + MediaRecorder.
 - **Lista negra:** nunca revelar si un teléfono bloqueado tiene cuenta; mostrar números enmascarados
   (`maskPhone`). Un perfil bloqueado o inexistente muestra el mismo estado "no disponible".
@@ -369,6 +377,7 @@ public/                   # manifest.json, sw.js, íconos, avatares demo, landin
 - [x] **Fase 9** — Marca (logo + colores) por evento, cobros con Mercado Pago por marca y cuentas de la mesa.
 - [x] **Fase 10** — Gestión completa del evento (menú, nueva edición, expulsar, eliminar) y ticket de comanda.
 - [x] **Fase 11** — RRPP con link y comisión, escáner de puerta y sitio público / organizadores separados.
+- [x] **Fase 12** — Eventos corporativos: tipo de evento, perfil profesional, agenda, afinidad por intereses y demo corporativa.
 - [ ] **Próximo** — ver `docs/producto/competencia.md`: lista de espera, entradas propias, Mesa VIP con seña, facturación ARCA.
 
 ## Convenciones

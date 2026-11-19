@@ -6,9 +6,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { safeNext } from "@/lib/engine/roles";
 import { ArrowRight, ChevronLeft, PartyPopper, ShieldCheck } from "lucide-react";
 import type { Gender, MusicGenre, ProfilePhoto } from "@/lib/types";
-import { upsertProfile } from "@/lib/engine/actions";
+import { resolveAccessCode, upsertProfile } from "@/lib/engine/actions";
+import { eventTypeOf } from "@/lib/engine/eventType";
+import { ProfessionalFields, linkedinValid, type ProfessionalValue } from "@/components/profile/ProfessionalFields";
 import { BIO_MAX, GENDER_OPTIONS, checkBirthDate, checkUsername, cleanUsername } from "@/lib/engine/profile";
-import { getProfile } from "@/lib/engine/selectors";
+import { activeEvent, getProfile } from "@/lib/engine/selectors";
 import { useRouge } from "@/lib/store/RougeContext";
 import { normalizePhone, cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -35,6 +37,14 @@ const STEPS = [
   { title: "Tu noche, tus reglas", subtitle: "Bloqueá de antemano a quien no querés cruzarte." },
 ] as const;
 
+/** Mismo onboarding cuando la invitación es de un evento corporativo: el paso 3 pide el perfil profesional. */
+const STEPS_CORPORATE = [
+  { title: "Quién sos", subtitle: "Tu perfil se crea una sola vez y sirve para todos tus eventos." },
+  { title: "Tu mejor versión", subtitle: "Hasta 4 fotos. Una foto clara ayuda a que te reconozcan en el evento." },
+  { title: "A qué te dedicás", subtitle: "Con tu cargo y tus intereses te sugerimos a quién te conviene conocer." },
+  { title: "Tus reglas", subtitle: "Bloqueá de antemano a quien no querés cruzarte." },
+] as const;
+
 export default function OnboardingPage() {
   return (
     <Suspense>
@@ -50,6 +60,11 @@ function Onboarding() {
   const next = safeNext(params.get("next")) ?? "/app";
   const meId = state.current_user_id;
   const existing = getProfile(state, meId);
+  // ¿La invitación es de un evento corporativo? (/join/<código> en `next`; si no, el evento activo)
+  const joinCode = next.match(/^\/join\/([^/?#]+)/)?.[1];
+  const nextEvent = joinCode ? resolveAccessCode(state, decodeURIComponent(joinCode))?.event : undefined;
+  const corporate = eventTypeOf(nextEvent ?? activeEvent(state)) === "corporate";
+  const steps = corporate ? STEPS_CORPORATE : STEPS;
 
   // Supabase: el perfil se crea con el id de la sesión (auth.uid()).
   useEffect(() => {
@@ -78,6 +93,7 @@ function Onboarding() {
   const [genres, setGenres] = useState<MusicGenre[]>(existing?.music_genres ?? []);
   const [spotify, setSpotify] = useState(existing?.spotify_embed_url ?? "");
   const [touched, setTouched] = useState(false);
+  const [work, setWork] = useState<ProfessionalValue>({ company: existing?.company ?? "", jobTitle: existing?.job_title ?? "", linkedin: existing?.linkedin_username ?? "", interests: existing?.interests ?? [] });
 
   // Login social: sugerimos el @ de Instagram y el nombre de Google (editables).
   useEffect(() => {
@@ -103,7 +119,7 @@ function Onboarding() {
   const stepValid = [
     fullName.trim().length > 0 && usernameCheck?.ok === true && !!birthDate && !birthError && phoneOk,
     photos.length >= 1 && bio.length <= BIO_MAX,
-    genres.length >= 1,
+    (genres.length >= 1 || work.interests.length >= 1) && linkedinValid(work.linkedin),
     true,
   ][step];
 
@@ -116,7 +132,14 @@ function Onboarding() {
         : step === 1
           ? { photos, loop_video_url: loop, bio }
           : step === 2
-            ? { music_genres: genres, spotify_embed_url: spotify.trim() || null }
+            ? {
+                music_genres: genres,
+                spotify_embed_url: spotify.trim() || null,
+                company: work.company,
+                job_title: work.jobTitle,
+                linkedin_username: work.linkedin.trim() || null,
+                interests: work.interests,
+              }
             : {};
     const r = await exec(C.upsertProfile(meId, input));
     return r.ok;
@@ -125,11 +148,11 @@ function Onboarding() {
   const advance = async () => {
     if (!(await save())) return;
     setTouched(false);
-    if (step < STEPS.length - 1) {
+    if (step < steps.length - 1) {
       setStep(step + 1);
       window.scrollTo({ top: 0 });
     } else {
-      notify({ tone: "rouge", title: `¡Listo, ${fullName.split(" ")[0]}! 🔥`, description: "Tu perfil ya está activo para todas tus fiestas." });
+      notify({ tone: "rouge", title: `¡Listo, ${fullName.split(" ")[0]}! 🔥`, description: corporate ? "Tu perfil ya está activo para todos tus eventos." : "Tu perfil ya está activo para todas tus fiestas." });
       router.replace(next);
     }
   };
@@ -146,13 +169,13 @@ function Onboarding() {
           >
             <ChevronLeft className="size-6" />
           </button>
-          <div className="flex flex-1 gap-1.5" aria-label={`Paso ${step + 1} de ${STEPS.length}`}>
-            {STEPS.map((_, i) => (
+          <div className="flex flex-1 gap-1.5" aria-label={`Paso ${step + 1} de ${steps.length}`}>
+            {steps.map((_, i) => (
               <span key={i} className={cn("h-1.5 flex-1 rounded-full transition-colors", i <= step ? "bg-rouge shadow-glow-rouge" : "bg-white/10")} />
             ))}
           </div>
           <span className="w-11 text-right font-display text-xs font-semibold text-muted">
-            {step + 1}/{STEPS.length}
+            {step + 1}/{steps.length}
           </span>
         </div>
       </header>
@@ -160,8 +183,8 @@ function Onboarding() {
       <div className="flex-1 space-y-6 px-5 pb-32 pt-2">
         <div>
           {step === 0 && <p className="font-display text-sm font-bold tracking-tight text-rouge text-glow-rouge">BIENVENIDO A ROUGE</p>}
-          <h1 className="mt-1 text-[30px] leading-[1.05]">{STEPS[step].title}</h1>
-          <p className="mt-2 text-sm text-muted">{STEPS[step].subtitle}</p>
+          <h1 className="mt-1 text-[30px] leading-[1.05]">{steps[step].title}</h1>
+          <p className="mt-2 text-sm text-muted">{steps[step].subtitle}</p>
         </div>
 
         {step === 0 && (
@@ -195,11 +218,23 @@ function Onboarding() {
               <h2 className="mb-3 text-base">Loop de 5 segundos</h2>
               <LoopVideoField value={loop} onChange={setLoop} />
             </section>
-            <TextAreaField label="Bio corta" placeholder="Si suena house, estoy en primera fila…" value={bio} maxLength={BIO_MAX} onChange={(e) => setBio(e.target.value)} />
+            <TextAreaField label="Bio corta" placeholder={corporate ? "Contá en qué trabajás y de qué te gustaría charlar…" : "Si suena house, estoy en primera fila…"} value={bio} maxLength={BIO_MAX} onChange={(e) => setBio(e.target.value)} />
           </div>
         )}
 
-        {step === 2 && (
+        {step === 2 && corporate && (
+          <div className="space-y-7">
+            <ProfessionalFields value={work} onChange={setWork} />
+            {touched && work.interests.length === 0 && genres.length === 0 && <p className="-mt-5 text-xs text-rouge">Elegí al menos 1 área o interés.</p>}
+            <section className="space-y-3">
+              <h2 className="text-base">Música (opcional)</h2>
+              <p className="-mt-2 text-sm text-muted">Para el after office y las fiestas a las que vayas.</p>
+              <GenrePicker value={genres} onChange={setGenres} />
+            </section>
+          </div>
+        )}
+
+        {step === 2 && !corporate && (
           <div className="space-y-7">
             <GenrePicker value={genres} onChange={setGenres} />
             {touched && genres.length === 0 && <p className="-mt-5 text-xs text-rouge">Elegí al menos 1 género.</p>}
@@ -223,7 +258,7 @@ function Onboarding() {
 
       <div className="fixed inset-x-0 bottom-0 z-30 mx-auto max-w-md border-t border-white/10 bg-background/90 px-5 pb-[max(1rem,var(--safe-bottom))] pt-3 backdrop-blur-xl">
         <Button block size="lg" onClick={advance} variant={stepValid ? "rouge" : "glass"}>
-          {step === STEPS.length - 1 ? (
+          {step === steps.length - 1 ? (
             <>
               <PartyPopper /> Entrar a ROUGE
             </>

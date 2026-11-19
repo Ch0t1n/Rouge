@@ -3,7 +3,8 @@
 import * as C from "@/lib/store/commands";
 import { useMemo, useState } from "react";
 import { Megaphone, Send, Zap } from "lucide-react";
-import { MOOD_TAGS, type BlastSegment, type MoodTag } from "@/lib/types";
+import type { BlastSegment, MoodTag } from "@/lib/types";
+import { eventTypeOf, moodMeta, moodsFor } from "@/lib/engine/eventType";
 import { blastAudience, sendBlast } from "@/lib/engine/actions";
 import { activeEvent } from "@/lib/engine/selectors";
 import { useNow, useRouge } from "@/lib/store/RougeContext";
@@ -23,12 +24,21 @@ const TEMPLATES = [
   { title: "🍾 Barra Express sin filas", message: "Pedí desde la app y retirá por la ventanilla rápida.", cta: "Pedir ahora", link: "/bar", flash: 0 },
 ];
 
+/** Plantillas para un evento corporativo (agenda, networking, sponsors, after office). */
+const TEMPLATES_CORPORATE = [
+  { title: "🎤 Arranca la próxima charla", message: "En 5 minutos empieza la próxima actividad en el plenario. Mirá la agenda en la app.", cta: "Ver agenda", link: "/app", flash: 0 },
+  { title: "🤝 Networking guiado", message: "Ahora en la Zona Networking: conocé a 3 personas de otras áreas. La app te sugiere con quién.", cta: "Ver a quién conocer", link: "/lobby", flash: 0 },
+  { title: "⚡ 20 min · Stand del sponsor", message: "Pasá por el Lounge Sponsors: demo en vivo y café de especialidad sin cargo.", cta: "Ver en el plano", link: "/map", flash: 20 },
+  { title: "🎟️ Sorteo en 10 minutos", message: "Dejá tu pin en el plano para participar por el premio del sponsor.", cta: "Dejar mi pin", link: "/map", flash: 0 },
+  { title: "🥂 Empieza el after office", message: "Barra abierta en la terraza. Pedí desde la app y retirá sin fila.", cta: "Pedir ahora", link: "/bar", flash: 0 },
+];
+
 function segmentLabel(s: BlastSegment) {
   switch (s.kind) {
     case "all": return "Todo el evento";
     case "squad_min_size": return `Squads de ${s.min}+`;
     case "sector": return `En ${s.sector_name}`;
-    case "mood": return `Mood: ${MOOD_TAGS.find((m) => m.id === s.mood)?.label}`;
+    case "mood": return `Mood: ${moodMeta(s.mood)?.label}`;
     case "top_spenders": return `Top ${s.limit} spenders`;
   }
 }
@@ -46,7 +56,9 @@ export default function AdminBlastsPage() {
   const [kind, setKind] = useState<SegKind>("all");
   const [min, setMin] = useState(4);
   const [sector, setSector] = useState(event.venue_layout_json.sectors.find((s) => s.kind === "dancefloor")?.name ?? "");
-  const [mood, setMood] = useState<MoodTag>("open_to_meet");
+  const corporate = eventTypeOf(event) === "corporate";
+  const templates = corporate ? TEMPLATES_CORPORATE : TEMPLATES;
+  const [mood, setMood] = useState<MoodTag>(() => moodsFor(eventTypeOf(event))[0].id);
   const [limit, setLimit] = useState(20);
 
   const segment: BlastSegment =
@@ -70,7 +82,7 @@ export default function AdminBlastsPage() {
       <div className="grid gap-6 xl:grid-cols-3">
         <Panel title="Nuevo aviso" className="xl:col-span-2">
           <div className="no-scrollbar -mx-1 mb-4 flex gap-2 overflow-x-auto px-1">
-            {TEMPLATES.map((t) => (
+            {templates.map((t) => (
               <button
                 key={t.title}
                 type="button"
@@ -148,7 +160,7 @@ export default function AdminBlastsPage() {
                 )}
                 {kind === "mood" && (
                   <select value={mood} onChange={(e) => setMood(e.target.value as MoodTag)} className="min-h-[52px] w-full rounded-2xl border border-white/10 bg-white/[0.04] px-3 text-sm" aria-label="Mood">
-                    {MOOD_TAGS.map((m) => (
+                    {moodsFor(eventTypeOf(event)).map((m) => (
                       <option key={m.id} value={m.id} className="bg-surface">{m.emoji} {m.label}</option>
                     ))}
                   </select>

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { UserRound, ArrowRight, ChevronRight, Clock3, Crown, DoorOpen, Flag, Gift, Heart, LayoutDashboard, MapPin, Martini, QrCode, ShieldCheck, Users, Zap } from "lucide-react";
-import { MOOD_TAGS } from "@/lib/types";
+import { copyFor, eventTypeOf, moodMeta } from "@/lib/engine/eventType";
 import {
   activeEvent,
   currentUser,
@@ -78,7 +78,9 @@ function Home() {
   }, [state, event.id, me.id, now]);
 
   const hoursToClose = Math.max(0, Math.round((+new Date(event.lobby_expires_at) - now) / 3_600_000));
-  const mood = MOOD_TAGS.find((m) => m.id === attendee?.mood_tag);
+  const mood = moodMeta(attendee?.mood_tag);
+  const type = eventTypeOf(event);
+  const copy = copyFor(type);
   const theme = eventTheme(state, event.id);
   const [pass, setPass] = useState(false);
   const account = data.squad ? squadAccount(state, data.squad.squad.id, me.id) : null;
@@ -139,7 +141,7 @@ function Home() {
                 <Avatar profile={me} size={44} ring="rouge" />
                 <div className="min-w-0">
                   <p className="text-sm font-semibold">Hola, {me.full_name.split(" ")[0]}</p>
-                  <p className="truncate text-xs text-muted">{attendee ? (mood ? `${mood.emoji} ${mood.label}` : "Elegí tu mood de la noche") : "Todavía no entraste al lobby"}</p>
+                  <p className="truncate text-xs text-muted">{attendee ? (mood ? `${mood.emoji} ${mood.label}` : (type === "corporate" ? "Contanos qué venís a buscar" : "Elegí tu mood de la noche")) : "Todavía no entraste al lobby"}</p>
                 </div>
               </div>
               <span className="flex shrink-0 items-center gap-1 text-xs font-semibold text-muted">
@@ -191,7 +193,7 @@ function Home() {
         {/* Métricas personales */}
         <section className="grid grid-cols-2 gap-3">
           <StatTile href="/lobby" icon={<Users />} tone="rouge" value={data.grid.length} label="Asistentes visibles" hint="Ir a la grilla →" />
-          <StatTile href="/inbox" icon={<Heart />} tone="rouge" value={data.matches.length} label="Matches" hint={`${data.inbox.length} en tu bandeja`} />
+          <StatTile href="/inbox" icon={<Heart />} tone="rouge" value={data.matches.length} label={copy.matches} hint={`${data.inbox.length} en tu bandeja`} />
           <StatTile href="/perks" icon={<Gift />} tone="vip" value={data.perks.length} label="Perks & QRs" hint="listos para canjear" />
           <StatTile href="/bar" icon={<Martini />} tone="vip" value={data.orders.length} label="Barra Express" hint="Pedí sin hacer fila →" />
         </section>
@@ -260,7 +262,7 @@ function Home() {
             </div>
             <div className="flex gap-3 text-[11px] font-semibold">
               <Legend className="bg-squad" label="Squad" />
-              <Legend className="bg-rouge" label="Match" />
+              <Legend className="bg-rouge" label={copy.match} />
               <Legend className="bg-vip" label="Base" />
             </div>
           </div>

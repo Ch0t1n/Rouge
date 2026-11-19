@@ -2,7 +2,7 @@
 
 import * as C from "@/lib/store/commands";
 import { useState } from "react";
-import { ChevronUp, Music2, Send } from "lucide-react";
+import { CalendarDays, ChevronUp, MapPin, Music2, Send } from "lucide-react";
 import type { RougeEvent } from "@/lib/types";
 import { lineupNow, topSongs } from "@/lib/engine/selectors";
 import { requestSong, toggleSongVote } from "@/lib/engine/actions";
@@ -10,9 +10,18 @@ import { useNow, useRouge } from "@/lib/store/RougeContext";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
 import { cn, formatTime } from "@/lib/utils";
+import { copyFor, eventTypeOf } from "@/lib/engine/eventType";
 
-/** 🔊 En cabina: DJ (02:00 - 03:30) | Sigue: Main Set — con pedido/voto de temas. */
+/**
+ * 🔊 En cabina: DJ (02:00 - 03:30) | Sigue: Main Set — con pedido/voto de temas.
+ * En un evento corporativo: 🎤 Ahora: charla (sala) | Sigue: … — con la agenda completa.
+ */
 export function LineupBanner({ event, className }: { event: RougeEvent; className?: string }) {
+  if (eventTypeOf(event) === "corporate") return <AgendaBanner event={event} className={className} />;
+  return <DjBanner event={event} className={className} />;
+}
+
+function DjBanner({ event, className }: { event: RougeEvent; className?: string }) {
   const now = useNow(30_000);
   const { state, exec, notify } = useRouge();
   const [open, setOpen] = useState(false);
@@ -112,6 +121,76 @@ export function LineupBanner({ event, className }: { event: RougeEvent; classNam
             </Button>
           </div>
         </form>
+      </BottomSheet>
+    </>
+  );
+}
+
+/** Agenda del evento corporativo: lo que pasa ahora (con sala), lo que sigue y la agenda completa en una hoja. */
+function AgendaBanner({ event, className }: { event: RougeEvent; className?: string }) {
+  const now = useNow(30_000);
+  const [open, setOpen] = useState(false);
+  const copy = copyFor("corporate");
+  const { current, next } = lineupNow(event, now);
+  const slots = [...event.lineup_json].sort((a, b) => +new Date(a.starts_at) - +new Date(b.starts_at));
+
+  return (
+    <>
+      <div className={cn("glass flex items-center gap-3 rounded-2xl px-3 py-2", className)}>
+        <CalendarDays className="size-5 shrink-0 text-rouge" aria-hidden />
+        <div className="min-w-0 flex-1 text-[12px] leading-tight">
+          {current ? (
+            <p className="truncate">
+              <span className="font-display font-semibold text-muted">{copy.nowLabel}</span> <span className="font-display font-bold text-primary">{current.artist}</span>
+              {current.room && <span className="text-muted"> · {current.room}</span>}
+            </p>
+          ) : (
+            <p className="truncate font-display font-semibold text-muted">{copy.lineupSoon}</p>
+          )}
+          {next && (
+            <p className="truncate text-muted">
+              Sigue: <span className="text-primary/90">{next.artist}</span> · {formatTime(next.starts_at)}
+            </p>
+          )}
+        </div>
+        <Button size="sm" variant="glass" onClick={() => setOpen(true)} className="shrink-0 gap-1.5 px-3 text-rouge">
+          <CalendarDays /> Ver agenda
+        </Button>
+      </div>
+
+      <BottomSheet open={open} onClose={() => setOpen(false)} title="Agenda" description={event.name}>
+        <ol className="space-y-2">
+          {slots.map((sl) => {
+            const live = now >= +new Date(sl.starts_at) && now < +new Date(sl.ends_at);
+            const past = now >= +new Date(sl.ends_at);
+            return (
+              <li
+                key={sl.id}
+                className={cn("flex gap-3 rounded-2xl border p-3", live ? "border-rouge/50 bg-rouge/10" : "border-white/10 bg-white/[0.03]", past && "opacity-60")}
+                aria-current={live ? "true" : undefined}
+              >
+                <span className="w-12 shrink-0 font-display text-sm font-bold tabular-nums text-primary">{formatTime(sl.starts_at)}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold">
+                    {sl.artist} {sl.is_headliner && <span className="ml-1 rounded-full bg-vip/15 px-2 py-0.5 font-display text-[10px] font-bold uppercase text-vip">{copy.headliner}</span>}
+                  </p>
+                  <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted">
+                    <span className="tabular-nums">
+                      {formatTime(sl.starts_at)} - {formatTime(sl.ends_at)}
+                    </span>
+                    {sl.room && (
+                      <span className="inline-flex items-center gap-1">
+                        <MapPin className="size-3" /> {sl.room}
+                      </span>
+                    )}
+                    {live && <span className="font-semibold text-rouge">Ahora</span>}
+                  </p>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+        {slots.length === 0 && <p className="text-center text-sm text-muted">{copy.slotsEmpty}</p>}
       </BottomSheet>
     </>
   );

@@ -3,7 +3,10 @@
 import Link from "next/link";
 import { ArrowUpRight, Clock3, Laptop, MonitorPlay, RotateCcw, Smartphone, Tv } from "lucide-react";
 import { useRouge } from "@/lib/store/RougeContext";
-import { DEMO_ROLES, DEMO_SCRIPT, openAs, type DemoRole } from "@/lib/demo/script";
+import { DEMO_SCENARIOS, demoRoles, demoScript, openAs, type DemoRole } from "@/lib/demo/script";
+import type { DemoScenario } from "@/lib/mock/seed";
+import { activeEvent } from "@/lib/engine/selectors";
+import { eventTypeOf } from "@/lib/engine/eventType";
 import { ShareButton } from "@/components/share/ShareSheet";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -11,8 +14,10 @@ import { cn } from "@/lib/utils";
 
 const DEMO_URL = process.env.NEXT_PUBLIC_DEMO_URL;
 
+type View = { role: DemoRole; path?: string; title: string; text: string; tone: "rouge" | "squad" | "vip" };
+
 /** Accesos directos: cada vista abre en una pestaña nueva, ya "como" esa persona. */
-const VIEWS: { role: DemoRole; path?: string; title: string; text: string; tone: "rouge" | "squad" | "vip" }[] = [
+const VIEWS: View[] = [
   { role: "asistente", title: "App del asistente", text: "Sofía: lobby, Squad, plano, barra y perks.", tone: "rouge" },
   { role: "amiga", title: "Segunda asistente", text: "Camila, del mismo Squad: para mostrar el rescate y el chat en vivo.", tone: "squad" },
   { role: "duena", title: "Panel de la dueña", text: "Resumen con ventas, accesos, CRM, avisos y sorteos.", tone: "vip" },
@@ -23,10 +28,24 @@ const VIEWS: { role: DemoRole; path?: string; title: string; text: string; tone:
   { role: "duena", path: "/admin/live-wall", title: "Pantalla LED", text: "Para la TV o el proyector del lugar (pantalla completa).", tone: "rouge" },
 ];
 
+const VIEWS_CORPORATE: View[] = [
+  { role: "asistente", title: "App del invitado", text: "Sofía, diseñadora: agenda, networking por áreas, catering y perks.", tone: "rouge" },
+  { role: "amiga", title: "Compañera de equipo", text: "Camila, del mismo equipo: para mostrar el rescate y el chat en vivo.", tone: "squad" },
+  { role: "duena", title: "Panel de la organizadora", text: "Resumen, acreditaciones, CRM con empresa y cargo, avisos y sorteos.", tone: "vip" },
+  { role: "duena", path: "/admin/door", title: "Acreditación", text: "Escáner de invitaciones con foto y nombre, desde el celular.", tone: "squad" },
+  { role: "barra", title: "Catering / comandas", text: "Pedidos de café, tragos y comida con retiro por QR.", tone: "vip" },
+  { role: "seguridad", title: "Seguridad", text: "Alertas de rescate del after office con la ubicación en el plano.", tone: "squad" },
+  { role: "duena", path: "/admin/live-wall", title: "Pantalla LED", text: "Para la pantalla del plenario: agenda, sorteos y actividad en vivo.", tone: "rouge" },
+];
+
 const TONE = { rouge: "bg-rouge/15 text-rouge", squad: "bg-squad/15 text-squad", vip: "bg-vip/15 text-vip" } as const;
 
 export function DemoHub() {
-  const { mode, resetDemo, notify } = useRouge();
+  const { mode, state, resetDemo, notify } = useRouge();
+  const scenario: DemoScenario = eventTypeOf(activeEvent(state));
+  const roles = demoRoles(scenario);
+  const script = demoScript(scenario);
+  const views = scenario === "corporate" ? VIEWS_CORPORATE : VIEWS;
 
   if (mode !== "demo")
     return (
@@ -48,7 +67,12 @@ export function DemoHub() {
 
   const reset = () => {
     resetDemo();
-    notify({ tone: "squad", title: "Demo reiniciada", description: "La fiesta vuelve al estado inicial en todas las pestañas." });
+    notify({ tone: "squad", title: "Demo reiniciada", description: "El evento vuelve al estado inicial en todas las pestañas." });
+  };
+  const switchTo = (next: DemoScenario) => {
+    if (next === scenario) return;
+    resetDemo(next);
+    notify({ tone: "squad", title: next === "corporate" ? "💼 Evento corporativo listo" : "🪩 Fiesta lista", description: "Las vistas que abras ahora muestran este escenario. Cerrá las pestañas viejas." });
   };
 
   return (
@@ -73,9 +97,39 @@ export function DemoHub() {
               Mostrá ROUGE en vivo <span className="text-rouge">en 7 minutos.</span>
             </h1>
             <p className="mt-4 max-w-xl text-muted">
-              Una fiesta de ejemplo funcionando ahora mismo: asistentes, Squads, pedidos y el equipo completo. Seguí el guion, abrí cada vista con un toque y, si tenés una TV,
-              sumá la Pantalla LED.
+              {scenario === "corporate"
+                ? "Un kickoff de empresa funcionando ahora mismo: invitados con empresa y cargo, agenda, networking por áreas, catering y el equipo completo. Seguí el guion, abrí cada vista con un toque y, si hay pantalla, sumá la LED."
+                : "Una fiesta de ejemplo funcionando ahora mismo: asistentes, Squads, pedidos y el equipo completo. Seguí el guion, abrí cada vista con un toque y, si tenés una TV, sumá la Pantalla LED."}
             </p>
+            <div className="mt-6" role="radiogroup" aria-label="Escenario de la demo">
+              <p className="mb-2 text-sm text-muted">¿A quién se la mostrás?</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {DEMO_SCENARIOS.map((o) => {
+                  const on = o.value === scenario;
+                  return (
+                    <button
+                      key={o.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      onClick={() => switchTo(o.value)}
+                      className={cn(
+                        "flex min-h-[64px] items-center gap-3 rounded-2xl border px-4 py-3 text-left transition",
+                        on ? "border-vip bg-vip/15 text-primary" : "border-white/10 bg-white/[0.03] text-primary/85 hover:border-white/20",
+                      )}
+                    >
+                      <span className="text-2xl" aria-hidden>
+                        {o.emoji}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block font-display font-semibold">{o.label}</span>
+                        <span className="block text-xs text-muted">{o.pitch}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
           <div className="glass rounded-3xl p-5">
             <p className="font-display font-semibold">Antes de empezar</p>
@@ -109,8 +163,8 @@ export function DemoHub() {
             </p>
           </div>
           <ol className="mt-5 grid gap-3">
-            {DEMO_SCRIPT.map((s, i) => {
-              const panel = DEMO_ROLES[s.panelRole];
+            {script.map((s, i) => {
+              const panel = roles[s.panelRole];
               return (
                 <li key={s.title} className="glass grid grid-cols-[auto_minmax(0,1fr)] gap-4 rounded-3xl p-5 md:grid-cols-[auto_minmax(0,1fr)_auto] md:items-start">
                   <span className="grid size-10 place-items-center rounded-2xl bg-rouge/15 font-display text-lg font-bold text-rouge">{i + 1}</span>
@@ -143,8 +197,8 @@ export function DemoHub() {
           <h2 id="vistas" className="text-2xl">Abrir cualquier vista</h2>
           <p className="mt-1 text-sm text-muted">Cada una abre en una pestaña nueva, ya con la persona correcta. Sin contraseñas.</p>
           <ul className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {VIEWS.map((v) => {
-              const r = DEMO_ROLES[v.role];
+            {views.map((v) => {
+              const r = roles[v.role];
               return (
                 <li key={v.title}>
                   <a href={openAs(v.role, v.path)} target="_blank" rel="noopener" className="glass group flex min-h-[96px] items-center gap-4 rounded-3xl p-5 transition hover:bg-white/10">

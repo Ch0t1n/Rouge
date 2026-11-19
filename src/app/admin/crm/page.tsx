@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react";
 import * as C from "@/lib/store/commands";
 import { ArrowDownUp, Ban, Download, MessageCircle, Search, UserX } from "lucide-react";
-import { MOOD_TAGS } from "@/lib/types";
+import { copyFor, eventTypeOf, moodMeta } from "@/lib/engine/eventType";
+import type { MoodTag as MoodTagId } from "@/lib/types";
 import { crmRows, SMART_TAG_META, type CrmRow, type SmartTag } from "@/lib/engine/analytics";
 import { formatPhone } from "@/lib/engine/profile";
 import { activeEvent, getProfile } from "@/lib/engine/selectors";
@@ -20,6 +21,8 @@ const GENDER: Record<CrmRow["gender"], string> = { female: "Mujer", male: "Hombr
 export default function AdminCrmPage() {
   const { state, exec, notify } = useRouge();
   const event = activeEvent(state)!;
+  const corporate = eventTypeOf(event) === "corporate";
+  const copy = copyFor(eventTypeOf(event));
   const bans = state.event_bans.filter((b) => b.event_id === event.id);
   /** Expulsar del evento: deja el lobby, su Squad de hoy y el plano; con bloqueo, no puede volver a entrar. */
   const expel = async (r: CrmRow) => {
@@ -38,7 +41,7 @@ export default function AdminCrmPage() {
     const needle = q.trim().toLowerCase().replace(/^@/, "");
     return all
       .filter((r) => !tag || r.tags.includes(tag))
-      .filter((r) => !needle || r.full_name.toLowerCase().includes(needle) || r.username.includes(needle) || r.music_genres.some((g) => g.toLowerCase().includes(needle)))
+      .filter((r) => !needle || r.full_name.toLowerCase().includes(needle) || r.username.includes(needle) || [...r.music_genres, ...r.interests, r.company ?? "", r.job_title ?? ""].some((g) => g.toLowerCase().includes(needle)))
       .sort((a, b) => {
         const va = a[sort.key];
         const vb = b[sort.key];
@@ -57,12 +60,15 @@ export default function AdminCrmPage() {
           username: `@${r.username}`,
           telefono: r.phone ?? "",
           whatsapp: r.phone ? whatsappLink(r.phone) : "",
+          empresa: r.company ?? "",
+          cargo: r.job_title ?? "",
+          intereses: r.interests,
           edad: r.age,
           genero: GENDER[r.gender],
           generos_musicales: r.music_genres,
-          mood: MOOD_TAGS.find((m) => m.id === r.mood)?.label ?? "",
+          mood: moodMeta(r.mood as MoodTagId)?.label ?? "",
           tamano_squad: r.squad_size,
-          matches: r.matches,
+          [corporate ? "contactos" : "matches"]: r.matches,
           gasto_total: r.total_spent,
           tags: r.tags.map((t) => SMART_TAG_META[t].label),
           ingreso: r.joined_at,
@@ -98,7 +104,7 @@ export default function AdminCrmPage() {
         <label className="relative min-w-[240px] flex-1">
           <span className="sr-only">Buscar</span>
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nombre, @username o género musical" className="min-h-touch w-full rounded-2xl border border-white/10 bg-white/[0.04] pl-9 pr-3 text-sm focus:border-vip/50 focus:outline-none" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={corporate ? "Buscar por nombre, empresa, cargo o interés" : "Buscar por nombre, @username o género musical"} className="min-h-touch w-full rounded-2xl border border-white/10 bg-white/[0.04] pl-9 pr-3 text-sm focus:border-vip/50 focus:outline-none" />
         </label>
         <button type="button" onClick={() => setTag(null)} className={cn("min-h-[40px] rounded-full px-3 text-xs font-semibold", !tag ? "bg-vip text-background" : "bg-white/[0.05] text-muted")}>
           Todos
@@ -118,9 +124,9 @@ export default function AdminCrmPage() {
                 <Th k="full_name" className="pl-5">Asistente</Th>
                 <Th>Teléfono</Th>
                 <Th k="age">Edad</Th>
-                <Th>Géneros</Th>
+                <Th>{corporate ? "Empresa y cargo" : "Géneros"}</Th>
                 <Th k="squad_size">Squad</Th>
-                <Th k="matches">Matches</Th>
+                <Th k="matches">{copy.matches}</Th>
                 <Th>Tags</Th>
                 <Th k="total_spent" className="text-right">Gasto</Th>
                 <Th className="pr-5"><span className="sr-only">Acciones</span></Th>
@@ -131,11 +137,11 @@ export default function AdminCrmPage() {
                 <tr key={r.user_id} className="border-t border-white/5 hover:bg-white/[0.02]">
                   <td className="py-3 pl-5 pr-3">
                     <p className="font-semibold">{r.full_name}</p>
-                    <p className="text-xs text-muted">@{r.username} · {GENDER[r.gender]}{r.mood ? ` · ${MOOD_TAGS.find((m) => m.id === r.mood)?.emoji}` : ""}</p>
+                    <p className="text-xs text-muted">@{r.username} · {GENDER[r.gender]}{r.mood ? ` · ${moodMeta(r.mood as MoodTagId)?.emoji}` : ""}</p>
                   </td>
                   <td className="px-3 py-3">
                     {r.phone ? (
-                      <a href={whatsappLink(r.phone, `¡Hola ${r.full_name.split(" ")[0]}! Gracias por venir a ${event.name} 🔥`)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-squad hover:underline">
+                      <a href={whatsappLink(r.phone, `¡Hola ${r.full_name.split(" ")[0]}! Gracias por venir a ${event.name} ${corporate ? "🙌" : "🔥"}`)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-squad hover:underline">
                         <MessageCircle className="size-3.5" /> {formatPhone(r.phone)}
                       </a>
                     ) : (
@@ -143,7 +149,16 @@ export default function AdminCrmPage() {
                     )}
                   </td>
                   <td className="px-3 py-3 tabular-nums">{r.age}</td>
-                  <td className="px-3 py-3 text-xs text-muted">{r.music_genres.join(", ")}</td>
+                  <td className="px-3 py-3 text-xs text-muted">
+                    {corporate ? (
+                      <>
+                        <span className="block text-primary/90">{[r.job_title, r.company].filter(Boolean).join(" · ") || "—"}</span>
+                        {r.interests.length > 0 && <span className="block">{r.interests.join(", ")}</span>}
+                      </>
+                    ) : (
+                      r.music_genres.join(", ")
+                    )}
+                  </td>
                   <td className="px-3 py-3 tabular-nums">{r.squad_size || "—"}</td>
                   <td className="px-3 py-3 tabular-nums">{r.matches}</td>
                   <td className="px-3 py-3">

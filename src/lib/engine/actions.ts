@@ -55,7 +55,8 @@ import {
   squadMembers,
   squadOf,
 } from "./selectors";
-import { BIO_MAX, MAX_PHOTOS, NAME_MAX, checkBirthDate, checkGenres, checkUsername, parseInstagram, parseSpotify } from "./profile";
+import { BIO_MAX, MAX_PHOTOS, NAME_MAX, checkBirthDate, checkGenres, checkInterests, checkUsername, cleanWorkField, parseInstagram, parseLinkedin, parseSpotify } from "./profile";
+import { isEventType } from "./eventType";
 import { checkEventBranding, normalizeHex } from "./branding";
 import { NOT_PAID, addSpend, initialPaymentStatus, isPayable, spendShares } from "./payments";
 
@@ -183,6 +184,22 @@ export function upsertProfile(state: RougeState, userId: UUID, input: ProfileInp
     const err = checkGenres(input.music_genres);
     if (err) return fail(err);
   }
+  if (input.interests) {
+    const err = checkInterests(input.interests);
+    if (err) return fail(err);
+  }
+  for (const [key, label] of [["company", "Empresa"], ["job_title", "Cargo"]] as const) {
+    if (input[key] === undefined) continue;
+    const r = cleanWorkField(input[key], label);
+    if (!r.ok) return fail(r.error);
+    input = { ...input, [key]: r.value };
+  }
+  if (input.linkedin_username !== undefined) {
+    const raw = input.linkedin_username?.trim() ?? "";
+    const slug = raw ? parseLinkedin(raw) : null;
+    if (raw && !slug) return fail("Ese perfil de LinkedIn no es válido.");
+    input = { ...input, linkedin_username: slug };
+  }
   if (input.bio !== undefined) {
     if (input.bio.length > BIO_MAX) return fail(`La bio tiene un máximo de ${BIO_MAX} caracteres.`);
     input = { ...input, bio: input.bio.trim() };
@@ -229,6 +246,10 @@ export function upsertProfile(state: RougeState, userId: UUID, input: ProfileInp
       // Login con Instagram antes del onboarding: el perfil nace con el @ de la cuenta conectada.
       instagram_username: rest.instagram_username ?? linkOf(state, userId)?.username ?? null,
       instagram_verified: false,
+      company: rest.company ?? null,
+      job_title: rest.job_title ?? null,
+      interests: rest.interests ?? [],
+      linkedin_username: rest.linkedin_username ?? null,
       is_verified: false,
       created_at: iso(now),
     };
@@ -1265,7 +1286,8 @@ export function upsertEvent(state: RougeState, input: Partial<RougeEvent> & Pick
   if (input.lobby_opens_at && t(input.lobby_opens_at) > t(input.starts_at)) return fail("El lobby tiene que abrir antes de que empiece la fiesta.");
   if (input.lobby_expires_at && t(input.lobby_expires_at) < t(input.ends_at)) return fail("El lobby tiene que cerrar después de que termine la fiesta.");
   if (input.max_capacity !== undefined && (!Number.isInteger(input.max_capacity) || input.max_capacity < 1)) return fail("El cupo tiene que ser un número mayor a 0.");
-  if (input.lineup_json?.some((sl) => !sl.artist.trim() || t(sl.ends_at) <= t(sl.starts_at))) return fail("Cada set del line-up necesita artista y horario válido.");
+  if (input.event_type !== undefined && !isEventType(input.event_type)) return fail("Tipo de evento inválido.");
+  if (input.lineup_json?.some((sl) => !sl.artist.trim() || t(sl.ends_at) <= t(sl.starts_at))) return fail("Cada set o actividad de la agenda necesita nombre y horario válido.");
   const slug = (input.slug ?? input.name)
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
@@ -1284,6 +1306,7 @@ export function upsertEvent(state: RougeState, input: Partial<RougeEvent> & Pick
     id: uid(),
     slug,
     name: input.name,
+    event_type: "nightlife",
     description: "",
     venue_name: "",
     venue_map_url: null,

@@ -2,7 +2,8 @@
 
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { getProfile } from "@/lib/engine/selectors";
+import { activeEvent, getProfile } from "@/lib/engine/selectors";
+import { copyFor, eventTypeOf } from "@/lib/engine/eventType";
 import { useRouge } from "./RougeContext";
 
 /**
@@ -22,4 +23,11 @@ export function useRequireProfile() {
     else if (!me) router.replace(pathname === "/app" ? "/onboarding" : `/onboarding?next=${encodeURIComponent(pathname)}`);
   }, [needsLogin, me, router, pathname]);
   return needsLogin ? undefined : me;
+}
+
+/** Tipo del evento activo (fiesta o corporativo) y su vocabulario ("Match" / "Contacto", "Line-up" / "Agenda"…). */
+export function useEventType() {
+  const { state } = useRouge();
+  const type = eventTypeOf(activeEvent(state));
+  return { type, copy: copyFor(type) };
 }

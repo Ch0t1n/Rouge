@@ -10,7 +10,7 @@ import { computeAffinity } from "@/lib/engine/affinity";
 import { respondConnection } from "@/lib/engine/actions";
 import { directMessages, getAttendee, getEvent, getProfile, inboxOf, matchesOf } from "@/lib/engine/selectors";
 import { useRouge } from "@/lib/store/RougeContext";
-import { useRequireProfile } from "@/lib/store/hooks";
+import { useEventType, useRequireProfile } from "@/lib/store/hooks";
 import { cn, timeAgo } from "@/lib/utils";
 import { useMatchCelebration } from "@/components/lobby/MatchCelebration";
 import { Avatar } from "@/components/ui/avatar";
@@ -28,6 +28,7 @@ function Inbox() {
   const meId = state.current_user_id;
   const eventId = state.active_event_id;
   const me = getProfile(state, meId)!;
+  const { type, copy } = useEventType();
   const celebration = useMatchCelebration();
   const requests = inboxOf(state, meId, eventId);
   const [tab, setTab] = useState<"requests" | "matches">(requests.length ? "requests" : "matches");
@@ -65,7 +66,7 @@ function Inbox() {
           {(
             [
               ["requests", `Solicitudes${requests.length ? ` · ${requests.length}` : ""}`],
-              ["matches", `Matches · ${matches.length}`],
+              ["matches", `${copy.matches} · ${matches.length}`],
             ] as const
           ).map(([key, label]) => (
             <button
@@ -84,10 +85,10 @@ function Inbox() {
       <div className="space-y-3 px-4 pb-8 pt-2">
         {tab === "requests" && (
           <>
-            {requests.length === 0 && <EmptyNote>No tenés solicitudes nuevas. Conectá desde la grilla del lobby 💘</EmptyNote>}
+            {requests.length === 0 && <EmptyNote>No tenés solicitudes nuevas. Conectá desde la grilla del lobby {type === "corporate" ? "🤝" : "💘"}</EmptyNote>}
             {requests.map(({ connection: c, profile: p }) => {
               const att = getAttendee(state, eventId, p.id);
-              const aff = att ? computeAffinity(me, getAttendee(state, eventId, meId), p, att) : null;
+              const aff = att ? computeAffinity(me, getAttendee(state, eventId, meId), p, att, Date.now(), type) : null;
               const drink = c.attached_drink_qr_id ? state.user_perks_qrs.find((q) => q.id === c.attached_drink_qr_id) : undefined;
               if (c.type === "icebreaker") {
                 return (
@@ -129,7 +130,7 @@ function Inbox() {
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold">{p.full_name.split(" ")[0]} te dio Conectar</p>
                       <p className="truncate text-xs text-muted">
-                        {aff ? `${aff.musicPercent}% afinidad · ` : ""}
+                        {aff ? `${aff.percent}% ${type === "corporate" ? "en común" : "afinidad"} · ` : ""}
                         {timeAgo(c.created_at)}
                       </p>
                     </div>
@@ -164,7 +165,7 @@ function Inbox() {
 
         {tab === "matches" && (
           <>
-            {matches.length === 0 && <EmptyNote>Todavía no tenés matches. Cuando alguien te conecte de vuelta, aparece acá para siempre.</EmptyNote>}
+            {matches.length === 0 && <EmptyNote>{copy.noMatches}</EmptyNote>}
             {matches.map(({ connection: c, profile: p, last }) => (
               <Link key={c.id} href={`/chat/${c.id}`} className="glass flex min-h-[72px] items-center gap-3 rounded-2xl p-3 transition hover:bg-white/10">
                 <Avatar profile={p} size={52} ring="rouge" />
@@ -174,7 +175,7 @@ function Inbox() {
                     <span className="shrink-0 text-[11px] text-muted">{timeAgo(last?.created_at ?? c.responded_at ?? c.created_at)}</span>
                   </div>
                   <p className={cn("truncate text-sm", last && last.sender_id !== meId ? "text-primary" : "text-muted")}>
-                    {last ? `${last.sender_id === meId ? "Vos: " : ""}${last.message_type === "image" ? "📷 Foto" : last.content}` : "¡Es un Match! Escribile primero 👋"}
+                    {last ? `${last.sender_id === meId ? "Vos: " : ""}${last.message_type === "image" ? "📷 Foto" : last.content}` : `${copy.matchTitle} Escribile primero 👋`}
                   </p>
                   <p className="truncate text-[11px] text-muted/70">{getEvent(state, c.event_id)?.name}</p>
                 </div>

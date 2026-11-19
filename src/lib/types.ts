@@ -23,15 +23,46 @@ export const MUSIC_GENRES = [
 ] as const;
 export type MusicGenre = (typeof MUSIC_GENRES)[number];
 
+/**
+ * Tipo de evento: cambia el vocabulario (moods, agenda, "match" → "contacto") y la base de la afinidad
+ * (música en la noche, áreas e intereses en lo corporativo). Ver `src/lib/engine/eventType.ts`.
+ */
+export const EVENT_TYPES = ["nightlife", "corporate"] as const;
+export type EventType = (typeof EVENT_TYPES)[number];
+
+/** Moods del check-in. Cada uno pertenece a un tipo de evento (`for`). Espejo del enum `mood_tag_t`. */
 export const MOOD_TAGS = [
-  { id: "with_friends", label: "Voy con amigos", emoji: "👯" },
-  { id: "lost_group", label: "Perdí a mi grupo", emoji: "🧭" },
-  { id: "at_bar", label: "En la barra", emoji: "🍸" },
-  { id: "open_to_meet", label: "Abierto a conocer gente", emoji: "✨" },
-  { id: "just_dance", label: "Solo vengo a bailar", emoji: "💃" },
-  { id: "after_hunt", label: "Buscando after", emoji: "🌅" },
-] as const;
+  { id: "with_friends", label: "Voy con amigos", emoji: "👯", for: "nightlife" },
+  { id: "lost_group", label: "Perdí a mi grupo", emoji: "🧭", for: "nightlife" },
+  { id: "at_bar", label: "En la barra", emoji: "🍸", for: "nightlife" },
+  { id: "open_to_meet", label: "Abierto a conocer gente", emoji: "✨", for: "nightlife" },
+  { id: "just_dance", label: "Solo vengo a bailar", emoji: "💃", for: "nightlife" },
+  { id: "after_hunt", label: "Buscando after", emoji: "🌅", for: "nightlife" },
+  { id: "networking", label: "Busco contactos", emoji: "🤝", for: "corporate" },
+  { id: "with_team", label: "Vengo con mi equipo", emoji: "👥", for: "corporate" },
+  { id: "other_areas", label: "Quiero conocer otras áreas", emoji: "🧩", for: "corporate" },
+  { id: "business", label: "Busco clientes o proveedores", emoji: "💼", for: "corporate" },
+  { id: "hiring", label: "Estoy sumando gente", emoji: "🚀", for: "corporate" },
+  { id: "open_to_chat", label: "Abierto a charlar", emoji: "💬", for: "corporate" },
+] as const satisfies readonly { id: string; label: string; emoji: string; for: EventType }[];
 export type MoodTag = (typeof MOOD_TAGS)[number]["id"];
+
+/** Áreas e intereses profesionales (perfil opcional para eventos corporativos). Espejo del check de `profiles.interests`. */
+export const PRO_INTERESTS = [
+  "Tecnología",
+  "Producto",
+  "Diseño",
+  "Marketing",
+  "Ventas",
+  "Finanzas",
+  "RR. HH.",
+  "Operaciones",
+  "Data e IA",
+  "Legal",
+  "Sustentabilidad",
+  "Emprendimiento",
+] as const;
+export type ProInterest = (typeof PRO_INTERESTS)[number];
 
 export type Gender = "female" | "male" | "non_binary" | "undisclosed";
 
@@ -61,6 +92,12 @@ export interface Profile {
   instagram_username: string | null;
   /** true solo si coincide con la cuenta conectada por OAuth (trigger profile_instagram). */
   instagram_verified: boolean;
+  /** Perfil profesional (opcional): se muestra y se usa para la afinidad en eventos corporativos. */
+  company: string | null;
+  job_title: string | null;
+  interests: ProInterest[];
+  /** Slug público de LinkedIn (linkedin.com/in/<slug>), en minúsculas. */
+  linkedin_username: string | null;
   is_verified: boolean;
   created_at: ISODate;
 }
@@ -90,6 +127,8 @@ export interface LineupSlot {
   ends_at: ISODate;
   genre?: MusicGenre;
   is_headliner?: boolean;
+  /** Sala o escenario (agenda de eventos corporativos). */
+  room?: string;
 }
 
 /** Sector del plano en coordenadas relativas 0-100 (rectángulo). */
@@ -143,6 +182,8 @@ export interface RougeEvent {
   id: UUID;
   slug: string;
   name: string;
+  /** Fiesta / boliche o evento corporativo (vocabulario, moods y afinidad). */
+  event_type: EventType;
   description: string;
   venue_name: string;
   venue_map_url: string | null; // null → plano vectorial desde venue_layout_json

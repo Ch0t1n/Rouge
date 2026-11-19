@@ -70,6 +70,10 @@ export const upsertProfile = (userId: UUID, input: A.ProfileInput): Command<Roug
       music_genres: p.music_genres,
       spotify_embed_url: p.spotify_embed_url,
       instagram_username: p.instagram_username,
+      company: p.company,
+      job_title: p.job_title,
+      interests: p.interests,
+      linkedin_username: p.linkedin_username,
     };
     const existed = before.profiles.some((x) => x.id === p.id);
     if (existed) must(await sb.from("profiles").update(fields).eq("id", p.id));
@@ -457,6 +461,7 @@ export const upsertEvent = (input: Parameters<typeof A.upsertEvent>[1]): Command
       id: e.id,
       slug: e.slug,
       name: e.name,
+      event_type: e.event_type,
       description: e.description,
       venue_name: e.venue_name,
       venue_map_url: e.venue_map_url,
@@ -646,7 +651,7 @@ export const duplicateEvent = (eventId: UUID, startsAt: string): Command<{ event
   remote: async (sb, { event: e, rules }, before) => {
     must(
       await sb.from("events").insert({
-        id: e.id, slug: e.slug, name: e.name, description: e.description, venue_name: e.venue_name, venue_map_url: e.venue_map_url,
+        id: e.id, slug: e.slug, name: e.name, event_type: e.event_type, description: e.description, venue_name: e.venue_name, venue_map_url: e.venue_map_url,
         venue_layout_json: e.venue_layout_json, lineup_json: e.lineup_json, cover_url: e.cover_url, starts_at: e.starts_at, ends_at: e.ends_at,
         lobby_opens_at: e.lobby_opens_at, lobby_expires_at: e.lobby_expires_at, max_capacity: e.max_capacity, master_invite_code: e.master_invite_code,
         created_by: e.created_by, brand_id: e.brand_id, logo_url: e.logo_url, theme_primary: e.theme_primary, theme_accent: e.theme_accent,

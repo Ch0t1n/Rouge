@@ -9,6 +9,7 @@ import { useNow, useRouge } from "@/lib/store/RougeContext";
 import { cn, formatTime } from "@/lib/utils";
 import { Avatar } from "@/components/ui/avatar";
 import { BrandLogo } from "@/components/brand/BrandTheme";
+import { copyFor, eventTypeOf } from "@/lib/engine/eventType";
 import { eventTheme } from "@/lib/engine/branding";
 
 /** Número que "cuenta" hasta el valor nuevo (efecto marcador). */
@@ -43,6 +44,9 @@ export default function LiveWallPage() {
   const { event, metrics, lineup, flash, lastRaffle } = data;
   const joinUrl = `${origin}/join/${event.slug}`;
   const theme = eventTheme(state, event.id);
+  const corporate = eventTypeOf(event) === "corporate";
+  const copy = copyFor(eventTypeOf(event));
+  const upcoming = [...event.lineup_json].filter((sl) => +new Date(sl.ends_at) > now).sort((a, b) => +new Date(a.starts_at) - +new Date(b.starts_at));
 
   useEffect(() => {
     setOrigin(window.location.origin);
@@ -118,29 +122,30 @@ export default function LiveWallPage() {
 
         {/* Matches */}
         <section className="col-span-5 flex min-h-0 flex-col justify-center overflow-hidden rounded-[2vw] border border-rouge/40 bg-rouge/[0.07] p-[2.4vw] shadow-[0_0_80px_rgb(var(--c-rouge)/0.25)]">
-          <p className="font-display text-[1.6vw] font-bold uppercase tracking-[0.3em] text-rouge">Matches de la noche</p>
+          <p className="font-display text-[1.6vw] font-bold uppercase tracking-[0.3em] text-rouge">{corporate ? "Contactos nuevos hoy" : "Matches de la noche"}</p>
           <p className="font-display text-[min(13vw,24vh)] font-bold leading-[0.85] tabular-nums text-glow-rouge">{matches}</p>
           <p className="mt-[1vw] text-[1.6vw] text-primary/85">
-            🔥 +{data.matchesLastHour} en la última hora · {attendees} personas en el lobby
+            {corporate ? "🤝" : "🔥"} +{data.matchesLastHour} en la última hora · {attendees} personas en el lobby
           </p>
         </section>
 
         {/* DJ + Squad */}
         <section className="col-span-4 grid min-h-0 grid-rows-2 gap-[min(1.6vw,2.4vh)]">
           <div className="flex min-h-0 flex-col justify-center overflow-hidden rounded-[2vw] border border-white/10 bg-surface/80 px-[2vw] py-[min(1.6vw,2.4vh)]">
-            <p className="font-display text-[1.2vw] font-bold uppercase tracking-[0.3em] text-muted">🔊 En cabina</p>
-            <p className="mt-[0.4vh] truncate font-display text-[min(2.4vw,4.4vh)] font-bold leading-[1.15]">{lineup.current?.artist ?? "Cabina en pausa"}</p>
+            <p className="font-display text-[1.2vw] font-bold uppercase tracking-[0.3em] text-muted">{corporate ? "🎤 Ahora" : "🔊 En cabina"}</p>
+            <p className="mt-[0.4vh] truncate font-display text-[min(2.4vw,4.4vh)] font-bold leading-[1.15]">{lineup.current?.artist ?? (corporate ? "Pausa" : "Cabina en pausa")}</p>
+            {corporate && lineup.current?.room && <p className="truncate text-[1.4vw] text-primary/85">📍 {lineup.current.room}</p>}
             {lineup.next && <p className="mt-[0.5vw] text-[1.4vw] text-muted">Sigue: {lineup.next.artist} · {formatTime(lineup.next.starts_at)}</p>}
-            <div className="mt-[1.2vh] flex h-[min(2.5vw,3.5vh)] shrink-0 items-end gap-[0.4vw]" aria-hidden>
+            {!corporate && <div className="mt-[1.2vh] flex h-[min(2.5vw,3.5vh)] shrink-0 items-end gap-[0.4vw]" aria-hidden>
               {Array.from({ length: 18 }, (_, i) => (
                 <span key={i} className="w-[0.6vw] origin-bottom rounded-full bg-rouge animate-eq-bar" style={{ height: "100%", animationDelay: `${(i * 0.13) % 0.9}s` }} />
               ))}
-            </div>
+            </div>}
           </div>
           <div className="flex min-h-0 flex-col justify-center overflow-hidden rounded-[2vw] border border-squad/40 bg-squad/[0.07] p-[2vw]">
             <p className="font-display text-[1.2vw] font-bold uppercase tracking-[0.3em] text-squad">👑 Squad más grande</p>
             <p className="mt-[0.5vw] truncate font-display text-[2.6vw] font-bold leading-tight text-glow-squad">{metrics.biggestSquad?.name ?? "¡Armá el tuyo!"}</p>
-            <p className="text-[1.6vw] text-primary/85">{metrics.biggestSquad ? `${metrics.biggestSquad.size} integrantes · ${metrics.squads} squads en total` : "Squads de 4+ desbloquean tragos"}</p>
+            <p className="text-[1.6vw] text-primary/85">{metrics.biggestSquad ? `${metrics.biggestSquad.size} integrantes · ${metrics.squads} squads en total` : (corporate ? "Equipos de 4+ desbloquean un café o trago" : "Squads de 4+ desbloquean tragos")}</p>
           </div>
         </section>
 
@@ -151,12 +156,25 @@ export default function LiveWallPage() {
             {origin && <QRCodeSVG value={joinUrl} size={512} level="M" bgColor="#FFFFFF" fgColor="#070709" className="size-[min(17vw,38vh)]" aria-label="QR para entrar al lobby" />}
           </div>
           <p className="mt-[1vw] font-display text-[1.3vw] font-semibold text-vip">{joinUrl.replace(/^https?:\/\//, "")}</p>
-          <p className="mt-[0.4vw] text-[1.1vw] text-muted">Conectá con gente afín · encontrá a tu Squad · pedí sin fila</p>
+          <p className="mt-[0.4vw] text-[1.1vw] text-muted">{corporate ? "Agenda · gente para conocer · catering sin fila" : "Conectá con gente afín · encontrá a tu Squad · pedí sin fila"}</p>
         </section>
 
-        {/* Temas */}
+        {/* Temas (fiesta) o agenda (corporativo) */}
         <section className="col-span-4 min-h-0 overflow-hidden rounded-[2vw] border border-white/10 bg-surface/80 p-[2vw]">
-          <p className="font-display text-[1.2vw] font-bold uppercase tracking-[0.3em] text-muted">🎶 Lo que pide la pista</p>
+          <p className="font-display text-[1.2vw] font-bold uppercase tracking-[0.3em] text-muted">{corporate ? `🗓️ ${copy.lineup}` : "🎶 Lo que pide la pista"}</p>
+          {corporate ? (
+            <ol className="mt-[1.2vh] space-y-[1vh]">
+              {upcoming.slice(0, 3).map((sl) => (
+                <li key={sl.id} className="flex items-center gap-[1vw]">
+                  <span className="w-[5vw] shrink-0 font-display text-[min(1.5vw,2.8vh)] font-bold tabular-nums text-rouge">{formatTime(sl.starts_at)}</span>
+                  <span className="min-w-0 flex-1 truncate">
+                    <span className="font-display text-[min(1.6vw,3vh)] font-bold">{sl.artist}</span>
+                    {sl.room && <span className="text-[min(1.1vw,2vh)] text-muted"> · {sl.room}</span>}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          ) : (
           <ol className="mt-[1.2vh] space-y-[1vh]">
             {metrics.topSongs.slice(0, 3).map((s, i) => (
               <li key={s.id} className="flex items-center gap-[1vw]">
@@ -169,6 +187,7 @@ export default function LiveWallPage() {
               </li>
             ))}
           </ol>
+          )}
         </section>
 
         {/* Anuncios rotativos */}

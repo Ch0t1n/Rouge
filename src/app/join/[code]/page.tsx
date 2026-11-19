@@ -12,6 +12,7 @@ import { getAttendee, getProfile, lobbyPhase, squadMembers } from "@/lib/engine/
 import { useNow, useRouge } from "@/lib/store/RougeContext";
 import { cn, formatDateTime, formatTime } from "@/lib/utils";
 import { MoodPicker } from "@/components/event/MoodPicker";
+import { copyFor, eventTypeOf } from "@/lib/engine/eventType";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -20,7 +21,7 @@ import { eventTheme, resolveTheme, type EventTheme } from "@/lib/engine/branding
 import type { Brand } from "@/lib/types";
 
 interface Preview {
-  event: Pick<RougeEvent, "id" | "name" | "description" | "venue_name" | "starts_at" | "ends_at" | "lineup_json" | "lobby_opens_at" | "lobby_expires_at" | "max_capacity">;
+  event: Pick<RougeEvent, "id" | "name" | "event_type" | "description" | "venue_name" | "starts_at" | "ends_at" | "lineup_json" | "lobby_opens_at" | "lobby_expires_at" | "max_capacity">;
   via: EventAttendee["joined_via"];
   attendees: number;
   codeUsedByOther: boolean;
@@ -117,6 +118,8 @@ export default function JoinPage() {
   }
 
   const { event, via, squad } = preview;
+  const type = eventTypeOf(event);
+  const copy = copyFor(type);
   const phase = lobbyPhase(event as RougeEvent, now);
   const attendees = preview.attendees;
   const usedByOther = preview.codeUsedByOther;
@@ -178,6 +181,7 @@ export default function JoinPage() {
             {event.lineup_json.map((sl) => (
               <span key={sl.id} className={cn("glass-pill shrink-0 whitespace-nowrap", sl.is_headliner && "border-rouge/50 text-rouge")}>
                 {formatTime(sl.starts_at)} · {sl.artist}
+                {sl.room ? ` · ${sl.room}` : ""}
               </span>
             ))}
           </div>
@@ -189,7 +193,7 @@ export default function JoinPage() {
           {squadCreator && <Avatar profile={squadCreator} size={44} ring="squad" />}
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold">
-              {squadCreator?.full_name.split(" ")[0] ?? squad.creatorFirstName ?? "Tu amiga"} te invitó a <span className="text-squad">{squad.name}</span>
+              {squadCreator?.full_name.split(" ")[0] ?? squad.creatorFirstName ?? (type === "corporate" ? "Tu equipo" : "Tu amiga")} te invitó a <span className="text-squad">{squad.name}</span>
             </p>
             <p className="text-xs text-muted">
               <UsersRound className="mr-1 inline size-3.5" />
@@ -206,14 +210,14 @@ export default function JoinPage() {
         </div>
       ) : mode === "supabase" && !signedIn ? (
         <div className="space-y-3 text-center">
-          <p className="text-sm text-muted">Ingresá con tu email para entrar al lobby. Tu perfil sirve para todas tus fiestas.</p>
+          <p className="text-sm text-muted">Ingresá con tu email para entrar al lobby. Tu perfil sirve para todos tus eventos.</p>
           <Link href={`/login?next=${encodeURIComponent(`/join/${code}`)}`} className={buttonVariants({ size: "lg", block: true })}>
             Ingresar y entrar
           </Link>
         </div>
       ) : !me ? (
         <div className="space-y-3 text-center">
-          <p className="text-sm text-muted">Creá tu perfil una sola vez y usalo en todas tus fiestas.</p>
+          <p className="text-sm text-muted">Creá tu perfil una sola vez y usalo en todos tus eventos.</p>
           <Link href={`/onboarding?next=${encodeURIComponent(`/join/${code}`)}`} className={buttonVariants({ size: "lg", block: true })}>
             Crear mi perfil y entrar
           </Link>
@@ -221,12 +225,14 @@ export default function JoinPage() {
       ) : (
         <section className="space-y-4">
           <div>
-            <h2 className="text-lg">{existing ? "Ya estás adentro · ¿cambió tu mood?" : `${me.full_name.split(" ")[0]}, ¿cómo venís hoy?`}</h2>
-            <p className="text-sm text-muted">Tu perfil ya está listo. Solo elegí tu Mood de la noche.</p>
+            <h2 className="text-lg">
+              {existing ? (type === "corporate" ? "Ya estás adentro · ¿cambió lo que buscás?" : "Ya estás adentro · ¿cambió tu mood?") : type === "corporate" ? `${me.full_name.split(" ")[0]}, ¿qué venís a buscar hoy?` : `${me.full_name.split(" ")[0]}, ¿cómo venís hoy?`}
+            </h2>
+            <p className="text-sm text-muted">Tu perfil ya está listo. Solo elegí {type === "corporate" ? "qué venís a buscar" : "tu Mood de la noche"}.</p>
           </div>
-          <MoodPicker value={mood} onChange={setMood} />
+          <MoodPicker value={mood} onChange={setMood} type={type} />
           <Button block size="lg" disabled={!mood} onClick={enter}>
-            <DoorOpen /> {existing ? "Volver al lobby" : "Entrar a la fiesta"}
+            <DoorOpen /> {existing ? "Volver al lobby" : type === "corporate" ? "Entrar al evento" : "Entrar a la fiesta"}
           </Button>
           {via === "single_use_code" && !existing && <p className="text-center text-xs text-muted">Este código es personal: queda asociado a tu perfil al entrar.</p>}
         </section>

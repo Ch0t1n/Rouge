@@ -8,7 +8,7 @@ import { computeAffinity } from "@/lib/engine/affinity";
 import { blockUser } from "@/lib/engine/actions";
 import { getAttendee, isBlockedBetween } from "@/lib/engine/selectors";
 import { useRouge } from "@/lib/store/RougeContext";
-import { useRequireProfile } from "@/lib/store/hooks";
+import { useEventType, useRequireProfile } from "@/lib/store/hooks";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ProfileView } from "@/components/profile/ProfileView";
 import { ConnectActions } from "@/components/lobby/ConnectActions";
@@ -23,6 +23,7 @@ export default function UserProfilePage() {
   const me = useRequireProfile();
   const [menu, setMenu] = useState(false);
   const [confirm, setConfirm] = useState(false);
+  const { type } = useEventType();
   const handle = decodeURIComponent(username ?? "").replace(/^@/, "").toLowerCase();
   const isSelf = !!me && handle === me.username;
   useEffect(() => {
@@ -51,7 +52,7 @@ export default function UserProfilePage() {
   const eventId = state.active_event_id;
   const theirs = getAttendee(state, eventId, other.id);
   const mine = getAttendee(state, eventId, me.id);
-  const affinity = theirs ? computeAffinity(me, mine, other, theirs) : null;
+  const affinity = theirs ? computeAffinity(me, mine, other, theirs, Date.now(), type) : null;
 
   const doBlock = async () => {
     const r = await exec(C.blockUser(me.id, other.id));
@@ -74,7 +75,7 @@ export default function UserProfilePage() {
         }
       />
       <div className="px-4">
-        <ProfileView profile={other} mood={theirs && !theirs.ghost_mode ? theirs.mood_tag : null} affinity={affinity} actions={
+        <ProfileView type={type} profile={other} mood={theirs && !theirs.ghost_mode ? theirs.mood_tag : null} affinity={affinity} actions={
             <div className="space-y-2">
               <ConnectActions target={other} />
               <InviteToSquadButton target={other} />

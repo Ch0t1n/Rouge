@@ -4,7 +4,8 @@ import * as C from "@/lib/store/commands";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ChevronDown, Ghost, Inbox, MapPin, Moon, SlidersHorizontal, X } from "lucide-react";
-import { MOOD_TAGS, MUSIC_GENRES, type MoodTag } from "@/lib/types";
+import { MUSIC_GENRES, PRO_INTERESTS, type MoodTag } from "@/lib/types";
+import { copyFor, eventTypeOf, moodMeta, moodsFor } from "@/lib/engine/eventType";
 import { updateAttendeeSettings } from "@/lib/engine/actions";
 import { activeFilterCount, EMPTY_FILTERS, lobbyGrid, type GridFilters } from "@/lib/engine/grid";
 import { activeEvent, getAttendee, inboxOf, lobbyPhase } from "@/lib/engine/selectors";
@@ -43,15 +44,18 @@ function Lobby() {
 
   const grid = useMemo(() => lobbyGrid(state, event.id, meId, filters, now), [state, event.id, meId, filters, now]);
   const pending = inboxOf(state, meId, event.id).length;
-  const mood = MOOD_TAGS.find((m) => m.id === attendee?.mood_tag);
+  const mood = moodMeta(attendee?.mood_tag);
   const nFilters = activeFilterCount(filters);
+  const type = eventTypeOf(event);
+  const copy = copyFor(type);
+  const tagOptions: readonly string[] = type === "corporate" ? PRO_INTERESTS : MUSIC_GENRES;
 
   // ── Estados sin grilla ────────────────────────────────────────────
   if (phase === "expired") {
     return (
-      <Empty icon={<Moon className="size-7" />} title="El lobby cerró 🌙" text="La grilla y el plano se apagaron, pero tus matches y chats siguen abiertos para siempre.">
+      <Empty icon={<Moon className="size-7" />} title="El lobby cerró 🌙" text={`La grilla y el plano se apagaron, pero tus ${copy.matches.toLowerCase()} y chats siguen abiertos para siempre.`}>
         <Link href="/inbox" className={buttonVariants({ size: "lg" })}>
-          Ver mis matches
+          Ver mis {copy.matches.toLowerCase()}
         </Link>
       </Empty>
     );
@@ -74,7 +78,7 @@ function Lobby() {
       notify({
         tone: v ? "squad" : "rouge",
         title: v ? "👻 Modo Solo Amigos activado" : "✨ Volviste a la grilla",
-        description: v ? "Nadie nuevo te ve en la grilla. Tu Squad, tus matches, el plano, la barra y los sorteos siguen funcionando." : "Ya aparecés para conectar.",
+        description: v ? `Nadie nuevo te ve en la grilla. Tu Squad, tus ${copy.matches.toLowerCase()}, el plano, la barra y los sorteos siguen funcionando.` : "Ya aparecés para conectar.",
       });
   };
 
@@ -112,9 +116,9 @@ function Lobby() {
               <Ghost className="size-7" />
             </span>
             <h2 className="mt-4 text-xl">Estás en Modo Solo Amigos</h2>
-            <p className="mt-2 text-sm text-muted">Nadie nuevo te ve en la grilla y no recibís conexiones nuevas. Ideal si estás en pareja o venís a bailar con tu Squad.</p>
+            <p className="mt-2 text-sm text-muted">Nadie nuevo te ve en la grilla y no recibís conexiones nuevas. {copy.ghostHint}</p>
             <ul className="mt-4 space-y-1 text-left text-sm text-primary/85">
-              <li>✓ Tu Squad y tus matches te siguen viendo</li>
+              <li>✓ Tu Squad y tus {copy.matches.toLowerCase()} te siguen viendo</li>
               <li>✓ Plano, Barra Express, perks y sorteos activos</li>
               <li>✓ Podés aceptar solicitudes que ya tenías</li>
             </ul>
@@ -127,7 +131,7 @@ function Lobby() {
             {/* Mood + filtros */}
             <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4">
               <button type="button" onClick={() => setMoodOpen(true)} className="glass-pill inline-flex min-h-[40px] shrink-0 items-center gap-1.5 px-3 text-xs">
-                {mood ? `${mood.emoji} ${mood.label}` : "Elegí tu mood"} <ChevronDown className="size-3.5" />
+                {mood ? `${mood.emoji} ${mood.label}` : type === "corporate" ? "¿Qué venís a buscar?" : "Elegí tu mood"} <ChevronDown className="size-3.5" />
               </button>
               <button
                 type="button"
@@ -152,7 +156,7 @@ function Lobby() {
             </div>
 
             <div className="flex items-baseline justify-between">
-              <h2 className="text-lg">{phase === "afterglow" ? "Los que vibraron con vos" : "Afines a vos esta noche"}</h2>
+              <h2 className="text-lg">{phase === "afterglow" ? (type === "corporate" ? "Los que coincidieron con vos" : "Los que vibraron con vos") : copy.gridTitle}</h2>
               <span className="text-xs text-muted">{grid.length} personas</span>
             </div>
 
@@ -164,11 +168,11 @@ function Lobby() {
             ) : (
               <div className="grid grid-cols-2 gap-3">
                 {grid.map((card, i) => (
-                  <GridCard key={card.profile.id} card={card} priority={i < 4} onConnect={() => connect(card.profile)} />
+                  <GridCard key={card.profile.id} card={card} type={type} priority={i < 4} onConnect={() => connect(card.profile)} />
                 ))}
               </div>
             )}
-            <p className="pt-2 text-center text-[11px] text-muted/70">Ordenado por afinidad musical, mood y actividad reciente.</p>
+            <p className="pt-2 text-center text-[11px] text-muted/70">{copy.gridHint}</p>
           </>
         )}
 
@@ -186,8 +190,9 @@ function Lobby() {
       </div>
 
       {/* Mood */}
-      <BottomSheet open={moodOpen} onClose={() => setMoodOpen(false)} title="¿Cómo venís ahora?" description="Tu mood se ve en tu tarjeta y ajusta la afinidad.">
+      <BottomSheet open={moodOpen} onClose={() => setMoodOpen(false)} title={copy.moodQuestion} description={copy.moodHint}>
         <MoodPicker
+          type={type}
           value={attendee.mood_tag}
           onChange={(m: MoodTag) => {
             setSetting({ mood_tag: m });
@@ -211,15 +216,15 @@ function Lobby() {
         }
       >
         <div className="space-y-5">
-          <FilterGroup title="Género musical">
-            {MUSIC_GENRES.map((g) => (
-              <Chip key={g} on={filters.genres.includes(g)} onClick={() => setFilters((f) => ({ ...f, genres: f.genres.includes(g) ? f.genres.filter((x) => x !== g) : [...f.genres, g] }))}>
+          <FilterGroup title={copy.tagsTitle}>
+            {tagOptions.map((g) => (
+              <Chip key={g} on={filters.tags.includes(g)} onClick={() => setFilters((f) => ({ ...f, tags: f.tags.includes(g) ? f.tags.filter((x) => x !== g) : [...f.tags, g] }))}>
                 {g}
               </Chip>
             ))}
           </FilterGroup>
-          <FilterGroup title="Mood de la noche">
-            {MOOD_TAGS.map((m) => (
+          <FilterGroup title={copy.moodTitle}>
+            {moodsFor(type).map((m) => (
               <Chip key={m.id} on={filters.moods.includes(m.id)} onClick={() => setFilters((f) => ({ ...f, moods: f.moods.includes(m.id) ? f.moods.filter((x) => x !== m.id) : [...f.moods, m.id] }))}>
                 {m.emoji} {m.label}
               </Chip>

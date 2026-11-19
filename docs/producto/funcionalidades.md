@@ -23,7 +23,8 @@ Cada función existe en los dos modos de la app:
 [18. Demo en vivo](#18-demo-en-vivo-para-anfitriones) · [19. Marca y personalización](#19-marca-y-personalización) ·
 [20. Cobros con Mercado Pago](#20-cobros-con-mercado-pago) · [21. Cuentas de la mesa](#21-cuentas-de-la-mesa) ·
 [22. Gestión del evento](#22-gestión-del-evento) · [23. Ticket de comanda](#23-ticket-de-comanda) ·
-[24. RRPP](#24-rrpp) · [25. Puerta](#25-puerta) · [26. Sitio público y de organizadores](#26-sitio-público-y-de-organizadores)
+[24. RRPP](#24-rrpp) · [25. Puerta](#25-puerta) · [26. Sitio público y de organizadores](#26-sitio-público-y-de-organizadores) ·
+[27. Eventos corporativos](#27-eventos-corporativos)
 
 ---
 
@@ -240,6 +241,10 @@ con link a `NEXT_PUBLIC_DEMO_URL`.
   sola pantalla**, sincronizados en vivo (ej. el rescate tocado en el teléfono aparece al instante en Seguridad).
   Pasos con ←/→, cambio de rol del panel, Pantalla LED y **Reiniciar** la fiesta al estado inicial.
 - Pensado para notebook (y TV por HDMI). La sincronización es entre pestañas del mismo navegador.
+- **Dos escenarios** ("¿A quién se la mostrás?"): 🪩 **Fiesta / boliche** (*ROUGE Night × Bresh Sábado*) o
+  💼 **Evento corporativo** (*Kickoff 2027 · Grupo Vértice*, empresa ficticia). Cada uno tiene su guion de 7 minutos,
+  sus accesos y sus nombres de rol (en el corporativo: Organizadora, Catering; sin RRPP). Cambiar de escenario
+  re-siembra la demo; *Reiniciar* mantiene el escenario elegido. Ver [Eventos corporativos](#27-eventos-corporativos).
 
 ## 19. Marca y personalización
 
@@ -339,3 +344,30 @@ cliente y para la barra. Es un comprobante interno: la factura la emite cada com
 - **`/organizadores`** — para dueños de boliches y productoras: barra y cobros, panel, CRM, Text Blasts, LED, RRPP,
   puerta, planes y preguntas de negocio. **Oculto:** no aparece en buscadores ni se enlaza desde `/`; se comparte por
   link junto con la [demo](#18-demo-en-vivo-para-anfitriones).
+
+## 27. Eventos corporativos
+
+Cada evento tiene un **tipo** (*Eventos y accesos* → *Tipo de evento*): 🪩 **Fiesta / boliche** (por defecto) o
+💼 **Corporativo** (kickoffs, convenciones, after offices, lanzamientos). La mecánica es la misma (lobby, conexiones,
+Squad y rescate, plano, Barra Express, perks, sorteos, LED, CRM); cambian el vocabulario, los moods y la afinidad.
+
+| | Fiesta / boliche | Corporativo |
+|---|---|---|
+| Mood del check-in | Voy con amigos, En la barra, Buscando after… | **Busco contactos**, Vengo con mi equipo, Quiero conocer otras áreas, Busco clientes o proveedores, Estoy sumando gente, Abierto a charlar |
+| Afinidad (60 % del orden) | Géneros musicales en común | **Áreas e intereses** en común (Tecnología, Producto, Diseño, Marketing, Ventas, Finanzas, RR. HH., Operaciones, Data e IA, Legal, Sustentabilidad, Emprendimiento) |
+| Tarjeta de la grilla | Edad, % 🎵, zona o géneros, ♥ | **Cargo · empresa**, % 🤝, "sumar contacto" |
+| Conexión mutua | Match | **Contacto** ("¡Nuevo contacto!") |
+| Line-up | DJs, "En cabina", pedir temas | **Agenda** con sala por actividad, "Ahora" / "Sigue" y la agenda completa en una hoja |
+| Pantalla LED | Matches de la noche, temas pedidos | **Contactos nuevos hoy**, charla actual con sala, próximas 3 actividades |
+| Panel | Embudo de la noche, temas más votados | Embudo del evento, agenda; CRM con **empresa, cargo e intereses** (búsqueda y CSV) |
+| Text Blasts | Plantillas de la noche | Plantillas de agenda, networking, sponsor, sorteo y after office |
+
+**Perfil profesional (opcional, para todos).** Empresa, cargo, LinkedIn (se pega el link o el slug; se guarda
+`linkedin.com/in/<slug>`) y hasta 5 áreas e intereses. Se carga en *Editar perfil* o en el onboarding: si la
+invitación es de un evento corporativo, el paso 3 pasa a ser *A qué te dedicás* (la música queda opcional). Se ve en
+el perfil ("Cargo · Empresa", botón de LinkedIn, áreas en común).
+
+**Pendiente para corporativos** (ver `CHANGELOG.md`): lista de invitados por CSV, acreditación con credencial
+impresa, barra libre / vouchers pagados por la empresa, encuestas y NPS, sponsors con leads, reporte final y
+factura A.
+

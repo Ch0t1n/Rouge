@@ -8,10 +8,10 @@ TypeScript (`src/lib/types.ts`) son su espejo 1:1.
 
 | Tabla | Contenido |
 |---|---|
-| `profiles` | Perfil persistente (nombre, @username, nacimiento +18, género, teléfono E.164 privado, bio, fotos, loop, géneros, Spotify, Instagram, verificado). |
+| `profiles` | Perfil persistente (nombre, @username, nacimiento +18, género, teléfono E.164 privado, bio, fotos, loop, géneros, Spotify, Instagram, verificado) y perfil profesional opcional (`company`, `job_title`, `interests` ≤ 5 del catálogo, `linkedin_username`). |
 | `instagram_accounts` | Conexión de Instagram con su token. **Solo servidor** (RLS sin políticas). |
 | `user_blocks` | Lista negra por perfil o por teléfono. |
-| `events` | Evento: horarios, ventana del lobby, cupo, plano, line-up, link maestro, creador. |
+| `events` | Evento: tipo (`event_type`: `nightlife` / `corporate`), horarios, ventana del lobby, cupo, plano, line-up o agenda (con `room` por actividad), link maestro, creador. |
 | `event_staff` | Equipo del evento y su rol (`owner`, `manager`, `bartender`, `waiter`, `security`). |
 | `event_invite_codes` | Códigos de 1 uso: entrada externa (`external_ref`, única por evento), etiqueta, origen (panel / API), anulación. |
 | `api_keys` | Claves de la API v1 (solo el SHA-256; nombre, prefijo visible, alcance de evento, permisos, último uso, revocada). |

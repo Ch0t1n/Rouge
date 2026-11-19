@@ -146,6 +146,7 @@ describe("contrato comandos ↔ schema.sql", () => {
 
   const cases: [string, () => Promise<{ calls: Call[] }>][] = [
     ["upsertProfile (update)", () => runRemote(C.upsertProfile(ME, { bio: "Hola" }), s0())],
+    ["upsertProfile (perfil profesional)", () => runRemote(C.upsertProfile(ME, { company: "Grupo Vértice", job_title: "UX", interests: ["Diseño"], linkedin_username: "sofi-ux" }), s0())],
     ["upsertProfile (insert)", () => runRemote(C.upsertProfile("nuevo", { username: "nuevo.user", full_name: "Nuevo", birth_date: "2000-01-01", phone: "11 3333 2222" }), s0())],
     ["blockUser", () => runRemote(C.blockUser(ME, id(8)), s0())],
     ["blockPhone", () => runRemote(C.blockPhone(ME, "+1 415 555 0100"), s0())],
@@ -181,6 +182,7 @@ describe("contrato comandos ↔ schema.sql", () => {
     ["sendBlast", () => runRemote(C.sendBlast(EV, { title: "2x1", message: "Barra", segment: { kind: "squad_min_size", min: 4 }, flashMinutes: 20 }), st(), { send_blast: 4 })],
     ["upsertEvent (nuevo)", () => runRemote(C.upsertEvent({ name: "Neon Sunday", starts_at: new Date(NOW + 72e5).toISOString(), ends_at: new Date(NOW + 9e6).toISOString() }), s0())],
     ["upsertEvent (edición)", () => runRemote(C.upsertEvent({ ...s0().events[0], name: "Otro nombre" }), st())],
+    ["upsertEvent (corporativo)", () => runRemote(C.upsertEvent({ name: "Kickoff 2027", event_type: "corporate", starts_at: new Date(NOW + 72e5).toISOString(), ends_at: new Date(NOW + 9e6).toISOString() }), s0())],
     ["generateInviteCodes", () => runRemote(C.generateInviteCodes(EV, 5), st(), { generate_invite_codes: [] })],
     ["setStaffRole", () => runRemote(C.setStaffRole(EV, "@" + s0().profiles.find((p) => p.id === ME)!.username, "bartender"), st(), { set_staff_role: ME })],
     ["revokeInviteCode", () => runRemote(C.revokeInviteCode(s0().event_invite_codes.find((c) => !c.is_used)!), st())],

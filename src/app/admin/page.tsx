@@ -5,8 +5,9 @@ import { useMemo } from "react";
 import { ArrowRight, CalendarCog, Gift, Heart, MapPin, Martini, Megaphone, Ticket, Timer, TrendingUp, Tv, Users, UsersRound } from "lucide-react";
 import { crmRows, eventMetrics, SMART_TAG_META } from "@/lib/engine/analytics";
 import { activeEvent, lobbyPhase, squadOf } from "@/lib/engine/selectors";
+import { eventTypeOf } from "@/lib/engine/eventType";
 import { useNow, useRouge } from "@/lib/store/RougeContext";
-import { cn, formatMoney, whatsappLink } from "@/lib/utils";
+import { cn, formatMoney, formatTime, whatsappLink } from "@/lib/utils";
 import { AdminHeader, Panel } from "@/components/admin/AdminChrome";
 import { SecurityPanel } from "@/components/admin/SecurityPanel";
 import { permissionForPath } from "@/lib/engine/roles";
@@ -19,6 +20,7 @@ export default function AdminOverviewPage() {
   const { state, role, can } = useRouge();
   const now = useNow(15_000);
   const event = activeEvent(state)!;
+  const corporate = eventTypeOf(event) === "corporate";
   const m = useMemo(() => eventMetrics(state, event.id, now), [state, event.id, now]);
   const rows = useMemo(() => crmRows(state, event.id), [state, event.id]);
   const codes = state.event_invite_codes.filter((c) => c.event_id === event.id);
@@ -33,14 +35,14 @@ export default function AdminOverviewPage() {
   const funnel = [
     { label: "Entraron a la app", value: m.attendees, color: "bg-rouge" },
     { label: "Armaron o se sumaron a un Squad", value: inSquad, color: "bg-squad" },
-    { label: "Hicieron al menos un Match", value: withMatch, color: "bg-rouge" },
-    { label: "Compraron por Barra Express", value: buyers, color: "bg-vip" },
+    { label: corporate ? "Sumaron al menos un contacto nuevo" : "Hicieron al menos un Match", value: withMatch, color: "bg-rouge" },
+    { label: corporate ? "Pidieron por el catering de la app" : "Compraron por Barra Express", value: buyers, color: "bg-vip" },
   ];
 
   const kpis = [
     { label: "Ventas por la app", value: formatMoney(m.barRevenue), sub: `Ticket promedio ${formatMoney(avgTicket)} · ${orders.length} pedidos`, icon: TrendingUp, tone: "vip" },
     { label: "Asistentes en la app", value: m.attendees, sub: `${Math.round((m.attendees / event.max_capacity) * 100)}% del cupo · ${Math.round(m.femaleShare * 100)}% público femenino`, icon: Users, tone: "rouge" },
-    { label: "Matches de la noche", value: m.matches, sub: `${m.icebreakersSent} rompehielos · ${m.pendingConnections} solicitudes pendientes`, icon: Heart, tone: "rouge" },
+    { label: corporate ? "Contactos nuevos" : "Matches de la noche", value: m.matches, sub: `${m.icebreakersSent} rompehielos · ${m.pendingConnections} solicitudes pendientes`, icon: Heart, tone: "rouge" },
     { label: "Squads activos", value: m.squads, sub: `${m.usersInSquads} personas · el más grande: ${m.biggestSquad?.size ?? 0}`, icon: UsersRound, tone: "squad" },
     { label: "Filas evitadas", value: `${Math.round((orders.length * QUEUE_MINUTES_SAVED) / 60)} h`, sub: `≈${QUEUE_MINUTES_SAVED} min por pedido · ${m.openOrders} pedidos abiertos`, icon: Timer, tone: "squad" },
     { label: "Perks canjeados", value: `${m.perksRedeemed}/${m.perksIssued}`, sub: `${m.activePins} pines activos en el plano`, icon: Gift, tone: "vip" },
@@ -113,7 +115,7 @@ export default function AdminOverviewPage() {
       </section>
 
       <section className="grid gap-6 xl:grid-cols-3">
-        <Panel title="Embudo de la noche" className="xl:col-span-2">
+        <Panel title={corporate ? "Embudo del evento" : "Embudo de la noche"} className="xl:col-span-2">
           <ul className="space-y-3">
             {funnel.map((f) => (
               <li key={f.label}>
@@ -129,7 +131,11 @@ export default function AdminOverviewPage() {
               </li>
             ))}
           </ul>
-          <p className="mt-4 text-xs text-muted">Cada paso es una persona que conectó, no se perdió o consumió sin fila: lo que hace que vuelvan a comprar entrada.</p>
+          <p className="mt-4 text-xs text-muted">
+            {corporate
+              ? "Cada paso es una persona que conoció gente nueva, se sumó a un equipo o consumió sin fila: lo que mide si el evento cumplió su objetivo."
+              : "Cada paso es una persona que conectó, no se perdió o consumió sin fila: lo que hace que vuelvan a comprar entrada."}
+          </p>
         </Panel>
 
         <Panel title="Módulos">
@@ -184,7 +190,25 @@ export default function AdminOverviewPage() {
           </div>
         </Panel>
 
-        <Panel title="Temas más votados">
+        <Panel title={corporate ? "Agenda" : "Temas más votados"}>
+          {corporate ? (
+            <ol className="space-y-3">
+              {[...event.lineup_json]
+                .sort((a, b) => +new Date(a.starts_at) - +new Date(b.starts_at))
+                .map((sl) => {
+                  const live = now >= +new Date(sl.starts_at) && now < +new Date(sl.ends_at);
+                  return (
+                    <li key={sl.id} className={cn("flex items-center gap-3", now >= +new Date(sl.ends_at) && "opacity-50")}>
+                      <span className={cn("metric w-12 shrink-0 text-sm", live ? "text-rouge" : "text-muted")}>{formatTime(sl.starts_at)}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-semibold">{sl.artist}</p>
+                        <p className="truncate text-xs text-muted">{[sl.room, live ? "Ahora" : null].filter(Boolean).join(" · ")}</p>
+                      </div>
+                    </li>
+                  );
+                })}
+            </ol>
+          ) : (
           <ol className="space-y-3">
             {m.topSongs.map((sng, i) => (
               <li key={sng.id} className="flex items-center gap-3">
@@ -197,6 +221,7 @@ export default function AdminOverviewPage() {
               </li>
             ))}
           </ol>
+          )}
           <p className="mt-4 flex items-center gap-1.5 text-xs text-muted"><MapPin className="size-3.5" /> {m.activePins} pines activos ahora</p>
         </Panel>
       </section>

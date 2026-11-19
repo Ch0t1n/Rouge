@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Heart, MessageCircle, Zap } from "lucide-react";
+import { Check, Heart, MessageCircle, UserPlus, Zap } from "lucide-react";
 import { useRouter } from "next/navigation";
 import type { Profile } from "@/lib/types";
 import { icebreakerEligibility } from "@/lib/engine/actions";
 import { connectionBetween, connectionStateFor, getAttendee, isLobbyInteractive, getEvent } from "@/lib/engine/selectors";
 import { useRouge } from "@/lib/store/RougeContext";
+import { useEventType } from "@/lib/store/hooks";
 import { Button } from "@/components/ui/button";
 import { IcebreakerComposer } from "./IcebreakerComposer";
 import { useMatchCelebration } from "./MatchCelebration";
@@ -15,6 +16,8 @@ import { useConnect } from "./useConnect";
 /** Conectar + Rompehielos para un perfil (usado en /u/[username]). */
 export function ConnectActions({ target }: { target: Profile }) {
   const { state } = useRouge();
+  const { type, copy } = useEventType();
+  const ConnectIcon = type === "corporate" ? UserPlus : Heart;
   const router = useRouter();
   const [composer, setComposer] = useState(false);
   const celebration = useMatchCelebration();
@@ -31,7 +34,7 @@ export function ConnectActions({ target }: { target: Profile }) {
     return (
       <>
         <Button block size="lg" onClick={() => router.push(`/chat/${match.id}`)}>
-          <MessageCircle /> Chatear · ya son Match
+          <MessageCircle /> {type === "corporate" ? "Chatear · ya son contactos" : "Chatear · ya son Match"}
         </Button>
         {celebration.element}
       </>
@@ -52,11 +55,11 @@ export function ConnectActions({ target }: { target: Profile }) {
             </>
           ) : status === "received" ? (
             <>
-              <Heart className="fill-current" /> Aceptar · es Match
+              <ConnectIcon className={type === "corporate" ? undefined : "fill-current"} /> Aceptar · {type === "corporate" ? "sumar contacto" : "es Match"}
             </>
           ) : (
             <>
-              <Heart /> Conectar
+              <ConnectIcon /> Conectar
             </>
           )}
         </Button>
@@ -71,7 +74,7 @@ export function ConnectActions({ target }: { target: Profile }) {
       ) : ice && !/Solo Amigos/.test(ice) ? (
         <p className="text-center text-xs text-muted">{ice}</p>
       ) : (
-        <p className="text-center text-xs text-muted">⚡ Te queda 1 Rompehielos esta noche</p>
+        <p className="text-center text-xs text-muted">⚡ Te queda 1 Rompehielos {copy.today}</p>
       )}
       <IcebreakerComposer open={composer} onClose={() => setComposer(false)} target={target} eventId={eventId} />
       {celebration.element}
