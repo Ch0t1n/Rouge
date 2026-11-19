@@ -31,6 +31,17 @@ Marcar antes del primer evento real.
 - [ ] Clave creada para la ticketera y prueba de punta a punta: código por entrada → mail con QR → entrar → anular.
 - [ ] Guía de la API compartida con la ticketera ([docs/api](../api/README.md)).
 
+## Seguridad
+
+- [ ] **2FA** en todas las cuentas con poder: Vercel, Supabase, GitHub, Meta for Developers, Google Cloud y el registrador del dominio.
+- [ ] `NEXT_PUBLIC_APP_URL` e `INSTAGRAM_TOKEN_KEY` cargadas en producción (ver puesta en producción).
+- [ ] Headers verificados en el dominio final (CSP con nonce, HSTS, `X-Frame-Options`, `Permissions-Policy`).
+- [ ] Supabase → *Authentication → Rate Limits* revisados (envío de magic links por hora) y *Attack Protection* (CAPTCHA) si hay abuso.
+- [ ] Supabase → *API → Exposed schemas*: solo `public` (y `graphql_public`); **nunca** `private`.
+- [ ] Regla de límite en *Vercel → Firewall* para `/api/instagram/*` antes de un evento grande.
+- [ ] `public/.well-known/security.txt` publicado con un email de contacto real para reportes de seguridad.
+- [ ] `npm audit --omit=dev` sin vulnerabilidades en el commit que se despliega.
+
 ## Login social
 
 - [ ] Google: pantalla de consentimiento publicada, credenciales en Supabase, `NEXT_PUBLIC_AUTH_GOOGLE=1`, probado.
@@ -55,3 +66,12 @@ Marcar antes del primer evento real.
 - [ ] Exportar Resumen y CRM; medir: % que entró a la app, % en Squad, matches, ventas por la app, filas evitadas.
 - [ ] Recolectar feedback del dueño, del equipo y de 10 asistentes.
 - [ ] Priorizar la v1.1 con las [mejoras conocidas](../../CHANGELOG.md#pendientes-conocidos).
+
+## Google (SEO)
+
+- [ ] `https://www.rougepass.com/robots.txt` permite rastrear y apunta al sitemap; `/sitemap.xml` lista la home.
+- [ ] Dominio verificado en **Google Search Console** (propiedad de dominio, registro TXT en el DNS) y sitemap enviado.
+- [ ] "Inspección de URL" de `https://www.rougepass.com/` → **Solicitar indexación**.
+- [ ] `NEXT_PUBLIC_APP_URL` = `https://www.rougepass.com` (y redirect URIs de Instagram / Mercado Pago actualizadas).
+- [ ] `rouge-neon.vercel.app` redirige (301) a `www.rougepass.com` (Vercel → Domains) para no tener dos copias.
+- [ ] El sitio de demo (`demo.rougepass.com`) devuelve `Disallow: /` en su robots.txt (no debe aparecer en Google).

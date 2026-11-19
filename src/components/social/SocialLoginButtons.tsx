@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
  * Modo Demo: simula una cuenta nueva y abre el onboarding (con Instagram conectado para importar fotos).
  */
 export function SocialLoginButtons({ next, as = "attendee", instagram = true }: { next: string | null; as?: "attendee" | "staff"; instagram?: boolean }) {
-  const { mode, startNewPersona, exec, notify } = useRouge();
+  const { mode, demoVisible, startNewPersona, exec, notify } = useRouge();
   const router = useRouter();
   const [busy, setBusy] = useState<"google" | "instagram" | null>(null);
   const showIg = instagram && SOCIAL.instagram;
@@ -23,7 +23,7 @@ export function SocialLoginButtons({ next, as = "attendee", instagram = true }: 
   const google = async () => {
     if (mode === "demo") {
       startNewPersona();
-      notify({ tone: "info", title: "Modo Demo: ingreso con Google simulado", description: "Con Supabase se abre la cuenta de Google real." });
+      if (demoVisible) notify({ tone: "info", title: "Modo Demo: ingreso con Google simulado", description: "Con Supabase se abre la cuenta de Google real." });
       router.push(onboarding);
       return;
     }
@@ -39,7 +39,7 @@ export function SocialLoginButtons({ next, as = "attendee", instagram = true }: 
     if (mode === "demo") {
       const id = startNewPersona();
       await exec(C.linkInstagramDemo(id, `noche.${Math.floor(100 + Math.random() * 900)}`), { silent: true });
-      notify({ tone: "rouge", title: "Modo Demo: Instagram conectado", description: "Podés importar fotos de tu feed en el paso de fotos." });
+      notify({ tone: "rouge", title: demoVisible ? "Modo Demo: Instagram conectado" : "Instagram conectado", description: "Podés importar fotos de tu feed en el paso de fotos." });
       router.push(onboarding);
       return;
     }

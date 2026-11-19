@@ -14,17 +14,21 @@ import type { Toast } from "@/lib/store/RougeContext";
 import { blastsFor } from "@/lib/engine/actions";
 import { getProfile, ordersOf, pendingSquadInvites, perksOf, squadMessages, squadOf } from "@/lib/engine/selectors";
 import { useRouge } from "@/lib/store/RougeContext";
+import { isSafeCtaLink } from "@/lib/security/paths";
+import { faceOf, verticalOf } from "@/lib/engine/verticals";
+import { awaitsMe, displayStatus, meetingPlace, meetingsOf, otherOf } from "@/lib/engine/meetings";
+import { formatTime } from "@/lib/utils";
 
 type Notice = { key: string; toast: Omit<Toast, "id"> };
 
 function noticesFor(s: RougeState, meId: UUID, now: number): Notice[] {
   const eventId = s.active_event_id;
-  const first = (id: UUID | null) => getProfile(s, id)?.full_name.split(" ")[0] ?? "Alguien";
+  const first = (id: UUID | null) => faceOf(s, id)?.full_name.split(" ")[0] ?? "Alguien";
   const out: Notice[] = [];
 
   for (const b of blastsFor(s, eventId, meId, now)) {
     if (b.expires_at && +new Date(b.expires_at) < now) continue;
-    out.push({ key: `blast:${b.id}`, toast: { tone: b.is_flash_promo ? "vip" : "info", title: b.title, description: b.message, duration: 9000, cta: b.cta_label && b.cta_link ? { label: b.cta_label, href: b.cta_link } : undefined } });
+    out.push({ key: `blast:${b.id}`, toast: { tone: b.is_flash_promo ? "vip" : "info", title: b.title, description: b.message, duration: 9000, cta: b.cta_label && isSafeCtaLink(b.cta_link) ? { label: b.cta_label, href: b.cta_link } : undefined } });
   }
 
   const sq = squadOf(s, eventId, meId);
@@ -55,18 +59,35 @@ function noticesFor(s: RougeState, meId: UUID, now: number): Notice[] {
     out.push({ key: `invite:${member.id}`, toast: { tone: "squad", title: `👯 ${first(member.invited_by)} te invitó a ${squad.name}`, cta: { label: "Ver invitación", href: "/squad" } } });
   }
 
+  const pro = verticalOf(s, eventId).kind === "corporate";
   for (const c of s.connections) {
     if (c.event_id !== eventId) continue;
     if (c.receiver_id === meId && c.status === "pending") {
       out.push({
         key: `req:${c.id}`,
         toast: c.type === "icebreaker"
-          ? { tone: "rouge", title: `⚡ ${first(c.sender_id)} te mandó su Rompehielos`, description: c.icebreaker_message ?? undefined, cta: { label: "Ver bandeja", href: "/inbox" } }
+          ? { tone: "rouge", title: pro ? `⚡ ${first(c.sender_id)} te mandó su presentación` : `⚡ ${first(c.sender_id)} te mandó su Rompehielos`, description: c.icebreaker_message ?? undefined, cta: { label: "Ver bandeja", href: "/inbox" } }
           : { tone: "rouge", title: `💘 ${first(c.sender_id)} te dio Conectar`, cta: { label: "Ver bandeja", href: "/inbox" } },
       });
     }
     if (c.sender_id === meId && c.status === "accepted" && c.responded_at) {
-      out.push({ key: `match:${c.id}`, toast: { tone: "rouge", title: `🔥 ¡Match con ${first(c.receiver_id)}!`, description: "Aceptó tu conexión.", cta: { label: "Escribile", href: `/chat/${c.id}` } } });
+      out.push({ key: `match:${c.id}`, toast: { tone: "rouge", title: pro ? `🤝 ${first(c.receiver_id)} es tu contacto` : `🔥 ¡Match con ${first(c.receiver_id)}!`, description: "Aceptó tu conexión.", cta: { label: "Escribile", href: `/chat/${c.id}` } } });
+    }
+  }
+
+  // Reuniones: pedidos y cambios para responder, y confirmaciones (la clave incluye updated_at: cada cambio avisa una vez).
+  for (const m of meetingsOf(s, meId, eventId)) {
+    const other = first(otherOf(m, meId));
+    const when = `${formatTime(m.starts_at)} · ${meetingPlace(s, m)}`;
+    if (awaitsMe(m, meId)) {
+      out.push({
+        key: `meeting:${m.id}:${m.updated_at}`,
+        toast: { tone: "squad", title: m.status === "rescheduled" ? `📅 ${other} propuso otro horario` : `📅 ${other} te pidió una reunión`, description: `${when} · ${m.topic}`, cta: { label: "Responder", href: `/meetings#${m.id}` } },
+      });
+    } else if (m.status === "accepted" && m.proposed_by === meId && displayStatus(m, now) === "accepted") {
+      out.push({ key: `meeting:${m.id}:${m.updated_at}`, toast: { tone: "squad", title: `✅ Reunión confirmada con ${other}`, description: when, cta: { label: "Ver", href: `/meetings#${m.id}` } } });
+    } else if (m.status === "cancelled" || m.status === "declined") {
+      out.push({ key: `meeting:${m.id}:${m.updated_at}`, toast: { tone: "info", title: m.status === "declined" ? `${other} no puede reunirse` : `Se canceló la reunión con ${other}`, description: when } });
     }
   }
   return out;

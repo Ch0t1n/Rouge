@@ -6,10 +6,12 @@
  *   - Eliminar un evento (solo quien lo creó y si no tiene cobros registrados).
  * Contraparte SQL: bar_menu_items (RLS de staff), remove_attendee, event_bans, events_delete + trigger.
  */
-import type { BarMenuItem, EventBan, PerkRule, RougeEvent, RougeState, UUID } from "@/lib/types";
+import type { BarMenuItem, EventBan, EventLifecycle, LineupSlot, OrganizationSettings, PerkRule, RougeEvent, RougeState, TicketList, UUID } from "@/lib/types";
+import { resolveFeatures, type EventFeatureFlags } from "./features";
 import { addMs, uid } from "@/lib/utils";
 import { upsertEvent } from "./actions";
-import { staffRoleOf } from "./roles";
+import { isPlatformAdmin, staffRoleOf } from "./roles";
+import { BAR_MENU, CORPORATE_MENU } from "@/lib/mock/seed";
 
 type R<T> = { ok: true; state: RougeState; data: T } | { ok: false; error: string };
 const fail = (error: string): { ok: false; error: string } => ({ ok: false, error });
@@ -72,6 +74,22 @@ export function deleteMenuItem(state: RougeState, itemId: string): R<undefined> 
   return { ok: true, state: { ...state, bar_menu: state.bar_menu.filter((i) => i.id !== itemId) }, data: undefined };
 }
 
+/**
+ * Modo Demo: `bar_menu` es siempre el menú del evento ACTIVO (igual que en Supabase, donde se carga el del activo).
+ * Al cambiar de evento guarda el menú del anterior en `demo_menus` y trae el del nuevo (o el base de su vertical).
+ * En Supabase (`bar_menu_event_id` sin definir) no hace nada.
+ */
+export function syncDemoMenu(state: RougeState): RougeState {
+  const from = state.bar_menu_event_id;
+  const to = state.active_event_id;
+  if (from === undefined || !to || from === to) return state;
+  const kind = state.events.find((e) => e.id === to)?.kind ?? "nightlife";
+  const menus = { ...(state.demo_menus ?? {}), ...(from ? { [from]: state.bar_menu } : {}) };
+  const next = menus[to] ?? (kind === "corporate" ? CORPORATE_MENU : BAR_MENU);
+  delete menus[to];
+  return { ...state, bar_menu: next, bar_menu_event_id: to, demo_menus: menus };
+}
+
 // ── Duplicar evento ───────────────────────────────────────────────────
 
 /**
@@ -92,6 +110,7 @@ export function duplicateEvent(state: RougeState, eventId: UUID, newStartsAt: st
   const created = upsertEvent(
     { ...state, current_user_id: userId },
     {
+      kind: src.kind,
       name: src.name,
       slug,
       description: src.description,
@@ -185,6 +204,11 @@ export function deleteEvent(state: RougeState, eventId: UUID, userId: UUID): R<u
       squad_members: state.squad_members.filter((m) => !squadIds.has(m.squad_id)),
       map_pins: by(state.map_pins),
       messages: state.messages.filter((m) => !(m.squad_id && squadIds.has(m.squad_id))),
+      // [v1.11] Agenda del evento (en SQL: on delete cascade).
+      event_sessions: by(state.event_sessions),
+      session_enrollments: by(state.session_enrollments),
+      session_questions: by(state.session_questions),
+      session_polls: by(state.session_polls),
       event_blasts: by(state.event_blasts),
       user_perks_qrs: by(state.user_perks_qrs),
       perk_rules: by(state.perk_rules),
@@ -195,5 +219,164 @@ export function deleteEvent(state: RougeState, eventId: UUID, userId: UUID): R<u
       squad_settlements: by(state.squad_settlements),
     },
     data: undefined,
+  };
+}
+
+// ── Listas free con conversión tardía ────────────────────────────────
+
+export interface TicketListInput {
+  id?: UUID;
+  name: string;
+  /** Hasta cuándo entra gratis (null = siempre free). */
+  free_until: string | null;
+  /** Diferencial a cobrar en la puerta después del horario. */
+  late_price: number;
+}
+
+/** Alta/edición de una lista de ingreso (dueño/a o producción). El horario tiene que caer dentro del evento. */
+export function upsertTicketList(state: RougeState, eventId: UUID, input: TicketListInput, now = Date.now()): R<TicketList> {
+  const ev = state.events.find((e) => e.id === eventId);
+  if (!ev) return fail("El evento no existe.");
+  const name = input.name.trim();
+  if (!name || name.length > 60) return fail("La lista necesita un nombre (máximo 60).");
+  if (!Number.isFinite(input.late_price) || input.late_price < 0 || input.late_price > MENU_PRICE_MAX) return fail("Ingresá un precio válido.");
+  if (input.free_until) {
+    const t = +new Date(input.free_until);
+    if (Number.isNaN(t)) return fail("Revisá el horario free.");
+    if (t < +new Date(ev.lobby_opens_at) || t > +new Date(ev.ends_at)) return fail("El horario free tiene que estar entre la apertura y el cierre del evento.");
+  }
+  const lists = state.ticket_lists ?? [];
+  const prev = input.id ? lists.find((l) => l.id === input.id && l.event_id === eventId) : undefined;
+  if (input.id && !prev) return fail("Esa lista no es de este evento.");
+  const list: TicketList = { id: prev?.id ?? uid(), event_id: eventId, name, free_until: input.free_until ? new Date(input.free_until).toISOString() : null, late_price: Math.round(input.late_price), created_at: prev?.created_at ?? iso(now) };
+  return { ok: true, state: { ...state, ticket_lists: prev ? lists.map((l) => (l.id === list.id ? list : l)) : [...lists, list] }, data: list };
+}
+
+/** Asigna entradas (no usadas para entrar todavía a la puerta) a una lista, o las saca (listId null). */
+export function assignCodesToList(state: RougeState, eventId: UUID, codeIds: UUID[], listId: UUID | null): R<number> {
+  if (listId && !(state.ticket_lists ?? []).some((l) => l.id === listId && l.event_id === eventId)) return fail("Esa lista no es de este evento.");
+  const ids = new Set(codeIds);
+  let n = 0;
+  const codes = state.event_invite_codes.map((c) => {
+    if (!ids.has(c.id) || c.event_id !== eventId || c.checked_in_at) return c;
+    n++;
+    return { ...c, list_id: listId };
+  });
+  if (!n) return fail("Elegí entradas que todavía no hayan ingresado.");
+  return { ok: true, state: { ...state, event_invite_codes: codes }, data: n };
+}
+
+// ── Creador modular de eventos (v1.8) ────────────────────────────────
+
+/** ¿La organización tiene habilitada la autogestión? (la activa ROUGE HQ). */
+export const ownerSelfService = (state: RougeState, orgId: UUID | null | undefined) => !!orgId && (state.organization_settings ?? []).some((o) => o.organization_id === orgId && o.allow_owner_self_service);
+
+/**
+ * Quién usa el creador y los interruptores de módulos de una organización: ROUGE HQ siempre; el dueño/a solo con
+ * `allow_owner_self_service` (mismo componente, sin reescribir nada). Espejo de can_manage_modules en SQL.
+ */
+export const canManageModules = (state: RougeState, actorId: UUID, orgId: UUID | null | undefined) => isPlatformAdmin(state, actorId) || (!!orgId && actorId === orgId && ownerSelfService(state, orgId));
+
+export interface EventBuilderInput {
+  id?: UUID;
+  organization_id: UUID;
+  name: string;
+  description?: string;
+  slug?: string;
+  venue_name?: string;
+  starts_at: string;
+  ends_at: string;
+  lobby_opens_at?: string;
+  lobby_expires_at?: string;
+  lifecycle_status: EventLifecycle;
+  max_capacity: number;
+  lineup_json?: LineupSlot[];
+  brand_id?: UUID | null;
+  logo_url?: string | null;
+  theme_primary?: string | null;
+  theme_accent?: string | null;
+  features: Partial<EventFeatureFlags>;
+  /** Lotes / listas free (hora límite y precio de conversión tardía). */
+  lists?: TicketListInput[];
+}
+
+export const LIFECYCLES: { id: EventLifecycle; label: string; hint: string }[] = [
+  { id: "draft", label: "Borrador", hint: "Nadie puede entrar todavía." },
+  { id: "presale", label: "Preventa", hint: "Entradas a la venta; el lobby abre en su horario." },
+  { id: "live", label: "En vivo", hint: "La noche está andando." },
+  { id: "ended", label: "Terminado", hint: "Cerrado: quedan los matches, chats y el Wrapped." },
+];
+
+/**
+ * Crea o edita un evento desde el creador modular: datos base, organización dueña, ciclo de vida, aforo, line-up,
+ * estética, módulos (con dependencias resueltas) y listas free. Mismas validaciones que upsertEvent.
+ */
+export function saveEventFromBuilder(state: RougeState, actorId: UUID, input: EventBuilderInput, now = Date.now()): R<{ event: RougeEvent; lists: TicketList[] }> {
+  const existing = input.id ? state.events.find((e) => e.id === input.id) : undefined;
+  if (input.id && !existing) return fail("El evento no existe.");
+  const orgId = existing?.created_by ?? input.organization_id;
+  if (!orgId || !state.profiles.some((p) => p.id === orgId)) return fail("Elegí la organización dueña del evento.");
+  if (!canManageModules(state, actorId, orgId)) return fail("Solo ROUGE puede crear eventos y configurar sus módulos (o el dueño/a con autogestión activada).");
+  if (existing && input.organization_id !== existing.created_by && !isPlatformAdmin(state, actorId)) return fail("Solo ROUGE puede cambiar la organización de un evento.");
+  if (!LIFECYCLES.some((l) => l.id === input.lifecycle_status)) return fail("Elegí el estado del evento.");
+  // upsertEvent valida y asigna created_by/marca contra quien "crea": se ejecuta como la organización dueña.
+  const asOrg = { ...state, current_user_id: orgId };
+  const { features, lists, organization_id, lifecycle_status, id: _id, ...base } = input;
+  // Slug vacío → se arma con el nombre (el campo del creador es opcional).
+  const slug = base.slug?.trim() || existing?.slug || undefined;
+  const r = upsertEvent(asOrg, { ...(existing ?? {}), ...base, slug, ...(existing ? { id: existing.id } : {}) }, now);
+  if (!r.ok) return r;
+  const event: RougeEvent = { ...r.data, created_by: existing && !isPlatformAdmin(state, actorId) ? existing.created_by : organization_id, features: resolveFeatures(features), lifecycle_status };
+  let next: RougeState = { ...r.state, current_user_id: state.current_user_id, events: r.state.events.map((e) => (e.id === event.id ? event : e)) };
+  // Evento nuevo: arranca con el menú base de la Barra Express (editable después).
+  if (!existing && !next.bar_menu.length) next = { ...next, bar_menu: state.bar_menu };
+  const saved: TicketList[] = [];
+  for (const l of lists ?? []) {
+    const lr = upsertTicketList(next, event.id, l, now);
+    if (!lr.ok) return lr;
+    next = lr.state;
+    saved.push(lr.data);
+  }
+  return { ok: true, state: next, data: { event, lists: saved } };
+}
+
+/** Prender / apagar módulos de un evento en vivo (dependencias resueltas). */
+export function setEventFeatures(state: RougeState, actorId: UUID, eventId: UUID, flags: Partial<EventFeatureFlags>): R<EventFeatureFlags> {
+  const ev = state.events.find((e) => e.id === eventId);
+  if (!ev) return fail("El evento no existe.");
+  if (!canManageModules(state, actorId, ev.created_by)) return fail("Solo ROUGE puede configurar los módulos (o el dueño/a con autogestión activada).");
+  const features = resolveFeatures(flags);
+  return { ok: true, state: { ...state, events: state.events.map((e) => (e.id === eventId ? { ...e, features } : e)) }, data: features };
+}
+
+/** ROUGE HQ habilita (o no) que una organización use el creador por su cuenta desde /admin/events. */
+export function setOwnerSelfService(state: RougeState, actorId: UUID, orgId: UUID, allow: boolean, now = Date.now()): R<OrganizationSettings> {
+  if (!isPlatformAdmin(state, actorId)) return fail("Solo administradores globales de ROUGE.");
+  const row: OrganizationSettings = { organization_id: orgId, allow_owner_self_service: allow, updated_at: new Date(now).toISOString() };
+  return { ok: true, state: { ...state, organization_settings: [...(state.organization_settings ?? []).filter((o) => o.organization_id !== orgId), row] }, data: row };
+}
+
+/** Datos del creador a partir de un evento existente (modo edición). */
+export function builderInputOf(state: RougeState, ev: RougeEvent): EventBuilderInput {
+  return {
+    id: ev.id,
+    organization_id: ev.created_by ?? "",
+    name: ev.name,
+    description: ev.description,
+    slug: ev.slug,
+    venue_name: ev.venue_name,
+    starts_at: ev.starts_at,
+    ends_at: ev.ends_at,
+    lobby_opens_at: ev.lobby_opens_at,
+    lobby_expires_at: ev.lobby_expires_at,
+    lifecycle_status: ev.lifecycle_status ?? "live",
+    max_capacity: ev.max_capacity,
+    lineup_json: ev.lineup_json,
+    brand_id: ev.brand_id,
+    logo_url: ev.logo_url,
+    theme_primary: ev.theme_primary,
+    theme_accent: ev.theme_accent,
+    features: resolveFeatures(ev.features),
+    lists: (state.ticket_lists ?? []).filter((l) => l.event_id === ev.id).map((l) => ({ id: l.id, name: l.name, free_until: l.free_until, late_price: l.late_price })),
   };
 }

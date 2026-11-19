@@ -1,13 +1,14 @@
 "use client";
 
-import { MOOD_TAGS, type MoodTag } from "@/lib/types";
+import type { EventKind, MoodTag } from "@/lib/types";
+import { moodsFor, vertical } from "@/lib/engine/verticals";
 import { cn } from "@/lib/utils";
 
-/** Check-in rápido del "Mood de la noche" (un toque). */
-export function MoodPicker({ value, onChange }: { value: MoodTag | null; onChange: (m: MoodTag) => void }) {
+/** Check-in rápido del "Mood de la noche" / "¿A qué venís hoy?" (un toque): solo los moods de la vertical del evento. */
+export function MoodPicker({ value, onChange, kind = "nightlife" }: { value: MoodTag | null; onChange: (m: MoodTag) => void; kind?: EventKind }) {
   return (
-    <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Mood de la noche">
-      {MOOD_TAGS.map((m) => {
+    <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label={vertical(kind).copy.moodTitle}>
+      {moodsFor(kind).map((m) => {
         const on = value === m.id;
         return (
           <button

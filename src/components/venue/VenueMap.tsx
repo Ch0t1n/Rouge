@@ -28,15 +28,39 @@ interface VenueMapProps {
   /** Pin provisorio mientras el usuario elige ubicación */
   draft?: { x: number; y: number } | null;
   highlightSector?: string | null;
+  /** Salas, mesas y puntos de encuentro, o reuniones (marcadores con etiqueta). */
+  marks?: MapMark[];
   onTap?: (x: number, y: number, sector?: VenueSector) => void;
   onPinClick?: (pin: VisiblePin) => void;
   className?: string;
   /** Oculta los controles de zoom (miniaturas, minimapas de barra) */
   compact?: boolean;
+  /** Centra y acerca el plano en ese punto al montar o cuando cambia (ej. "Ubicar sala en el mapa"). */
+  focusPoint?: { x: number; y: number } | null;
   children?: ReactNode;
 }
 
 const W = 300;
+
+/** Marcador simple del plano (salas/mesas del organizador, lugar de una reunión). */
+export interface MapMark {
+  key: string;
+  x: number;
+  y: number;
+  label: string;
+  icon: string;
+  tone: "vip" | "squad" | "rouge" | "muted";
+  /** Resaltado (la reunión enfocada, la sala elegida). */
+  emphasis?: boolean;
+  onClick?: () => void;
+}
+
+const MARK_TONE: Record<MapMark["tone"], string> = {
+  vip: "bg-vip text-background ring-vip/40",
+  squad: "bg-squad text-background ring-squad/40",
+  rouge: "bg-rouge text-white ring-rouge/40",
+  muted: "bg-white/80 text-background ring-white/30",
+};
 
 const SECTOR_STYLE: Record<VenueSector["kind"], { fill: string; stroke: string; label: string }> = {
   // Pista, cabina y VIP siguen los colores de la marca (variables CSS): se aplican con style, no con atributos SVG.
@@ -48,6 +72,10 @@ const SECTOR_STYLE: Record<VenueSector["kind"], { fill: string; stroke: string; 
   booth: { fill: "rgb(var(--c-rouge) / 0.14)", stroke: "rgb(var(--c-rouge) / 0.8)", label: "#FFFFFF" },
   restroom: { fill: "rgba(148,163,184,0.05)", stroke: "rgba(148,163,184,0.25)", label: "#94A3B8" },
   lounge: { fill: "rgba(148,163,184,0.04)", stroke: "rgba(148,163,184,0.28)", label: "#94A3B8" },
+  // Corporativo: escenario (como la cabina), stands de expositores (acento) y salas de reunión.
+  stage: { fill: "rgb(var(--c-rouge) / 0.12)", stroke: "rgb(var(--c-rouge) / 0.7)", label: "#FFFFFF" },
+  stand: { fill: "rgb(var(--c-vip) / 0.06)", stroke: "rgb(var(--c-vip) / 0.5)", label: "color-mix(in srgb, rgb(var(--c-vip)) 70%, white)" },
+  meeting: { fill: "rgba(248,250,252,0.04)", stroke: "rgba(248,250,252,0.35)", label: "#CBD5E1" },
 };
 
 export function VenueMap({
@@ -57,10 +85,12 @@ export function VenueMap({
   basePin,
   draft,
   highlightSector,
+  marks = [],
   onTap,
   onPinClick,
   className,
   compact,
+  focusPoint,
   children,
 }: VenueMapProps) {
   const H = W / layout.aspect;
@@ -78,6 +108,16 @@ export function VenueMap({
     const maxY = ((z - 1) * el.clientHeight) / 2;
     return { z, x: clamp(v.x, -maxX, maxX), y: clamp(v.y, -maxY, maxY) };
   }, []);
+
+  // Enfoque: zoom 2,2× con el punto en el centro (acotado a los bordes del plano).
+  const fx = focusPoint?.x;
+  const fy = focusPoint?.y;
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (fx == null || fy == null || !el) return;
+    const z = 2.2;
+    setView(clampView({ z, x: -((fx / 100) - 0.5) * el.clientWidth * z, y: -((fy / 100) - 0.5) * el.clientHeight * z }));
+  }, [fx, fy, clampView]);
 
   const zoomBy = (factor: number) => setView((v) => clampView({ ...v, z: v.z * factor }));
 
@@ -333,7 +373,7 @@ export function VenueMap({
                   className="group relative flex flex-col items-center focus-visible:ring-0"
                   aria-label={`${vp.profile.full_name}${vp.pin.sector_name ? ` en ${vp.pin.sector_name}` : ""}, expira en ${vp.minutesLeft} minutos`}
                 >
-                  <span className={cn("absolute top-0 size-9 rounded-full animate-pin-pulse", color, tone === "rescue" && "size-12 -top-1.5")} aria-hidden />
+                  <span className={cn("absolute top-0 h-9 w-7 rounded-lg animate-pin-pulse", color, tone === "rescue" && "-top-1.5 h-12 w-9 rounded-xl")} aria-hidden />
                   <span className="relative">
                     <Avatar profile={vp.profile} size={tone === "rescue" ? 40 : 34} ring={ring} className={tone === "self" ? "ring-2 ring-white" : undefined} />
                     {tone === "rescue" && (
@@ -356,6 +396,24 @@ export function VenueMap({
               </MapMarker>
             );
           })}
+
+          {marks.map((m) => (
+            <MapMarker key={m.key} x={m.x} y={m.y} z={view.z}>
+              <button
+                type="button"
+                data-pin
+                onClick={m.onClick}
+                disabled={!m.onClick}
+                aria-label={m.label}
+                className="flex flex-col items-center disabled:cursor-default"
+              >
+                <span className={cn("grid place-items-center rounded-full font-display text-xs font-bold ring-4", MARK_TONE[m.tone], m.emphasis ? "size-8 animate-pin-pulse" : "size-6")}>{m.icon}</span>
+                {(!compact || m.emphasis) && (
+                  <span className={cn("mt-1 max-w-[120px] truncate rounded-full px-2 py-0.5 font-display text-[10px] font-bold", m.emphasis ? MARK_TONE[m.tone] : "bg-background/80 text-primary")}>{m.label}</span>
+                )}
+              </button>
+            </MapMarker>
+          ))}
 
           {draft && (
             <MapMarker x={draft.x} y={draft.y} z={view.z}>

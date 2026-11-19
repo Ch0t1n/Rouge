@@ -18,7 +18,7 @@ const select = "min-h-touch rounded-xl border border-white/10 bg-white/[0.05] px
  * con cada entrada (ver docs/api). La clave completa se muestra UNA sola vez.
  */
 export function ApiKeysPanel({ event }: { event: RougeEvent }) {
-  const { state, exec, notify, mode } = useRouge();
+  const { state, exec, notify, mode, demoVisible } = useRouge();
   const [name, setName] = useState("");
   const [scope, setScope] = useState<"event" | "all">("event");
   const [busy, setBusy] = useState(false);
@@ -59,13 +59,13 @@ export function ApiKeysPanel({ event }: { event: RougeEvent }) {
       className="xl:col-span-3"
     >
       <p className="max-w-3xl text-sm text-muted">
-        Tu ticketera genera un código de ROUGE por cada entrada que vende y lo manda en el mail de la entrada (link + QR). Si la entrada se reembolsa, el código se anula. Documentación:{" "}
+        Tu ticketera genera un código de Rouge Pass por cada entrada que vende y lo manda en el mail de la entrada (link + QR). Si la entrada se reembolsa, el código se anula. Documentación:{" "}
         <a href="/api/v1/openapi.json" target="_blank" rel="noreferrer" className="font-semibold text-vip underline">
           especificación OpenAPI
         </a>
         .
       </p>
-      {mode === "demo" && <p className="mt-2 text-xs text-muted">Modo Demo: las claves son de ejemplo. La API funciona con Supabase.</p>}
+      {mode === "demo" && demoVisible && <p className="mt-2 text-xs text-muted">Modo Demo: las claves son de ejemplo. La API funciona con Supabase.</p>}
 
       {secret && (
         <div className="mt-4 space-y-3 rounded-2xl border border-vip/50 bg-vip/10 p-4" role="status">

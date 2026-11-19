@@ -24,6 +24,19 @@ describe("grilla del lobby", () => {
     for (let i = 1; i < grid.length; i++) expect(grid[i - 1].affinity.rank).toBeGreaterThanOrEqual(grid[i].affinity.rank);
   });
 
+  it("busca por nombre (sin tildes) o @username y cuenta la búsqueda como filtro", () => {
+    const s = createSeedState(NOW);
+    const all = lobbyGrid(s, EV, ME, undefined, NOW);
+    const target = all[0].profile;
+    const byName = lobbyGrid(s, EV, ME, { genres: [], needs: [], moods: [], sameZone: false, query: target.full_name.split(" ")[0].normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase() }, NOW);
+    expect(byName.map((g) => g.profile.id)).toContain(target.id);
+    const byHandle = lobbyGrid(s, EV, ME, { genres: [], needs: [], moods: [], sameZone: false, query: "@" + target.username }, NOW);
+    expect(byHandle.map((g) => g.profile.id)).toEqual([target.id]);
+    expect(lobbyGrid(s, EV, ME, { genres: [], needs: [], moods: [], sameZone: false, query: "zzz-nadie" }, NOW)).toEqual([]);
+    // la búsqueda nunca saltea las reglas de visibilidad (bloqueados siguen invisibles)
+    expect(lobbyGrid(s, EV, ME, { genres: [], needs: [], moods: [], sameZone: false, query: "gonza" }, NOW)).toEqual([]);
+  });
+
   it("informa el estado de conexión de cada tarjeta", () => {
     const grid = lobbyGrid(createSeedState(NOW), EV, ME, undefined, NOW);
     const by = (u: string) => grid.find((g) => g.profile.username === u)!.connection;
@@ -35,9 +48,9 @@ describe("grilla del lobby", () => {
 
   it("filtra por género, mood y zona compartida", () => {
     const s = createSeedState(NOW);
-    expect(lobbyGrid(s, EV, ME, { genres: ["RKT"], moods: [], sameZone: false }, NOW).every((g) => g.profile.music_genres.includes("RKT"))).toBe(true);
-    expect(lobbyGrid(s, EV, ME, { genres: [], moods: ["after_hunt"], sameZone: false }, NOW).map((g) => g.profile.username).sort()).toEqual(["bruno.after", "juli.rkt"]);
-    const zone = lobbyGrid(s, EV, ME, { genres: [], moods: [], sameZone: true }, NOW);
+    expect(lobbyGrid(s, EV, ME, { genres: ["RKT"], needs: [], moods: [], sameZone: false }, NOW).every((g) => g.profile.music_genres.includes("RKT"))).toBe(true);
+    expect(lobbyGrid(s, EV, ME, { genres: [], needs: [], moods: ["after_hunt"], sameZone: false }, NOW).map((g) => g.profile.username).sort()).toEqual(["bruno.after", "juli.rkt"]);
+    const zone = lobbyGrid(s, EV, ME, { genres: [], needs: [], moods: [], sameZone: true }, NOW);
     expect(zone.length).toBeGreaterThan(0);
     expect(zone.every((g) => g.sharedZones.length > 0)).toBe(true);
     expect(zone.map((g) => g.profile.username)).not.toContain("tomi.vip"); // solo estuvo en VIP
@@ -47,7 +60,7 @@ describe("grilla del lobby", () => {
     let s = createSeedState(NOW);
     s = ok(A.dropPin(s, EV, ME, { x: 85, y: 66, shareWithSquad: true, matchIds: [] }, NOW)).state;
     expect(S.getAttendee(s, EV, ME)!.visited_sectors).toContain("Sector VIP");
-    expect(lobbyGrid(s, EV, ME, { genres: [], moods: [], sameZone: true }, NOW).map((g) => g.profile.username)).toContain("tomi.vip");
+    expect(lobbyGrid(s, EV, ME, { genres: [], needs: [], moods: [], sameZone: true }, NOW).map((g) => g.profile.username)).toContain("tomi.vip");
   });
 });
 

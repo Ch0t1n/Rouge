@@ -1,8 +1,9 @@
 "use client";
 
 import * as C from "@/lib/store/commands";
-import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { eventKindOf, faceOf, vertical } from "@/lib/engine/verticals";
 import { Ban, EyeOff, MoreHorizontal, UserX } from "lucide-react";
 import { computeAffinity } from "@/lib/engine/affinity";
 import { blockUser } from "@/lib/engine/actions";
@@ -13,24 +14,49 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { ProfileView } from "@/components/profile/ProfileView";
 import { ConnectActions } from "@/components/lobby/ConnectActions";
 import { InviteToSquadButton } from "@/components/squad/InviteToSquadButton";
+import { ReportUserButton } from "@/components/profile/ReportUserButton";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
+import { profileAccess } from "@/lib/engine/privacy";
+import { MeetingButton } from "@/components/meetings/MeetingButton";
+import { ExecutiveProfileCard } from "@/components/pro/ExecutiveProfileCard";
 
 export default function UserProfilePage() {
+  return (
+    <Suspense>
+      <UserProfile />
+    </Suspense>
+  );
+}
+
+/**
+ * Perfil de otra persona con la CARA del evento (`?e=<evento>` o el activo): en un evento corporativo se ve su
+ * perfil profesional (o una cara neutra), nunca su perfil de la noche.
+ */
+function UserProfile() {
   const { username } = useParams<{ username: string }>();
+  const params = useSearchParams();
   const router = useRouter();
   const { state, exec, notify } = useRouge();
   const me = useRequireProfile();
   const [menu, setMenu] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const handle = decodeURIComponent(username ?? "").replace(/^@/, "").toLowerCase();
-  const isSelf = !!me && handle === me.username;
+  const isSelf = !!me && (handle === me.username || handle === me.id);
   useEffect(() => {
     if (isSelf) router.replace("/profile");
   }, [isSelf, router]);
   if (!me || isSelf) return null;
 
-  const other = state.profiles.find((p) => p.username === handle);
+  // Por @usuario o por id (los perfiles que solo muestran el nombre no exponen el @). Sin contexto compartido o con
+  // bloqueo → "no disponible" (⇔ profile_access en SQL).
+  const found = state.profiles.find((p) => (p.username && p.username === handle) || p.id === handle);
+  const base = found && profileAccess(state, me.id, found.id) ? found : undefined;
+  const wanted = params.get("e");
+  const eventId = wanted && state.events.some((e) => e.id === wanted) ? wanted : state.active_event_id;
+  const other = base ? faceOf(state, base.id, eventId) : undefined;
+  const kind = eventKindOf(state, eventId);
+  const v = vertical(kind);
 
   // Bloqueo o inexistente → mismo estado genérico (no se revela el bloqueo)
   if (!other || isBlockedBetween(state, me.id, other.id)) {
@@ -48,10 +74,11 @@ export default function UserProfilePage() {
     );
   }
 
-  const eventId = state.active_event_id;
   const theirs = getAttendee(state, eventId, other.id);
   const mine = getAttendee(state, eventId, me.id);
-  const affinity = theirs ? computeAffinity(me, mine, other, theirs) : null;
+  const myFace = faceOf(state, me.id, eventId) ?? me;
+  const affinity = theirs ? computeAffinity(myFace, mine, other, theirs, Date.now(), kind) : null;
+  const handleLabel = other.persona?.kind === "corporate" || kind === "corporate" || !other.username ? v.copy.profileKind : `@${other.username}`;
 
   const doBlock = async () => {
     const r = await exec(C.blockUser(me.id, other.id));
@@ -65,8 +92,8 @@ export default function UserProfilePage() {
   return (
     <main className="pb-12">
       <PageHeader
-        title={other.full_name.split(" ")[0]}
-        subtitle={`@${other.username}`}
+        title={kind === "corporate" ? other.full_name : other.full_name.split(" ")[0]}
+        subtitle={handleLabel}
         action={
           <button type="button" onClick={() => setMenu(true)} aria-label="Más opciones" className="grid size-11 place-items-center rounded-full hover:bg-white/5">
             <MoreHorizontal className="size-5" />
@@ -74,15 +101,36 @@ export default function UserProfilePage() {
         }
       />
       <div className="px-4">
-        <ProfileView profile={other} mood={theirs && !theirs.ghost_mode ? theirs.mood_tag : null} affinity={affinity} actions={
-            <div className="space-y-2">
-              <ConnectActions target={other} />
-              <InviteToSquadButton target={other} />
-            </div>
-          } />
+        {kind === "corporate" ? (
+          // ROUGE Pro: ficha ejecutiva. Sin fotos de fiesta, loop, música, Squad ni Rescate: conectar y pedir reunión.
+          <ExecutiveProfileCard
+            face={other}
+            tier={theirs?.tier}
+            eventName={state.events.find((e) => e.id === eventId)?.name}
+            affinity={affinity?.percent}
+            highlights={affinity?.highlights}
+            actions={
+              <div className="space-y-2">
+                <ConnectActions target={other} />
+                <MeetingButton target={other} />
+              </div>
+            }
+          />
+        ) : (
+          <ProfileView profile={other} mood={theirs && !theirs.ghost_mode ? theirs.mood_tag : null} affinity={affinity} actions={
+              <div className="space-y-2">
+                <ConnectActions target={other} />
+                <MeetingButton target={other} />
+                <InviteToSquadButton target={other} />
+              </div>
+            } />
+        )}
       </div>
 
       <BottomSheet open={menu} onClose={() => setMenu(false)} title={`@${other.username}`}>
+        <div className="mb-2">
+          <ReportUserButton target={other} variant="button" onDone={() => router.replace("/app")} />
+        </div>
         <Button
           variant="danger"
           block

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Message, Profile } from "@/lib/types";
 import { useMediaUrl } from "@/lib/media/useMediaUrl";
 import { cn, formatTime } from "@/lib/utils";
@@ -8,13 +8,17 @@ import { Avatar } from "@/components/ui/avatar";
 
 /** Lista de mensajes: texto, fotos y alertas del sistema (rescate, punto base, llegué a casa). */
 export function MessageList({ messages, meId, profiles, group = false }: { messages: Message[]; meId: string; profiles: Map<string, Profile>; group?: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    // Hasta el fondo real de la página: el compositor es sticky y no debe tapar el último mensaje.
-    window.scrollTo({ top: document.documentElement.scrollHeight });
+    // Hasta el fondo real: el compositor es sticky y no debe tapar el último mensaje. En PC el chat puede vivir
+    // en un panel con scroll propio (vista dividida, columna del Squad): se baja ese panel, no la página.
+    const box = scrollParent(ref.current);
+    if (box) box.scrollTop = box.scrollHeight;
+    else window.scrollTo({ top: document.documentElement.scrollHeight });
   }, [messages.length]);
 
   return (
-    <div className="space-y-1.5">
+    <div ref={ref} className="space-y-1.5">
       {messages.map((m, i) => {
         if (m.message_type === "system_alert") return <SystemAlert key={m.id} message={m} />;
         const mine = m.sender_id === meId;
@@ -68,6 +72,15 @@ function SystemAlert({ message: m }: { message: Message }) {
       </p>
     </div>
   );
+}
+
+/** Contenedor con scroll vertical propio más cercano (null = la página). */
+function scrollParent(el: HTMLElement | null): HTMLElement | null {
+  for (let n = el?.parentElement ?? null; n && n !== document.body; n = n.parentElement) {
+    const oy = getComputedStyle(n).overflowY;
+    if ((oy === "auto" || oy === "scroll") && n.scrollHeight > n.clientHeight) return n;
+  }
+  return null;
 }
 
 /** Si la foto termina de cargar cuando estabas cerca del final, el chat vuelve al fondo (no queda tapada). */

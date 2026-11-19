@@ -1,9 +1,10 @@
 /**
  * Métricas B2B para el panel del organizador, CRM y Pantalla LED.
  */
-import type { Gender, RougeState, UUID } from "@/lib/types";
-import { ageFrom } from "@/lib/utils";
+import type { AttendeeTier, Gender, RougeState, UUID } from "@/lib/types";
 import { activePinOf, getEvent, getProfile, lineupNow, squadMembers, squadOf, topSongs } from "./selectors";
+import { faceOf, industryLabel, needLabel } from "./verticals";
+import { ageOf } from "./privacy";
 
 export type SmartTag = "top_spender" | "squad_leader" | "power_matcher";
 
@@ -24,6 +25,19 @@ export interface CrmRow {
   age: number;
   gender: Gender;
   music_genres: string[];
+  /** Corporativo (perfil profesional con el que entró): datos para el seguimiento comercial del organizador. */
+  company: string;
+  job_title: string;
+  industry: string | null;
+  looking_for: string[];
+  offering: string[];
+  linkedin_url: string | null;
+  /** Ficha ejecutiva: sitio y contacto que su dueño/a deja ver a la organización (privacy_level "public"). */
+  website_url: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  /** Categoría de la entrada (VIP, SPEAKER…). */
+  tier: AttendeeTier;
   mood: string | null;
   squad_size: number;
   matches: number;
@@ -40,8 +54,10 @@ export function crmRows(s: RougeState, eventId: UUID): CrmRow[] {
 
   return attendees
     .map((a): CrmRow | null => {
-      const p = getProfile(s, a.user_id);
+      // La cara del evento: en corporativo, nombre y datos del perfil profesional (nunca los de la noche).
+      const p = faceOf(s, a.user_id, eventId);
       if (!p) return null;
+      const pro = p.persona?.kind === "corporate" ? p.persona : null;
       const sq = squadOf(s, eventId, a.user_id);
       const size = sq ? squadMembers(s, sq.squad.id).length : 0;
       const matches = statsFor(s, eventId)?.matches_by_user[a.user_id] ??
@@ -56,9 +72,19 @@ export function crmRows(s: RougeState, eventId: UUID): CrmRow[] {
         full_name: p.full_name,
         username: p.username,
         phone: p.phone_normalized,
-        age: ageFrom(p.birth_date),
+        age: ageOf(p) ?? 0,
         gender: p.gender,
         music_genres: p.music_genres,
+        company: pro?.company ?? "",
+        job_title: pro?.job_title ?? "",
+        industry: industryLabel(pro?.industry),
+        looking_for: (pro?.looking_for ?? []).map(needLabel),
+        offering: (pro?.offering ?? []).map(needLabel),
+        linkedin_url: pro?.linkedin_url ?? null,
+        website_url: pro?.website_url ?? null,
+        contact_email: pro?.contact_email ?? null,
+        contact_phone: pro?.contact_phone ?? null,
+        tier: a.tier ?? "attendee",
         mood: a.mood_tag,
         squad_size: size,
         matches,
@@ -94,7 +120,8 @@ export function eventMetrics(s: RougeState, eventId: UUID, now = Date.now()) {
     squads: squads.length,
     usersInSquads: attendees.filter((a) => squadOf(s, eventId, a.user_id)).length,
     biggestSquad: biggest ? { name: biggest.squad.name, size: biggest.size } : null,
-    activePins: attendees.filter((a) => activePinOf(s, eventId, a.user_id, now)).length,
+    // En Supabase el equipo no ve los pines (privacidad): el conteo viene de event_stats.
+    activePins: statsFor(s, eventId)?.active_pins ?? attendees.filter((a) => activePinOf(s, eventId, a.user_id, now)).length,
     rescueAlerts: s.squad_members.filter((m) => m.safety_status === "rescue_needed" && squads.some((sq) => sq.id === m.squad_id)).length,
     barRevenue: orders.reduce((acc, o) => acc + o.total_amount, 0),
     openOrders: orders.filter((o) => o.status !== "completed").length,
@@ -122,5 +149,86 @@ export function liveWallData(s: RougeState, eventId: UUID, now = Date.now()) {
     lineup: lineupNow(event, now),
     flash,
     lastRaffle: lastRaffle ? { raffle: lastRaffle, winner: getProfile(s, lastRaffle.winner_user_id) } : null,
+  };
+}
+
+// ── Tablero minuto a minuto (v1.7) ───────────────────────────────────
+
+export const CURVE_BUCKET_MIN = 15;
+/** Desde cuánto antes del inicio se grafica (apertura de puertas). */
+export const CURVE_FROM_MIN = -60;
+
+/** Punto de la curva: `m` = minutos desde el inicio del evento (inicio del intervalo de 15'). */
+export interface CurvePoint {
+  m: number;
+  entries: number;
+  sales: number;
+}
+
+export interface CurveHistory {
+  event_id: UUID;
+  name: string;
+  starts_at: string;
+  points: CurvePoint[];
+}
+
+const bucketOf = (startMs: number, at: string) => Math.floor((+new Date(at) - startMs) / 60_000 / CURVE_BUCKET_MIN) * CURVE_BUCKET_MIN;
+
+/** Ingresos en puerta y ventas de barra de la noche, en intervalos de 15 minutos (hasta `now`). */
+export function eventCurve(s: RougeState, eventId: UUID, now = Date.now()): CurvePoint[] {
+  const ev = getEvent(s, eventId);
+  if (!ev) return [];
+  const start = +new Date(ev.starts_at);
+  const lastM = Math.min(bucketOf(start, new Date(Math.min(now, +new Date(ev.ends_at))).toISOString()), bucketOf(start, ev.ends_at));
+  const points = new Map<number, CurvePoint>();
+  for (let m = CURVE_FROM_MIN; m <= Math.max(CURVE_FROM_MIN, lastM); m += CURVE_BUCKET_MIN) points.set(m, { m, entries: 0, sales: 0 });
+  const add = (at: string | null | undefined, field: "entries" | "sales", v: number) => {
+    if (!at || +new Date(at) > now) return;
+    const p = points.get(Math.max(CURVE_FROM_MIN, bucketOf(start, at)));
+    if (p) p[field] += v;
+  };
+  // Personas que entraron (pase o entrada; una entrada vinculada a alguien cuenta una sola vez).
+  const inside = new Set<string>();
+  for (const a of s.event_attendees) if (a.event_id === eventId && a.checked_in_at) (inside.add(a.user_id), add(a.checked_in_at, "entries", 1));
+  for (const c of s.event_invite_codes) if (c.event_id === eventId && c.checked_in_at && !(c.used_by_user_id && inside.has(c.used_by_user_id))) add(c.checked_in_at, "entries", 1);
+  for (const o of s.bar_orders) if (o.event_id === eventId && o.payment_status !== "awaiting_payment") add(o.paid_at ?? o.created_at, "sales", o.total_amount);
+  return [...points.values()];
+}
+
+/** Promedio de las últimas fechas de la organización, por intervalo (alineado al inicio de cada evento). */
+export function historyAverage(history: CurveHistory[]): CurvePoint[] {
+  if (!history.length) return [];
+  const sum = new Map<number, CurvePoint>();
+  for (const h of history) for (const p of h.points) {
+    const cur = sum.get(p.m) ?? { m: p.m, entries: 0, sales: 0 };
+    cur.entries += p.entries;
+    cur.sales += p.sales;
+    sum.set(p.m, cur);
+  }
+  return [...sum.values()].sort((a, b) => a.m - b.m).map((p) => ({ m: p.m, entries: Math.round((p.entries / history.length) * 10) / 10, sales: Math.round(p.sales / history.length) }));
+}
+
+/** Comparación en vivo: ritmo de ingreso del último intervalo y acumulados contra el promedio a la misma hora. */
+export function liveComparison(s: RougeState, eventId: UUID, now = Date.now()) {
+  const current = eventCurve(s, eventId, now);
+  const history = (s.event_curves_history ?? []).filter((h) => h.event_id !== eventId);
+  const average = historyAverage(history);
+  const last = current.at(-1);
+  const upTo = (pts: CurvePoint[], m: number, f: "entries" | "sales") => pts.filter((p) => p.m <= m).reduce((a, p) => a + p[f], 0);
+  const m = last?.m ?? CURVE_FROM_MIN;
+  const nowEntries = upTo(current, m, "entries");
+  const avgEntries = upTo(average, m, "entries");
+  const nowSales = upTo(current, m, "sales");
+  const avgSales = upTo(average, m, "sales");
+  const orders = s.bar_orders.filter((o) => o.event_id === eventId && o.payment_status !== "awaiting_payment" && +new Date(o.created_at) <= now);
+  const pct = (a: number, b: number) => (b > 0 ? Math.round(((a - b) / b) * 100) : null);
+  return {
+    current,
+    average,
+    historyCount: history.length,
+    pace: { last15: last?.entries ?? 0, avgLast15: average.find((p) => p.m === m)?.entries ?? 0 },
+    entries: { now: nowEntries, avg: avgEntries, deltaPct: pct(nowEntries, avgEntries) },
+    sales: { now: nowSales, avg: avgSales, deltaPct: pct(nowSales, avgSales) },
+    avgTicket: orders.length ? Math.round(orders.reduce((a, o) => a + o.total_amount, 0) / orders.length) : 0,
   };
 }

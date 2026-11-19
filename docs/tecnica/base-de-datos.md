@@ -31,8 +31,15 @@ TypeScript (`src/lib/types.ts`) son su espejo 1:1.
 | `payout_aliases` | Alias o CBU/CVU para cobrar (visible solo para quienes comparten un Squad). |
 | `promoter_links` | Link propio de cada RRPP por evento (`code` RP…, comisión por ingreso). `event_attendees.referred_by` guarda la atribución. |
 | `event_bans` | Expulsados de un evento (no pueden volver a entrar a ese evento). Altas por `remove_attendee`. |
+| `privacy_settings` | **[v1.8]** Ajustes de la cuenta: `incognito_default`, `pin_share_matches`, `pro_details_after_meeting`. RLS: cada uno los suyos. |
+| `venue_spots` | **[v1.8]** Salas, mesas y puntos de encuentro del evento (tipo, cupo de reuniones a la vez, posición en el plano, activo). Los ven asistentes y equipo; los gestiona dueño/a o producción. |
+| `meetings` | **[v1.8]** Reuniones 1 a 1: motivo, horario, 15/30 min, lugar (`spot` / `pin` / `tbd`), estado (`pending`, `accepted`, `rescheduled`, `declined`, `cancelled`; "completada" se deriva), quién propuso por última vez y chat. Solo las ven las dos personas; todo cambio por RPC. |
+| `b2b_leads` | **[v1.8]** Leads de `/pro` (nombre, empresa, cargo, email, WhatsApp, tipo de evento, asistentes). **Solo servidor** (RLS sin políticas). |
+| `profile_personas` | **[v1.7]** Perfiles adicionales de una cuenta (`kind` noche / corporativo): nombre visible, fotos, géneros y Spotify, o cargo, empresa, rubro, `looking_for` / `offering` y LinkedIn. Máx. 5 por cuenta (`personas_limit`). Legible solo por quien comparte con su dueño/a un evento donde se usó. |
 
 `events` suma `brand_id` (de quien creó el evento: trigger `events_brand_owner`), `logo_url`, `theme_primary` y `theme_accent`.
+**[v1.7]** `events.kind` (`event_kind_t`: `nightlife` | `corporate`) y `event_attendees.persona_id` (perfil con el que se
+muestra en ese evento; `null` = Perfil principal, solo en la noche).
 
 ## Funciones (RPCs)
 
@@ -82,8 +89,25 @@ Toda operación sensible pasa por una función `security definer` que valida la 
 
 `new_access_code()` genera los códigos (10 caracteres, alfabeto de 32 sin 0/O/1/I).
 
-**Helpers de permisos:** `is_blocked`, `is_event_attendee`, `is_event_staff`, `has_staff_role`, `is_event_manager`,
-`can_operate_bar`, `is_squad_member`, `are_squadmates`, `is_match`, `can_see_pin`, `lobby_is_open`.
+**Helpers de permisos (schema `private`, fuera de la API):** `is_blocked`, `is_event_attendee`, `is_event_staff`,
+`has_staff_role`, `is_event_manager`, `can_operate_bar`, `is_squad_member`, `user_squad`, `are_squadmates`, `is_match`,
+`squad_event`, `can_see_pin`, `lobby_is_open`, más `request_key` y `too_many_code_failures` (anti fuerza bruta). Los usan
+las políticas y las RPCs; no se pueden llamar por `/rpc` (antes `is_blocked(a, b)` o `is_match` con ids ajenos revelaban
+bloqueos y matches). Referencialos siempre como `private.<helper>(…)`.
+
+**Escrituras directas permitidas** (todo lo demás va por RPC): perfil propio (sin `is_verified`), lista negra propia,
+ajustes de asistente (`mood_tag`, `ghost_mode`, `only_liked_can_icebreak`, `last_active_at` — recortado a "ahora"), aceptar o
+rechazar una solicitud recibida, nombre y Mesa VIP del Squad, salir de un Squad, borrar mi pin, mensajes de texto o foto
+(foto solo de `chat-media/<mi id>/`), marcar un blast como visto; staff: eventos (sin `created_by` ni código maestro),
+menú, reglas de perks, sorteos (sin ganador), códigos de 1 uso y equipo (solo dueño/a). Pines, pedidos de barra, QRs y el
+avance de comandas **no** aceptan insert/update directo.
+
+**Límites del servidor (anti abuso):** 20 códigos inválidos en 15 min por usuario o IP ⇒ `too_many_attempts`
+(`join_event` devuelve `null` ante un código inexistente para registrar el intento); 40 solicitudes de conexión cada 10 min
+⇒ `slow_down`; Text Blasts con título ≤ 80, mensaje ≤ 280, Flash Promo de 1 a 240 min y link interno o `https://`.
+
+**Tabla interna `access_code_failures`:** intentos fallidos de códigos (RLS sin políticas; se limpia sola a las 24 h). No
+forma parte del estado del cliente (`RougeState`).
 
 **Triggers:** Rompehielos aceptado → su texto es el primer mensaje del chat; integrante nuevo o regla nueva → QR Drops; pin → sector
 visitado; pedidos → `updated_at`; perfil → Instagram verificado (`profile_instagram`).
@@ -104,18 +128,80 @@ visitado; pedidos → `updated_at`; perfil → Instagram verificado (`profile_in
 
 `advance_bar_order` y `redeem_pickup_code` rechazan pedidos que esperan pago (`not_paid`).
 
+### Verticales y perfiles adicionales (v1.7)
+
+| Función / trigger | Quién | Qué hace |
+|---|---|---|
+| `join_event(code, mood, p_persona)` | asistente | Valida mood de la vertical (`invalid_mood`), perfil propio del mismo tipo (`invalid_persona`) y perfil obligatorio en corporativo (`persona_required`). |
+| `mood_kind(mood)` | checks | Vertical de un mood (los `pro_*` son corporativos). |
+| `business_affinity(...)` | `event_grid` | Afinidad de negocio, espejo de `businessAffinity()` del motor. |
+| `event_grid(event)` | asistente | Devuelve la **cara del evento** (perfil elegido; neutra en corporativo si no hay perfil profesional). |
+| `delete_persona(persona)` | dueño/a del perfil | Borra un perfil que no se usa en un evento con el lobby abierto (`persona_in_use`). |
+| trigger `events_kind_locked` | — | El tipo de evento no cambia si ya entró alguien (`kind_locked`). |
+| trigger `attendee_vertical` | — | Mood y perfil del asistente siempre de la vertical del evento (también si el cliente cambia el mood directo). |
+| `not_in_vertical` | — | `send_icebreaker` (con trago), `vote_song`, `draw_raffle` (por género) y `ensure_promoter_link` en un evento corporativo. |
+
+### Privacidad por contexto y reuniones (v1.8)
+
+| Función | Quién | Qué hace |
+|---|---|---|
+| `profiles_select` (RLS) | — | Cada uno lee **solo su fila**. Los demás perfiles salen de `profile_cards`. |
+| `profile_access(viewer, target)` | interna | `full` si se mostró con su Perfil principal en un evento de noche que comparten (o match de noche); `name` si comparten otro contexto; `null` si nada o bloqueo. |
+| `profile_cards(ids)` | asistente | Tarjetas saneadas: edad (nunca fecha), sin teléfono; con `name`, solo nombre. |
+| `persona_cards(ids)` | asistente | Perfiles adicionales ajenos sin nombre interno; LinkedIn solo tras reunión/contacto aceptado (`pro_unlocked`); empresa/cargo según `pro_details_after_meeting`. |
+| `can_see_attendee(event, viewer, target)` | RLS | Base de `attendees_select`: bloqueos, Modo Solo Amigos, networking solo para acreditados (`events.networking_checkin_only`). |
+| `my_attendances()` · `event_attendance(event)` · `shared_zones(event)` | asistente / equipo | Columnas privadas de `event_attendees` (por tabla solo se leen las públicas, también en Realtime). |
+| `request_meeting` · `respond_meeting` · `reschedule_meeting` · `cancel_meeting` | participantes | Reuniones: horario dentro del evento, cupo de la sala (`spot_busy`), agenda sin superposiciones (`meeting_conflict`), en la noche solo con matches; al aceptar abre el chat y fija la reunión. |
+| `drop_pin` | asistente | Respeta `pin_share_matches` (`pin_squad_only`). |
+| `join_event` | asistente | Entra en Modo Solo Amigos si `incognito_default`. |
+
+### Ficha ejecutiva, categorías y zonas (v1.10)
+
+| Objeto | Quién | Qué hace |
+|---|---|---|
+| `profile_personas` (+ `website_url`, `looking_for_note`, `offering_note`, `contact_email`, `contact_phone`, `privacy_level`) | dueño/a | Ficha ejecutiva. Bio de hasta 240 en corporativo (`personas_bio_len_chk`). El contacto NO es el teléfono de la cuenta. |
+| `persona_contact_visible(viewer, persona)` | interna | `strict`: solo tras reunión o contacto aceptado; `network`: también asistentes de un evento donde se usa; `public`: también equipo y organización. Nunca con bloqueo. `persona_cards` lo usa para el email y el teléfono. |
+| `attendee_tier_t` · `event_attendees.tier` · `event_invite_codes.tier` | organización | Categoría (attendee, speaker, vip, press, sponsor). La asigna el código al entrar (`join_event`) o `set_attendee_tier` (dueño/a y producción). No es escribible por el asistente. |
+| `generate_invite_codes(event, count, tier)` | organización | Lote de códigos con categoría. |
+| `event_zones` | lectura: quien está en el evento · gestión: dueño/a y producción | Puertas (`entrance`) y áreas (`area`) con `allowed_tiers` (vacío = todas). Hasta 20 por evento (`zones_limit`), nombre único. |
+| `zone_check_ins` | lectura: dueño/a, producción y seguridad · escritura: solo RPC | Registro de lecturas: zona, persona, código, personal, `granted`/`denied`, motivo y categoría. |
+| `create_team` · `set_team_member` · `delete_team` | dueño/a y producción | Equipos de la organización (corporativo): nombre único por evento, código `EQ-` del servidor, sumar/mover/quitar (máx. 12). En corporativo `create_squad`, `invite_to_squad`, `trigger_rescue` y `set_safety_status` responden `not_in_vertical`. |
+| `zone_check_in(event, zone, value)` | dueño/a, producción, seguridad | Escáner por zona (⇔ `zoneCheckIn`): identifica el QR en vivo (TOTP) o la entrada, valida la categoría y en puertas delega el ingreso en `door_scan`. En corporativo devuelve la cara profesional (sin edad). |
+
+### Agenda multi-track, Mi Agenda y Q&A / encuestas en vivo (v1.11)
+
+| Objeto | Quién | Qué hace |
+|---|---|---|
+| `event_sessions` | lectura: quien está en el evento · gestión: dueño/a y producción | Charlas (solo `kind = corporate`): título, descripción, track, sala, `spot_id` (pin del plano), `day` + `start_time`/`end_time` "HH:MM" (hora de Argentina), oradores (jsonb, ≤ 6), cupo. Trigger `session_check`: días del evento (`outside_event`), pin activo del evento, sala libre (`room_busy`), oradores, cupo ≥ agendados, ≤ 200 por evento. `enrolled_count` e `is_live_now` no son escribibles por tabla (column privileges). |
+| `session_enrollments` | lectura: cada persona las suyas · escritura: RPC | Mi Agenda. |
+| `enroll_session(session, replace[])` / `unenroll_session(session)` | asistente | Agenda con cupo (`session_full`), no charlas terminadas (`session_over`); `replace` saca charlas propias en la misma operación. Idempotente. |
+| `set_session_live(session, live)` | dueño/a y producción | Abre/cierra Q&A y encuestas; al terminar cierra la encuesta abierta. |
+| `session_questions` | lectura: quien está en el evento (las `hidden`, solo moderación y su autor/a) · escritura: RPC | Preguntas sin columna de autor: `author_label` ("Nombre · Empresa") o null si es anónima; `upvotes` contador del servidor. |
+| `session_question_authors` / `session_question_votes` | lectura: cada persona lo suyo | Autoría (privada, incluso para la organización) y votos ▲. |
+| `ask_question` / `vote_question` / `moderate_question` | asistente / asistente / dueño/a y producción | Preguntar (charla en vivo, 3–280, ≤ 5 abiertas), votar o sacar el voto (nunca la propia: `own_question`), y `feature` (una por charla), `unfeature`, `answer`, `reopen`, `hide`, `unhide`. |
+| `session_polls` / `session_poll_votes` | lectura: quien está en el evento / cada persona su voto | Encuestas (una abierta por charla: índice único parcial) con `results` agregados en el servidor. |
+| `launch_poll` / `close_poll` / `vote_poll` | dueño/a y producción / ídem / asistente | Lanzar (2–6 opciones distintas, cierra la anterior), cerrar y votar (cambiable mientras está abierta). |
+
+Los valores nuevos del enum `mood_tag_t` se agregan con `alter type … add value` y en el script se comparan como texto
+(`mood::text`), igual que `promoter`, para que `schema.sql` se pueda aplicar en una sola transacción.
+
 ## Storage
 
 | Bucket | Uso | Acceso |
 |---|---|---|
 | `profile-media` | Fotos y loops de perfil | Lectura pública; cada usuario escribe solo en su carpeta. |
-| `chat-media` | Fotos de chats | Cada usuario escribe en su carpeta; lectura para cualquier usuario autenticado que tenga la URL (rutas con UUID, no adivinables). |
+| `chat-media` | Fotos de chats (privado) | Cada usuario escribe en su carpeta; la lee quien la subió y quien puede ver un mensaje que la usa (participantes del 1:1 o del Squad). |
 | `venue-maps` | Planos subidos | Lectura pública; escribe Dueño/a o Producción del evento. |
+
+Ningún bucket acepta SVG (puede llevar scripts). Tipos y tamaños se re-aplican en cada corrida de `schema.sql`.
 
 ## Realtime
 
 Publicadas en `supabase_realtime`: `messages`, `map_pins`, `connections`, `squad_members`, `squads`,
-`blast_deliveries`, `user_perks_qrs`, `bar_orders`, `song_requests`, `raffles`, `event_attendees`. Realtime respeta
+`blast_deliveries`, `user_perks_qrs`, `bar_orders`, `song_requests`, `raffles`, `event_attendees`, `brands`,
+`squad_expenses`, `squad_settlements`, `profile_personas`, `meetings`, `venue_spots`, `event_zones`,
+`zone_check_ins` y las de la agenda (`event_sessions`, `session_enrollments`, `session_questions`,
+`session_question_authors`, `session_question_votes`, `session_polls`, `session_poll_votes`). Realtime respeta
 RLS: cada usuario solo recibe lo que puede ver.
 
 ## Reglas para cambiar el esquema

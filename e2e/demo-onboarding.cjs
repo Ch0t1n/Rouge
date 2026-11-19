@@ -1,13 +1,14 @@
 // Demo · onboarding completo (perfil, fotos comprimidas, mood, privacidad)
 const { chromium, devices } = require("playwright");
 // Ver e2e/README.md. Configuración por variables de entorno (ver e2e/env.cjs).
-const { BASE: B, OUT: SP, FIXTURE_PHOTO } = require("./env.cjs");
+const { BASE: B, OUT: SP, FIXTURE_PHOTO, unlockDemo } = require("./env.cjs");
 
 const log = (...a) => console.log(...a);
 (async () => {
   const browser = await chromium.launch();
 
   const ctx = await browser.newContext({ ...devices["iPhone 14 Pro"] });
+  await unlockDemo(ctx); // personas y "Simular…" solo tras entrar por /demo
   const p = await ctx.newPage();
   const errors = [];
   p.on("pageerror", (e) => errors.push("pageerror " + e.message));
@@ -37,6 +38,7 @@ const log = (...a) => console.log(...a);
   // Paso 2: foto + video + bio
   await p.waitForSelector("text=Tu mejor versión");
   await p.setInputFiles('[data-testid="photo-input"]', FIXTURE_PHOTO);
+  await p.click('[role="dialog"] button:has-text("Usar foto")');
   await p.waitForSelector('img[alt="Foto 1"]', { timeout: 30000 });
   log("toast compresión →", (await p.textContent("text=/→/").catch(() => "?")).trim());
   // Video de 3s generado en el navegador (con pista de audio para verificar que se elimina)
@@ -82,7 +84,7 @@ const log = (...a) => console.log(...a);
   await p.click("text=Bloquear número");
   await p.waitForSelector("text=+54 9 •• ••••-1002");
   await p.screenshot({ path: `${SP}/ob-4.png` });
-  await p.click("text=Entrar a ROUGE");
+  await p.click("text=Entrar a Rouge Pass");
   await p.waitForURL(`${B}/app`);
   log("✔ onboarding completo → home");
 

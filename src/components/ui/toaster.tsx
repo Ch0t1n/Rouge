@@ -25,7 +25,7 @@ export function Toaster() {
     <div
       className={cn(
         "pointer-events-none fixed top-0 z-[60] flex flex-col gap-2 px-3 pt-[max(0.75rem,var(--safe-top))]",
-        admin ? "right-0 w-full max-w-sm" : "inset-x-0 mx-auto max-w-md",
+        admin ? "right-0 w-full max-w-sm" : "inset-x-0 mx-auto max-w-md md:left-auto md:right-0 md:mx-0 md:w-full md:max-w-sm",
       )}
       aria-live="polite"
     >

@@ -9,6 +9,9 @@ import { useNow, useRouge } from "@/lib/store/RougeContext";
 import { cn, formatMoney, whatsappLink } from "@/lib/utils";
 import { AdminHeader, Panel } from "@/components/admin/AdminChrome";
 import { SecurityPanel } from "@/components/admin/SecurityPanel";
+import { ReportsPanel } from "@/components/admin/ReportsPanel";
+import { LiveCurvesPanel } from "@/components/admin/LiveCurvesPanel";
+import { hasFeature } from "@/lib/engine/verticals";
 import { permissionForPath } from "@/lib/engine/roles";
 import { Badge, LiveDot } from "@/components/ui/badge";
 
@@ -56,7 +59,7 @@ export default function AdminOverviewPage() {
   const security = role === "security";
 
   return (
-    <main className="mx-auto max-w-7xl space-y-8 px-5 py-6 lg:px-10 lg:py-10">
+    <main className="mx-auto max-w-7xl 2xl:max-w-[1600px] space-y-8 px-5 py-6 lg:px-10 lg:py-10">
       <AdminHeader
         title={event.name}
         subtitle={
@@ -75,7 +78,9 @@ export default function AdminOverviewPage() {
         }
       />
 
-      {(security || m.rescueAlerts > 0) && <SecurityPanel event={event} />}
+      {/* Corporativo: sin Botón de Rescate, no hay panel de alertas. */}
+      {(security || m.rescueAlerts > 0) && hasFeature(state, event.id, "rescue") && <SecurityPanel event={event} />}
+      <ReportsPanel event={event} />
 
       {security ? (
         <section className="grid gap-4 sm:grid-cols-3">
@@ -111,6 +116,8 @@ export default function AdminOverviewPage() {
           </div>
         ))}
       </section>
+
+      {!security && <LiveCurvesPanel event={event} />}
 
       <section className="grid gap-6 xl:grid-cols-3">
         <Panel title="Embudo de la noche" className="xl:col-span-2">

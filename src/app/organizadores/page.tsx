@@ -6,7 +6,7 @@ import { Landing } from "@/components/landing/Landing";
  * OCULTO a propósito: no se indexa y la landing pública ("/") no lo enlaza. Se comparte por link.
  */
 export const metadata: Metadata = {
-  title: "ROUGE para organizadores",
+  title: "Rouge Pass para organizadores",
   description: "La app de la fiesta para tus invitados y el panel para operar y vender más.",
   robots: { index: false, follow: false },
 };

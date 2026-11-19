@@ -46,7 +46,7 @@ async function user(admin, name) {
   const KEY = k.key;
 
   let r = await call("GET", "");
-  assert(r.status === 200 && r.json.name === "ROUGE API", "GET /api/v1");
+  assert(r.status === 200 && r.json.name === "Rouge Pass API", "GET /api/v1");
   r = await call("GET", "/events");
   assert(r.status === 401 && r.json.error.code === "missing_api_key", "sin clave → 401 missing_api_key");
   r = await call("GET", "/events", { key: `rk_live_${"0".repeat(10)}_${"0".repeat(48)}` });

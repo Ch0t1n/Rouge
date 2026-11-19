@@ -246,3 +246,18 @@ describe("Instagram en el perfil", () => {
     expect(un.ok && un.state.instagram_links.some((l) => l.user_id === DEMO_IDS.me)).toBe(false);
   });
 });
+
+describe("Text Blasts: validación (espejo de send_blast)", () => {
+  const s = createSeedState(NOW);
+  const ev = s.active_event_id;
+  const base = { title: "Promo", message: "2x1 en la barra", segment: { kind: "all" as const } };
+  it("acepta rutas de ROUGE y https", () => {
+    expect(A.sendBlast(s, ev, { ...base, ctaLabel: "Ir", ctaLink: "/bar" }, NOW).ok).toBe(true);
+    expect(A.sendBlast(s, ev, { ...base, ctaLabel: "Entradas", ctaLink: "https://entradas.example.com" }, NOW).ok).toBe(true);
+  });
+  it("rechaza links peligrosos, textos largos y duraciones absurdas", () => {
+    for (const link of ["javascript:alert(1)", "//evil.com", "/\\evil.com", "http://inseguro.com"]) expect(A.sendBlast(s, ev, { ...base, ctaLabel: "x", ctaLink: link }, NOW).ok).toBe(false);
+    expect(A.sendBlast(s, ev, { ...base, title: "x".repeat(81) }, NOW).ok).toBe(false);
+    expect(A.sendBlast(s, ev, { ...base, flashMinutes: 100000 }, NOW).ok).toBe(false);
+  });
+});

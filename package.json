@@ -2,9 +2,11 @@
   "name": "rouge",
   "version": "1.6.0",
   "private": true,
-  "description": "ROUGE — plataforma social y operativa para eventos, fiestas y discotecas (PWA B2B2C).",
+  "description": "Rouge Pass — plataforma social y operativa para eventos, fiestas y discotecas (PWA B2B2C).",
   "scripts": {
+    "predev": "node scripts/copy-vendor.cjs",
     "dev": "next dev",
+    "prebuild": "node scripts/copy-vendor.cjs",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
@@ -21,6 +23,7 @@
     "@react-three/drei": "^10.7.9",
     "@react-three/fiber": "^9.8.2",
     "@supabase/supabase-js": "^2.119.0",
+    "@vercel/analytics": "^2.0.1",
     "browser-image-compression": "^2.0.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -34,10 +37,12 @@
     "qrcode.react": "^4.2.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
+    "react-easy-crop": "6.2.4",
     "tailwind-merge": "^3.7.0",
     "three": "^0.187.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.13",
     "@types/node": "^22.10.0",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.1.0",

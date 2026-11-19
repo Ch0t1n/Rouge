@@ -1,6 +1,6 @@
 # Guía para organizadores y equipo del evento
 
-Cómo preparar y operar una noche con ROUGE. El panel está en `/admin` y cada persona del equipo entra por
+Cómo preparar y operar una noche con Rouge Pass. El panel está en `/admin` y cada persona del equipo entra por
 `/login` → **Equipo**.
 
 ## Roles
@@ -13,7 +13,7 @@ Cómo preparar y operar una noche con ROUGE. El panel está en `/admin` y cada p
 | 🛵 Mozo/a | Comandas | Lleva pedidos a pines y Mesas VIP. |
 | 🛡️ Seguridad | Resumen | Ve las alertas de rescate en vivo con su ubicación en el plano. |
 
-**Sumar a alguien:** *Eventos y accesos → Equipo del evento* → escribí su @usuario de ROUGE (tiene que haber creado
+**Sumar a alguien:** *Eventos y accesos → Equipo del evento* → escribí su @usuario de Rouge Pass (tiene que haber creado
 su cuenta), elegí el rol y tocá **Sumar**. Para cambiar el rol usá el selector; para sacarlo, la ✕.
 
 ## Una semana antes

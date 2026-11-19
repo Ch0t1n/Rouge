@@ -9,18 +9,18 @@ export function openApiSpec(serverUrl: string) {
   return {
     openapi: "3.1.0",
     info: {
-      title: "ROUGE API",
+      title: "Rouge Pass API",
       version: API_VERSION,
       description:
-        "API para ticketeras y productoras: generar los códigos de acceso de ROUGE y enviarlos junto con cada entrada.\n\n" +
-        "**Autenticación:** `Authorization: Bearer <clave>`. La clave se crea en el panel de ROUGE (Eventos y accesos → API para ticketeras) y se muestra una sola vez.\n\n" +
+        "API para ticketeras y productoras: generar los códigos de acceso de Rouge Pass y enviarlos junto con cada entrada.\n\n" +
+        "**Autenticación:** `Authorization: Bearer <clave>`. La clave se crea en el panel de Rouge Pass (Eventos y accesos → API para ticketeras) y se muestra una sola vez.\n\n" +
         "**Flujo recomendado:** al emitir cada entrada, pedí un código con `tickets[].external_ref` = id de la entrada en tu sistema (reintentar es seguro: devuelve el mismo código). " +
         "Poné en el mail el `join_url` (botón) y la imagen `qr_url`. Si la entrada se reembolsa, anulá el código con DELETE.",
     },
     servers: [{ url: `${serverUrl}/api/v1` }],
     security: [{ bearer: [] }],
     components: {
-      securitySchemes: { bearer: { type: "http", scheme: "bearer", description: "Clave rk_live_… de ROUGE." } },
+      securitySchemes: { bearer: { type: "http", scheme: "bearer", description: "Clave rk_live_… de Rouge Pass." } },
       schemas: {
         Error: {
           type: "object",
@@ -45,7 +45,7 @@ export function openApiSpec(serverUrl: string) {
             status: { type: "string", enum: ["unused", "used", "revoked"] },
             external_ref: { type: ["string", "null"], description: "Id de la entrada en tu sistema." },
             label: { type: ["string", "null"], example: "VIP" },
-            join_url: { type: "string", format: "uri", description: "Link para el botón del mail: abre ROUGE con el código cargado." },
+            join_url: { type: "string", format: "uri", description: "Link para el botón del mail: abre Rouge Pass con el código cargado." },
             qr_url: { type: "string", format: "uri", description: "Imagen PNG del QR del join_url (agregá ?size=256..1024 o ?format=svg)." },
             created_at: { type: "string", format: "date-time" },
             used_at: { type: ["string", "null"], format: "date-time" },

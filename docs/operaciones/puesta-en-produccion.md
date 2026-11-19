@@ -47,12 +47,13 @@ Seguridad). Guion de 7 minutos en [Demo comercial](../producto/demo-comercial.md
 |---|---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | Sí | Navegador | *Project Settings → API → Project URL* |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Sí | Navegador | *Project Settings → API → anon public* |
-| `NEXT_PUBLIC_APP_URL` | Con Instagram o API | Servidor | `https://app.tudominio.com` (vuelta del OAuth y links/QR que devuelve la API) |
+| `NEXT_PUBLIC_APP_URL` | Con Instagram o API | Servidor | `https://app.tudominio.com` (vuelta del OAuth y links/QR que devuelve la API). **Obligatoria en producción**: sin ella Instagram queda deshabilitado (el origen nunca se toma del header `Host`). |
 | `NEXT_PUBLIC_AUTH_GOOGLE` | No | Navegador | `1` para mostrar "Continuar con Google" |
 | `NEXT_PUBLIC_AUTH_INSTAGRAM` | No | Navegador | `1` para mostrar Instagram (login, conectar e importar fotos) |
 | `INSTAGRAM_APP_ID` | Con Instagram | Servidor | App de Meta |
 | `INSTAGRAM_APP_SECRET` | Con Instagram | Servidor | App de Meta (secreto) |
 | `SUPABASE_SERVICE_ROLE_KEY` | Con Instagram o API | **Solo servidor** | *Project Settings → API → service_role*. Nunca con prefijo `NEXT_PUBLIC_`. |
+| `INSTAGRAM_TOKEN_KEY` | Recomendada con Instagram | **Solo servidor** | Secreto largo para cifrar los tokens de Instagram en la base (AES-256-GCM). Generarlo con `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`. Si se cambia, cada usuario reconecta Instagram. |
 
 Opcionales (tests o casos especiales): `INSTAGRAM_OAUTH_URL`, `INSTAGRAM_TOKEN_URL`, `INSTAGRAM_GRAPH_URL`,
 `INSTAGRAM_MEDIA_HOSTS`, `INSTAGRAM_PLACEHOLDER_EMAIL_DOMAIN`.
@@ -62,7 +63,7 @@ Opcionales (tests o casos especiales): `INSTAGRAM_OAUTH_URL`, `INSTAGRAM_TOKEN_U
 ### 3. Google
 
 1. [Google Cloud Console](https://console.cloud.google.com/) → proyecto → *APIs y servicios*:
-   - *Pantalla de consentimiento OAuth*: nombre ROUGE, logo, email de soporte, dominio y **política de privacidad**.
+   - *Pantalla de consentimiento OAuth*: nombre Rouge Pass, logo, email de soporte, dominio y **política de privacidad**.
      Publicarla (con muchos usuarios Google pide verificación).
    - *Credenciales → Crear ID de cliente OAuth* (aplicación web). URI de redireccionamiento autorizada:
      `https://<proyecto>.supabase.co/auth/v1/callback`.
@@ -91,21 +92,38 @@ Cada organizador crea sus claves desde el panel. Guía para pasarle a la tickete
 
 ### 5b. Cobros con Mercado Pago (opcional)
 
-Para que cada marca cobre la Barra Express con su cuenta de Mercado Pago (y ROUGE reciba su comisión automática),
+Para que cada marca cobre la Barra Express con su cuenta de Mercado Pago (y Rouge Pass reciba su comisión automática),
 seguí [Mercado Pago](../tecnica/mercadopago.md): app de Marketplace, `MP_CLIENT_ID`, `MP_CLIENT_SECRET`,
 `MP_TOKEN_KEY`, `MP_WEBHOOK_SECRET`, `MP_MARKETPLACE_FEE_PERCENT` y `NEXT_PUBLIC_PAYMENTS_MP=1`.
+
+### 5c. Analíticas de Vercel
+
+La app ya trae `@vercel/analytics` (componente `VercelAnalytics` en el layout). Para que empiece a medir:
+**Vercel → proyecto → Analytics → Enable** y volver a desplegar. Sin cookies, no hace falta banner. Las URLs se
+envían sin query ni fragmento y con `/join/[code]`, `/u/[username]` y `/chat/[connectionId]` en lugar del valor real
+(`src/lib/telemetry/redactUrl.ts`): nunca salen códigos de acceso, usernames, ids ni tokens. En local no envía nada.
 
 ### 6. Dominio y verificación final
 
 1. Asignar `app.tudominio.com` en Vercel.
-2. Recorrer el [checklist de lanzamiento](./checklist-lanzamiento-v1.md).
+2. Verificar los headers de seguridad: `curl -sI https://app.tudominio.com/app` tiene que mostrar
+   `content-security-policy` (con `nonce-…` y el dominio de Supabase), `strict-transport-security`, `x-frame-options: DENY`
+   y `permissions-policy`. Un escáner gratuito (securityheaders.com o MDN HTTP Observatory) sirve de control externo.
+3. **Límite de pedidos en el borde:** el de `/api/*` es en memoria por instancia. Para un evento grande, sumar una regla en
+   *Vercel → Firewall* (por ejemplo 60 pedidos/min por IP a `/api/instagram/*`).
+4. Reportes de CSP: aparecen en los logs de Vercel como `[csp] <directiva> <recurso bloqueado> <página>`. Si aparece un
+   origen legítimo nuevo, se agrega en `src/lib/security/headers.ts`.
+5. Recorrer el [checklist de lanzamiento](./checklist-lanzamiento-v1.md).
 3. Opcional: correr las pruebas de integración contra un proyecto de **staging** (nunca contra producción):
    ver [Testing](./testing.md).
 
 ## Actualizar el esquema en producción
 
-`schema.sql` es idempotente: se vuelve a ejecutar completo en el SQL Editor. Antes, probarlo en staging y correr
-`npm run test:integration` contra staging.
+`schema.sql` es idempotente: se vuelve a ejecutar completo en el SQL Editor. Antes, `npm test` (incluye los ataques a RLS
+sobre PGlite), probarlo en staging y correr `npm run test:integration` contra staging.
+
+Nunca agregar el schema `private` a *Project Settings → API → Exposed schemas*: ahí viven los helpers de permisos y no
+tienen que poder llamarse por la API.
 
 ## Costos de referencia
 

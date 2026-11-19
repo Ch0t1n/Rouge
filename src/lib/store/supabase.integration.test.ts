@@ -10,9 +10,11 @@
  */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { beforeAll, describe, expect, it } from "vitest";
-import type { RougeState, UUID } from "@/lib/types";
+import type { RougeEvent, RougeState, UUID } from "@/lib/types";
 import { fetchRemoteState } from "@/lib/supabase/sync";
 import * as C from "./commands";
+import { localParts } from "@/lib/engine/schedule";
+import { dynamicQrValue } from "@/lib/engine/qr";
 import type { Command } from "./commands";
 
 const URL = process.env.SUPABASE_TEST_URL;
@@ -237,6 +239,9 @@ describe.skipIf(!URL || !ANON || !SERVICE)("Supabase real: flujo completo con RL
   });
 
   it("crear evento nuevo: quien lo crea queda como staff y con menú", async () => {
+    // [v1.8] Crear eventos exige autogestión habilitada por ROUGE HQ (can_manage_modules): la habilita el servidor.
+    const { error: selfService } = await admin.from("organization_settings").upsert([sofi, cami, mateo, staff].map((a) => ({ organization_id: a.id, allow_owner_self_service: true })));
+    expect(selfService).toBeNull();
     const start = new Date(Date.now() + 72 * 3_600_000).toISOString();
     const ev = await act(sofi, C.upsertEvent({ name: `Neon ${RUN}`, starts_at: start, ends_at: new Date(Date.now() + 78 * 3_600_000).toISOString() }));
     const remote = await fetchRemoteState(sofi.sb, sofi.id, ev.id);
@@ -446,7 +451,7 @@ describe.skipIf(!URL || !ANON || !SERVICE)("Supabase real: flujo completo con RL
     const s = await snap(cami, ev.id);
     expect(await rejects(cami, C.removeAttendee(ev.id, mateo.id, true), { banned: true }, s)).toMatchObject({ message: "forbidden" });
     await act(mateo, C.removeAttendee(ev.id, cami.id, true, "prueba"), ev.id);
-    expect((await snap(mateo, ev.id)).event_attendees.some((a) => a.user_id === cami.id)).toBe(false);
+    expect((await snap(mateo, ev.id)).event_attendees.some((a) => a.event_id === ev.id && a.user_id === cami.id)).toBe(false);
     expect((await snap(mateo, ev.id)).event_bans.map((b) => b.user_id)).toContain(cami.id);
     const { error: banned } = await cami.sb.rpc("join_event", { p_code: ev.master_invite_code, p_mood: "just_dance" });
     expect(banned?.message).toBe("banned");
@@ -488,7 +493,12 @@ describe.skipIf(!URL || !ANON || !SERVICE)("Supabase real: flujo completo con RL
     const { data: codes } = await sofi.sb.from("event_invite_codes").select("id").eq("event_id", ev.id);
     expect(codes ?? []).toHaveLength(0);
     // Puerta: el dueño escanea el pase del nuevo asistente; un RRPP no puede escanear
-    const pass = `ROUGE:PASS:${ev.id}:${newbie.id}`;
+    // v1.7: el pase es el QR dinámico (TOTP); el fijo se rechaza como captura.
+    const { data: secrets } = await newbie.sb.rpc("my_qr_secrets", { p_event: ev.id });
+    const passSecret = (secrets as { kind: string; secret: string }[]).find((x) => x.kind === "PASS")!.secret;
+    const staticPass = `ROUGE:PASS:${ev.id}:${newbie.id}`;
+    expect((await act(mateo, C.doorCheckIn(ev.id, staticPass), ev.id)).status).toBe("static_qr");
+    const pass = dynamicQrValue(passSecret, "PASS", newbie.id);
     const { error: rrppDoor } = await sofi.sb.rpc("door_check_in", { p_event: ev.id, p_value: pass });
     expect(rrppDoor?.message).toBe("forbidden");
     const first = await act(mateo, C.doorCheckIn(ev.id, pass), ev.id);
@@ -498,6 +508,132 @@ describe.skipIf(!URL || !ANON || !SERVICE)("Supabase real: flujo completo con RL
     // Con escáner en uso, se liquida por ingreso confirmado
     const stats = (await snap(mateo, ev.id)).promoter_stats!;
     expect(stats.find((r) => r.user_id === sofi.id)).toMatchObject({ entries: 1, checked_in: 1, billable: 1, to_pay: 1000 });
+  });
+
+  it("verticales: evento corporativo con perfil profesional obligatorio y caras que no se cruzan", async () => {
+    const start = new Date(Date.now() + 2 * 3_600_000).toISOString();
+    const ev = await act(staff, C.upsertEvent({ kind: "corporate", name: `Pyme ${RUN}`, starts_at: start, ends_at: new Date(Date.now() + 8 * 3_600_000).toISOString() }));
+    expect(ev.kind).toBe("corporate");
+    const code = ev.master_invite_code;
+    // Sin perfil profesional el servidor rechaza (la regla local se saltea para probar join_event).
+    const before = await snap(cami, ev.id);
+    expect((await rejects(cami, C.joinEvent(cami.id, code, "pro_buying", ev.id, null), { eventId: ev.id }, before))?.message).toMatch(/persona_required/);
+    // Mood de la noche en un evento corporativo: invalid_mood.
+    const sofiPro = await act(sofi, C.upsertPersona(sofi.id, { kind: "corporate", label: "Trabajo", job_title: "Diseñadora", company: `Estudio ${RUN}`, looking_for: ["clients"], offering: ["software"] }), ev.id);
+    const s0 = await snap(sofi, ev.id);
+    expect((await rejects(sofi, C.joinEvent(sofi.id, code, "after_hunt", ev.id, sofiPro.id), { eventId: ev.id }, s0))?.message).toMatch(/invalid_mood/);
+    await act(sofi, C.joinEvent(sofi.id, code, "pro_selling", ev.id, sofiPro.id), ev.id);
+    // Mateo no está en el evento: no ve el perfil profesional de Sofía.
+    expect((await snap(mateo, ev.id)).profile_personas.some((p) => p.id === sofiPro.id)).toBe(false);
+    // Cami entra con su perfil profesional y ve a Sofía con su cara profesional (sin géneros de la noche).
+    const camiPro = await act(cami, C.upsertPersona(cami.id, { kind: "corporate", label: "Pyme", company: `Textil ${RUN}`, looking_for: ["software"], offering: ["suppliers"] }), ev.id);
+    await act(cami, C.joinEvent(cami.id, code, "pro_buying", ev.id, camiPro.id), ev.id);
+    const camiState = await snap(cami, ev.id);
+    const { faceOf } = await import("@/lib/engine/verticals");
+    const face = faceOf(camiState, sofi.id, ev.id)!;
+    expect(face.persona?.company).toBe(`Estudio ${RUN}`);
+    expect(face.music_genres).toEqual([]);
+    // El tipo de evento ya no se puede cambiar; el perfil en uso no se borra.
+    const st = await snap(staff, ev.id);
+    const asNight: RougeEvent = { ...ev, kind: "nightlife" };
+    expect((await rejects(staff, C.upsertEvent(asNight), asNight, st))?.message).toMatch(/kind_locked/);
+    expect((await rejects(sofi, C.deletePersona(sofi.id, sofiPro.id), undefined, s0))?.message).toMatch(/persona_in_use/);
+  });
+
+  it("privacidad v1.8: perfiles ajenos solo como tarjeta saneada y asistencia sin columnas privadas", async () => {
+    // Por tabla, nadie lee perfiles ajenos (ni siquiera de su evento).
+    const { data: others } = await cami.sb.from("profiles").select("id").neq("id", cami.id);
+    expect(others ?? []).toEqual([]);
+    // Tarjeta: Sofía y Cami comparten la fiesta con su Perfil principal → edad, nunca fecha ni teléfono.
+    const { data: cards, error } = await cami.sb.rpc("profile_cards", { p_ids: [sofi.id] });
+    expect(error).toBeNull();
+    const card = (cards as Record<string, unknown>[])[0];
+    expect(card).toBeTruthy();
+    expect(card).not.toHaveProperty("birth_date");
+    expect(card).not.toHaveProperty("phone_normalized");
+    expect(typeof card.age).toBe("number");
+    // Columnas privadas de la asistencia: cerradas por tabla.
+    const priv = await cami.sb.from("event_attendees").select("total_spent").eq("event_id", EV);
+    expect(priv.error).not.toBeNull();
+    const own = await cami.sb.rpc("my_attendances");
+    expect(own.error).toBeNull();
+    // Ajustes de privacidad: solo los propios.
+    await act(cami, C.updatePrivacySettings(cami.id, { pin_share_matches: false }));
+    const { data: mineSettings } = await cami.sb.from("privacy_settings").select("*");
+    expect((mineSettings as { user_id: string }[]).every((r) => r.user_id === cami.id)).toBe(true);
+  });
+
+  it("reuniones v1.8: pedir con sala, aceptar abre el chat y la sala queda ocupada", async () => {
+    const start = new Date(Date.now() + 30 * 60_000).toISOString();
+    const ev = await act(staff, C.upsertEvent({ kind: "corporate", name: `Ronda ${RUN}`, starts_at: start, ends_at: new Date(Date.now() + 6 * 3_600_000).toISOString() }));
+    const room = await act(staff, C.upsertVenueSpot(ev.id, { name: "Sala 1", kind: "room", capacity: 1, coord_x: 70, coord_y: 60 }), ev.id);
+    for (const a of [sofi, mateo]) {
+      const persona = await act(a, C.upsertPersona(a.id, { kind: "corporate", label: "Trabajo", company: `${a.name} SA`, looking_for: ["clients"], offering: ["software"] }), ev.id);
+      await act(a, C.joinEvent(a.id, ev.master_invite_code, "pro_networking", ev.id, persona.id), ev.id);
+    }
+    const at = new Date(Math.ceil((Date.now() + 60 * 60_000) / 900_000) * 900_000).toISOString();
+    const req = await act(sofi, C.requestMeeting(ev.id, sofi.id, mateo.id, { topic: "Integración", startsAt: at, duration: 30, location: { kind: "spot", spotId: room.id } }), ev.id);
+    expect(req.status).toBe("pending");
+    // Cami no está en la reunión: no la ve.
+    const { data: seen } = await cami.sb.from("meetings").select("id").eq("id", req.id);
+    expect(seen ?? []).toEqual([]);
+    const accepted = await act(mateo, C.respondMeeting(req.id, mateo.id, true), ev.id);
+    expect(accepted.status).toBe("accepted");
+    expect(accepted.connection_id).toBeTruthy();
+    // Otra pareja no puede reservar la misma sala en ese horario.
+    const st = await snap(staff, ev.id);
+    const err = await rejects(staff, C.requestMeeting(ev.id, staff.id, mateo.id, { topic: "x", startsAt: at, duration: 15, location: { kind: "spot", spotId: room.id } }), accepted, st);
+    expect(err?.message).toBeTruthy();
+  });
+
+  it("agenda v1.11: charlas por tabla, Mi Agenda con reemplazo, Q&A anónima sin autoría visible y encuesta en vivo", async () => {
+    const start = new Date(Date.now() + 10 * 60_000).toISOString();
+    const ev = await act(staff, C.upsertEvent({ kind: "corporate", name: `Summit ${RUN}`, starts_at: start, ends_at: new Date(Date.now() + 8 * 3_600_000).toISOString() }));
+    for (const a of [sofi, mateo]) {
+      const persona = await act(a, C.upsertPersona(a.id, { kind: "corporate", label: "Trabajo", company: `${a.name} SA`, looking_for: ["clients"], offering: ["software"] }), ev.id);
+      await act(a, C.joinEvent(a.id, ev.master_invite_code, "pro_learning", ev.id, persona.id), ev.id);
+    }
+    const day = localParts(Date.now() + 60 * 60_000).day;
+    const t = localParts(Math.ceil((Date.now() + 60 * 60_000) / 3_600_000) * 3_600_000).time;
+    const later = (h: number) => `${String(Math.min(23, Number(t.slice(0, 2)) + h)).padStart(2, "0")}:${h === 0 ? "45" : "30"}`;
+    if (t >= "22:00") return; // la ventana cruzaría la medianoche: se saltea en esa hora
+    const a = await act(staff, C.upsertSession(ev.id, { title: "Keynote", track: "Tecnología & IA", room_name: "Auditorio", day, start_time: t, end_time: later(0) }), ev.id);
+    const b = await act(staff, C.upsertSession(ev.id, { title: "Panel", track: "Liderazgo", room_name: "Sala B", day, start_time: t, end_time: later(1), capacity: 1 }), ev.id);
+    // La misma sala en el mismo horario: rechazada por el trigger.
+    const st0 = await snap(staff, ev.id);
+    const clash = { ...a, id: crypto.randomUUID(), title: "Choca", track: "Liderazgo", room_name: "auditorio" };
+    expect((await rejects(staff, C.upsertSession(ev.id, clash), clash, st0))?.message).toBe("room_busy");
+    // El contador no se escribe por tabla.
+    const { error: cheat } = await staff.sb.from("event_sessions").update({ enrolled_count: 99 }).eq("id", a.id);
+    expect(cheat).toBeTruthy();
+    // Mi Agenda: agendo A, después B reemplazando A; el cupo de B (1) deja afuera a Mateo.
+    await act(sofi, C.enrollSession(sofi.id, a.id), ev.id);
+    const swap = await act(sofi, C.enrollSession(sofi.id, b.id, [a.id]), ev.id);
+    expect(swap.session.enrolled_count).toBe(1);
+    const sofiState = await snap(sofi, ev.id);
+    expect(sofiState.session_enrollments.map((e) => e.session_id)).toEqual([b.id]);
+    expect(sofiState.event_sessions.find((x) => x.id === a.id)?.enrolled_count).toBe(0);
+    const mateoState = await snap(mateo, ev.id);
+    expect((await rejects(mateo, C.enrollSession(mateo.id, b.id), swap, mateoState))?.message).toBe("session_full");
+    expect(mateoState.session_enrollments).toEqual([]); // no ve las inscripciones de Sofía
+    // Q&A: cerrada hasta que la organización la pone en vivo; anónima sin autoría visible para otros.
+    expect((await rejects(sofi, C.askQuestion(sofi.id, a.id, "¿Hay grabación?", true), sofiState.session_questions[0], sofiState))?.message).toBe("not_live");
+    await act(staff, C.setSessionLive(ev.id, a.id, true), ev.id);
+    const q = await act(sofi, C.askQuestion(sofi.id, a.id, "¿Hay grabación?", true), ev.id);
+    expect(q).toMatchObject({ is_anonymous: true, author_label: null });
+    const { data: authors } = await mateo.sb.from("session_question_authors").select("*");
+    expect(authors ?? []).toEqual([]);
+    expect(await act(mateo, C.toggleQuestionVote(mateo.id, q.id), ev.id)).toEqual({ voted: true, upvotes: 1 });
+    expect((await snap(sofi, ev.id)).session_question_authors.map((x) => x.question_id)).toEqual([q.id]);
+    // Moderación: Mateo no puede ocultar; la organización sí y deja de verla el público.
+    expect((await rejects(mateo, C.moderateQuestion(ev.id, q.id, "hide"), q, mateoState))?.message).toBe("forbidden");
+    await act(staff, C.moderateQuestion(ev.id, q.id, "hide"), ev.id);
+    expect((await snap(mateo, ev.id)).session_questions).toEqual([]);
+    // Encuesta: voto cambiable y totales del servidor.
+    const poll = await act(staff, C.launchPoll(ev.id, a.id, "¿Sirvió?", ["Sí", "No"]), ev.id);
+    await act(mateo, C.votePoll(mateo.id, poll.id, "o1"), ev.id);
+    const after = await act(mateo, C.votePoll(mateo.id, poll.id, "o2"), ev.id);
+    expect(after.results).toEqual({ o1: 0, o2: 1 });
   });
 
   it("storage: subo a mi carpeta, no a la de otra persona", async () => {

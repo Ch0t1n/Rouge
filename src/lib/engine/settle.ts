@@ -15,6 +15,7 @@
  * Contraparte SQL: squad_expenses, squad_settlements y las RPC add_squad_expense / record_settlement.
  */
 import type { PayoutAlias, RougeState, SettlementMethod, SquadExpense, SquadSettlement, UUID } from "@/lib/types";
+import { FEATURE_DISABLED, featureOn } from "./features";
 import { uid } from "@/lib/utils";
 
 type R<T> = { ok: true; state: RougeState; data: T } | { ok: false; error: string };
@@ -169,6 +170,7 @@ export function addSquadExpense(state: RougeState, squadId: UUID, userId: UUID, 
   const eventId = squadEvent(state, squadId);
   const members = squadMemberIds(state, squadId);
   if (!eventId || !members.includes(userId)) return fail("No sos parte de este Squad.");
+  if (!featureOn(state, eventId, "enableSquadBillSplit")) return fail(FEATURE_DISABLED);
   const description = input.description.trim();
   if (!description || description.length > EXPENSE_DESCRIPTION_MAX) return fail(`Contá en qué fue el gasto (máximo ${EXPENSE_DESCRIPTION_MAX} caracteres).`);
   const amount = Math.round(input.amount * 100) / 100;

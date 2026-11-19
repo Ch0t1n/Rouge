@@ -48,6 +48,7 @@ export function Footer() {
         { label: "Entrar al panel", href: "/admin", staff: true },
         { label: "Crear mi evento", href: "/admin/events", staff: true },
         { label: "API para ticketeras", href: "/api/v1/openapi.json", external: true },
+        { label: "Eventos corporativos · ROUGE PRO", href: "/pro" },
       ]
     : [
         { label: "Tengo una entrada", href: appHref },
@@ -62,7 +63,7 @@ export function Footer() {
           <p className="font-mono text-xs uppercase tracking-[0.25em] text-rouge">[ 06 {"//"} ESTA NOCHE ]</p>
           <h2 className="mt-4 font-display text-5xl font-bold uppercase leading-[0.9] tracking-tighter sm:text-7xl">{org ? "¿Arrancamos?" : "¿Salís hoy?"}</h2>
           <p className="mt-4 max-w-md rounded-xl bg-background/60 text-muted backdrop-blur-sm">
-            {org ? "Mirá la demo en vivo o creá tu evento: link maestro, códigos de 1 uso, RRPP y barra listos en minutos." : "Entrá con el link o el QR de tu entrada. Sin descargar nada."}
+            {org ? "Mirá la demo en vivo o creá tu evento: link maestro, códigos de 1 uso, RRPP y barra listos en minutos." : "Entrá a tu fiesta con el link o el QR de tu entrada. Sin descargar nada."}
           </p>
         </div>
         <nav aria-label="Accesos" className="grid gap-1 rounded-2xl bg-background/70 p-3 backdrop-blur-md">
@@ -98,25 +99,28 @@ export function Footer() {
         </div>
       </div>
 
-      <p data-giant aria-label="ROUGE® Nightlife OS" className="mt-20 select-none overflow-hidden whitespace-nowrap text-center font-display text-[28vw] font-bold uppercase leading-[0.8] tracking-tighter">
-        {"ROUGE®".split("").map((c, i) => (
+      <p data-giant aria-label="Rouge Pass®" className="mt-20 select-none overflow-hidden whitespace-nowrap text-center font-display text-[28vw] font-bold uppercase leading-[0.8] tracking-tighter">
+        {"ROUGE".split("").map((c, i) => (
           <span key={i} aria-hidden className="inline-block text-rouge text-glow-rouge">
             {c}
           </span>
         ))}
       </p>
-      <p aria-hidden className="text-outline select-none whitespace-nowrap text-center font-display text-[16.8vw] font-bold uppercase leading-[0.9] tracking-tighter">
-        Nightlife OS
+      <p aria-hidden className="text-outline select-none whitespace-nowrap text-center font-display text-[28vw] font-bold uppercase leading-[0.8] tracking-tighter">
+        Pass®
       </p>
 
       <div className="mt-10 flex flex-wrap items-center gap-4 border-t border-white/10 pt-5 font-mono text-[11px] uppercase tracking-[0.2em] text-muted">
-        <span>© {new Date().getFullYear()} ROUGE</span>
+        <span>© {new Date().getFullYear()} Rouge Pass</span>
         <span>+18 · Tomá con moderación</span>
         {!org && (
           <Link href="/login?as=staff" className="min-h-[32px] content-center hover:text-primary">
             Acceso equipo
           </Link>
         )}
+        <Link href="/legal/terminos" className="min-h-[32px] content-center hover:text-primary">Términos</Link>
+        <Link href="/legal/privacidad" className="min-h-[32px] content-center hover:text-primary">Privacidad</Link>
+        <Link href="/legal/arrepentimiento" className="min-h-[32px] content-center hover:text-primary">Botón de arrepentimiento</Link>
         <span className="ml-auto">La noche, conectada.</span>
       </div>
     </footer>

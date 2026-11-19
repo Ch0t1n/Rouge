@@ -15,18 +15,22 @@
  *     y, si el servidor rechaza, vuelve al estado real y muestra el error traducido.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import type { RougeState, UUID } from "@/lib/types";
 import type { Result } from "@/lib/engine/actions";
 import * as A from "@/lib/engine/actions";
 import { lobbyPhase } from "@/lib/engine/selectors";
+import { syncDemoMenu } from "@/lib/engine/eventAdmin";
 import { BAR_MENU, createSeedState, STATE_VERSION } from "@/lib/mock/seed";
 import { getSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import { friendlyError } from "@/lib/supabase/errors";
 import { can as canDo, isStaffRole, roleOf, type Permission, type Role } from "@/lib/engine/roles";
 import { fetchRemoteState, subscribeRealtime } from "@/lib/supabase/sync";
 import { uid } from "@/lib/utils";
+import { grantDemoAccess, hasDemoAccess, isDemoPath } from "@/lib/demo/access";
 import type { Command } from "./commands";
+import { Wordmark } from "@/components/brand/Wordmark";
 
 const STORAGE_KEY = "rouge:state";
 /** Persona activa POR PESTAÑA (Modo Demo): cada pestaña simula un teléfono distinto. */
@@ -71,6 +75,11 @@ interface RougeContextValue {
   ready: boolean;
   mode: DataMode;
   state: RougeState;
+  /**
+   * Modo Demo visible: personas, cambio de persona, links de prueba y badges. Solo después de entrar
+   * por /demo (el sitio principal no muestra la demo). Siempre false con Supabase.
+   */
+  demoVisible: boolean;
   /** Modo Supabase: hay sesión iniciada (en demo siempre true). */
   signedIn: boolean;
   /** Tipo de usuario en el evento activo (asistente, dueño/a, producción, barra, mozo/a, seguridad). */
@@ -142,6 +151,19 @@ function emptyState(userId: UUID = ""): RougeState {
     current_user_id: userId,
     active_event_id: "",
     profiles: [],
+    profile_personas: [],
+    privacy_settings: [],
+    venue_spots: [],
+    meetings: [],
+    event_zones: [],
+    zone_check_ins: [],
+    event_sessions: [],
+    session_enrollments: [],
+    session_questions: [],
+    session_question_authors: [],
+    session_question_votes: [],
+    session_polls: [],
+    session_poll_votes: [],
     instagram_links: [],
     user_blocks: [],
     events: [],
@@ -168,6 +190,13 @@ function emptyState(userId: UUID = ""): RougeState {
     squad_expenses: [],
     squad_settlements: [],
     payout_aliases: [],
+    staff_assignments: [],
+    staff_invites: [],
+    terminal_pins: [],
+    audit_log: [],
+    user_reports: [],
+    platform_admin_ids: [],
+    ticket_lists: [],
   };
 }
 
@@ -176,12 +205,17 @@ export function RougeProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<RougeState | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [signedIn, setSignedIn] = useState(mode === "demo");
+  const pathname = usePathname() ?? "/";
+  // Lazy: el BootScreen se muestra hasta montar, así que leer localStorage acá no rompe la hidratación.
+  const [demoVisible, setDemoVisible] = useState(() => mode === "demo" && typeof window !== "undefined" && hasDemoAccess());
   const stateRef = useRef<RougeState | null>(null);
   const skipNextSave = useRef(false);
   const userRef = useRef<UUID | null>(null);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const commit = useCallback((s: RougeState) => {
+  const commit = useCallback((raw: RougeState) => {
+    // Demo: el menú de la barra sigue al evento activo (en Supabase no hace nada).
+    const s = syncDemoMenu(raw);
     stateRef.current = s;
     setState(s);
   }, []);
@@ -264,6 +298,13 @@ export function RougeProvider({ children }: { children: ReactNode }) {
       sub.subscription.unsubscribe();
     };
   }, [mode, commit, loadRemote]);
+
+  // ── Demo visible solo tras entrar por /demo ───────────────────────
+  useEffect(() => {
+    if (mode !== "demo") return;
+    if (isDemoPath(pathname)) grantDemoAccess();
+    setDemoVisible(isDemoPath(pathname) || hasDemoAccess());
+  }, [mode, pathname]);
 
   // ── Realtime + sondeo de respaldo (Supabase) ──────────────────────
   const activeEventId = state?.active_event_id ?? "";
@@ -412,12 +453,18 @@ export function RougeProvider({ children }: { children: ReactNode }) {
     await loadRemote();
   }, [loadRemote]);
 
+  // La landing ("/", "/organizadores") no depende de la fiesta: se renderiza en el servidor con un estado vacío
+  // (así Google y la vista previa de los links ven el contenido, no el BootScreen). El estado real llega al montar.
+  const ssrPage = pathname === "/" || pathname === "/organizadores";
+  const placeholder = useMemo(() => emptyState(), []);
+  const stateValue = state;
   const value = useMemo<RougeContextValue | null>(() => {
+    const state = stateValue ?? (ssrPage ? placeholder : null);
     if (!state) return null;
     const role = signedIn ? roleOf(state, state.active_event_id, state.current_user_id) : "guest";
     const can = (perm: Permission) => signedIn && canDo(state, state.active_event_id, state.current_user_id, perm);
-    return { ready: true, mode, state, signedIn, role, isStaff: isStaffRole(role), can, exec, refresh, setCurrentUser, setActiveEvent, startNewPersona, resetDemo, signOut, toasts, notify, dismiss };
-  }, [state, mode, signedIn, exec, refresh, setCurrentUser, setActiveEvent, startNewPersona, resetDemo, signOut, toasts, notify, dismiss]);
+    return { ready: true, mode, demoVisible, state, signedIn, role, isStaff: isStaffRole(role), can, exec, refresh, setCurrentUser, setActiveEvent, startNewPersona, resetDemo, signOut, toasts, notify, dismiss };
+  }, [stateValue, ssrPage, placeholder, mode, demoVisible, signedIn, exec, refresh, setCurrentUser, setActiveEvent, startNewPersona, resetDemo, signOut, toasts, notify, dismiss]);
 
   if (!value) return <BootScreen />;
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
@@ -442,7 +489,7 @@ export function useNow(intervalMs = 15_000) {
 function BootScreen() {
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-background" aria-busy="true" aria-live="polite">
-      <span className="font-display text-4xl font-bold tracking-tight text-rouge text-glow-rouge animate-neon-flicker">ROUGE</span>
+      <span className="font-display text-4xl font-bold tracking-tight text-rouge text-glow-rouge animate-neon-flicker"><Wordmark /></span>
       <span className="sr-only">Cargando</span>
       <div className="flex h-6 items-end gap-1" aria-hidden>
         {[0, 1, 2, 3, 4].map((i) => (

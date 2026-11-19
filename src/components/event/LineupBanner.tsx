@@ -10,6 +10,7 @@ import { useNow, useRouge } from "@/lib/store/RougeContext";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
 import { cn, formatTime } from "@/lib/utils";
+import { vertical } from "@/lib/engine/verticals";
 
 /** 🔊 En cabina: DJ (02:00 - 03:30) | Sigue: Main Set — con pedido/voto de temas. */
 export function LineupBanner({ event, className }: { event: RougeEvent; className?: string }) {
@@ -21,6 +22,9 @@ export function LineupBanner({ event, className }: { event: RougeEvent; classNam
   const { current, next } = lineupNow(event, now);
   const songs = topSongs(state, event.id, 8);
   const me = state.current_user_id;
+  // Corporativo: "Agenda" (charla actual y la que sigue), sin pedido de temas.
+  const v = vertical(event.kind);
+  const songsOn = v.features.songRequests;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,14 +47,14 @@ export function LineupBanner({ event, className }: { event: RougeEvent; classNam
         <div className="min-w-0 flex-1 text-[12px] leading-tight">
           {current ? (
             <p className="truncate">
-              <span className="font-display font-semibold text-muted">🔊 En cabina:</span>{" "}
+              <span className="font-display font-semibold text-muted">{songsOn ? "🔊 En cabina:" : "🎤 Ahora:"}</span>{" "}
               <span className="font-display font-bold text-primary">{current.artist}</span>{" "}
               <span className="text-muted tabular-nums">
                 ({formatTime(current.starts_at)} - {formatTime(current.ends_at)})
               </span>
             </p>
           ) : (
-            <p className="truncate font-display font-semibold text-muted">🔊 La cabina abre pronto</p>
+            <p className="truncate font-display font-semibold text-muted">{songsOn ? "🔊 La cabina abre pronto" : `🗓️ ${v.copy.lineup}: empieza pronto`}</p>
           )}
           {next && (
             <p className="truncate text-muted">
@@ -58,9 +62,11 @@ export function LineupBanner({ event, className }: { event: RougeEvent; classNam
             </p>
           )}
         </div>
-        <Button size="sm" variant="glass" onClick={() => setOpen(true)} className="shrink-0 gap-1.5 px-3 text-rouge">
-          <Music2 /> Pedir tema
-        </Button>
+        {songsOn && (
+          <Button size="sm" variant="glass" onClick={() => setOpen(true)} className="shrink-0 gap-1.5 px-3 text-rouge">
+            <Music2 /> Pedir tema
+          </Button>
+        )}
       </div>
 
       <BottomSheet open={open} onClose={() => setOpen(false)} title="Pedile un tema al DJ" description="Votá los pedidos de la pista o sumá el tuyo.">

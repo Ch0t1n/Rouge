@@ -9,7 +9,7 @@ const { spawn, spawnSync } = require("child_process");
 const path = require("path");
 
 const SUITES = {
-  demo: ["demo-onboarding.cjs", "demo-lobby.cjs", "demo-squad-bar.cjs", "demo-admin.cjs", "demo-roles-qr-landing.cjs", "demo-anfitriones.cjs", "demo-marca-cobros.cjs", "demo-gestion-evento.cjs", "demo-rrpp-puerta.cjs"],
+  demo: ["demo-onboarding.cjs", "demo-lobby.cjs", "demo-squad-bar.cjs", "demo-admin.cjs", "demo-roles-qr-landing.cjs", "demo-anfitriones.cjs", "demo-marca-cobros.cjs", "demo-gestion-evento.cjs", "demo-rrpp-puerta.cjs", "demo-pro.cjs", "demo-pro-ficha-zonas.cjs", "demo-pro-agenda.cjs"],
   supabase: ["supabase-flow.cjs"],
   instagram: ["supabase-instagram.cjs"],
   api: ["api.cjs"],
